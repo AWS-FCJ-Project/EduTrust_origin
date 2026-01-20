@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.routers import tutor_agent_routes
+from src.routers import tutor_agent_routes, question_generator_agent_routes
 
 app = FastAPI(
     title="AWS-FCJ-Project",
@@ -18,7 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 app.include_router(tutor_agent_routes.router)
+app.include_router(question_generator_agent_routes.router)
 
 
 @app.get("/")

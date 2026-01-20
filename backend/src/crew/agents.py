@@ -51,3 +51,14 @@ class CustomAgents:
         return self.get_agent(
             "tutor_agent", tools=tools, model=model, temperature=temperature
         )
+
+    def question_generator_ai(
+        self,
+        tools: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5,
+    ) -> Agent:
+        """Create question generator AI agent from config."""
+        return self.get_agent(
+            "question_generator_ai", tools=tools, model=model, temperature=temperature
+        )
