@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini
+      
+  - model_name: grok-4-fast-reasioning
+    litellm_params:
+      model: grok-4-fast-reasioning
+      
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini-2.5-flash 
+
+
