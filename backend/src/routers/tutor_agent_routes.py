@@ -1,6 +1,7 @@
 from crewai import Crew, Task
 from fastapi import APIRouter
 from src.crew.agents import CustomAgents
+from src.crew.tools import CustomTools
 from src.schemas.tutor_agent_schema import TutorAgentRequest, TutorAgentResponse
 
 router = APIRouter(prefix="/tutor", tags=["Tutor Agent"])
@@ -10,7 +11,9 @@ router = APIRouter(prefix="/tutor", tags=["Tutor Agent"])
 async def ask_tutor(request: TutorAgentRequest):
     """Ask tutor agent a question."""
     agents = CustomAgents()
-    tutor = agents.tutor_agent()
+    # Add tools to the agent
+    tools = [CustomTools.web_search, CustomTools.get_current_datetime]
+    tutor = agents.tutor_agent(tools=tools)
 
     task = Task(
         description=request.question,
