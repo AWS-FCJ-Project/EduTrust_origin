@@ -2,7 +2,7 @@ from crewai import Crew, Task
 from fastapi import APIRouter
 from src.crew.agents import CustomAgents
 from src.crew.tools import CustomTools
-from src.schemas.question_generator_agent import (
+from src.schemas.question_generator_agent_schema import (
     QuestionGeneratorAgentRequest,
     QuestionGeneratorAgentResponse,
 )

@@ -62,3 +62,36 @@ class CustomAgents:
         return self.get_agent(
             "question_generator_ai", tools=tools, model=model, temperature=temperature
         )
+
+    def math_agent(
+        self,
+        tools: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5,
+    ) -> Agent:
+        """Create math agent from config."""
+        return self.get_agent(
+            "math_agent", tools=tools, model=model, temperature=temperature
+        )
+
+    def physics_chemistry_agent(
+        self,
+        tools: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5,
+    ) -> Agent:
+        """Create physics and chemistry agent from config."""
+        return self.get_agent(
+            "physics_chemistry_agent", tools=tools, model=model, temperature=temperature
+        )
+
+    def literature_history_agent(
+        self,
+        tools: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5,
+    ) -> Agent:
+        """Create literature and history agent from config."""
+        return self.get_agent(
+            "literature_history_agent", tools=tools, model=model, temperature=temperature
+        )
