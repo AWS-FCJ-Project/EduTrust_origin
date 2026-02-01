@@ -1,6 +1,6 @@
-from pydantic_ai import RunContext
+from datetime import datetime
 
-from src.crew.orchestrator import OrchestratorDeps, orchestrator
+from pydantic_ai import RunContext
 from src.crew.agents import (
     literature_agent,
     math_agent,
@@ -8,7 +8,14 @@ from src.crew.agents import (
     quiz_agent,
     tutor_agent,
 )
+from src.crew.orchestrator import OrchestratorDeps, orchestrator
 from src.logger import console, log_agent_response, log_delegation
+
+
+@orchestrator.tool
+async def get_current_datetime(_ctx: RunContext[OrchestratorDeps]) -> str:
+    """Get the current date and time. Use when user asks about today's date or current time."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 @orchestrator.tool
