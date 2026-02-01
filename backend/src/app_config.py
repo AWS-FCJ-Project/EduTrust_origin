@@ -9,6 +9,16 @@ class AppConfig(BaseSettings):
     AGENTS_CONFIG_PATH: Optional[str] = None
     LLMS_CONFIG_PATH: Optional[str] = None
 
+    ORCHESTRATOR_MODEL: Optional[str] = None
+    AGENT_MODEL: Optional[str] = None
+    LOGFIRE_TOKEN: Optional[str] = None
+
+    MONGO_URI: Optional[str] = None
+    MONGO_USERNAME: Optional[str] = None
+    MONGO_PASSWORD: Optional[str] = None
+    MONGO_PORT: Optional[str] = None
+    MONGO_DB_NAME: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
