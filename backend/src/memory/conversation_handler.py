@@ -1,7 +1,6 @@
 from typing import Any, Optional
 
 import pymongo
-
 from src.app_config import app_config
 
 
@@ -26,13 +25,22 @@ class ConversationHandler:
 
     def connect_to_database(self):
         try:
-            self.client = pymongo.MongoClient(
-                self.connection_string + "/?directConnection=true",
-                username=self.username,
-                password=self.password,
-                retryWrites=False,
-                tlsAllowInvalidHostnames=True,
-            )
+            if self.connection_string.startswith("mongodb://"):
+                self.client = pymongo.MongoClient(
+                    self.connection_string + "/?directConnection=true",
+                    username=self.username,
+                    password=self.password,
+                    retryWrites=False,
+                    tlsAllowInvalidHostnames=True,
+                )
+            else:
+                self.client = pymongo.MongoClient(
+                    self.connection_string,
+                    retryWrites=True,
+                    w="majority",
+                )
+            ping_result = self.client.admin.command("ping")
+            print(f"Ping result: {ping_result}")
             self.db = self.client[self.db_name]
             self.collection = self.db[self.collection_name]
             print(f"Connected to database: {self.db_name}")
