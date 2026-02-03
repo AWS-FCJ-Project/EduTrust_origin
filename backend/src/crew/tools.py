@@ -14,12 +14,6 @@ from src.logger import console, log_agent_response, log_delegation
 
 
 @orchestrator.tool
-async def get_current_datetime(_ctx: RunContext[OrchestratorDeps]) -> str:
-    """Get the current date and time. Use when user asks about today's date or current time."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-@orchestrator.tool
 async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str:
     """
     Web search tool.
