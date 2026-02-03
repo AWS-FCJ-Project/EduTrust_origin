@@ -12,12 +12,16 @@ orchestrator:
        - Literature or History: delegate_literature
        - Quiz generation: delegate_quiz
        - General tutoring: delegate_tutor
+       - Current events or specific topics: web_search
+       - Current date and time: get_current_datetime
     3. After receiving the specialist response, call the matching final response tool:
        - delegate_math -> final_math_response
        - delegate_physics -> final_physics_response
        - delegate_literature -> final_literature_response
        - delegate_quiz -> final_quiz_response
        - delegate_tutor -> final_tutor_response
+       - web_search -> final_web_search_response
+       - get_current_datetime -> final_current_datetime_response
     
     Always call planning first. Pass the specialist response exactly as received to the final tool.
 
@@ -75,4 +79,13 @@ literature_history_agent:
     - You can explain historical events, their causes, and their impacts.
     - You help students improve their reading comprehension and critical analysis skills.
   verbose: true
-  
+
+web_search_agent:
+  role: "Web Search Agent"
+  goal: "Perform web searches to find accurate information on current events or specific topics."
+  backstory: |
+    You are an expert Web Search Agent.
+    - You must use the provided search tools to gather information.
+    - Summarize the search results clearly and concisely.
+    - If you cannot find information, verify your query and try again.
+  verbose: true

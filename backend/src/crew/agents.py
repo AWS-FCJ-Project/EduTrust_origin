@@ -1,10 +1,9 @@
 import yaml
 from pydantic_ai import Agent
 from pydantic_ai_litellm import LiteLLMModel
-
 from src.app_config import app_config
+from src.search_services.unified_search import UnifiedSearch
 
-# Load configs
 with open(app_config.AGENTS_CONFIG_PATH) as f:
     prompts = yaml.safe_load(f)
 
@@ -12,6 +11,8 @@ with open(app_config.LLMS_CONFIG_PATH) as f:
     llm_config = yaml.safe_load(f)
 
 model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
+
+search_service = UnifiedSearch()
 
 math_agent = Agent(
     model, name="math_agent", instructions=prompts["math_agent"]["backstory"]
@@ -32,3 +33,12 @@ quiz_agent = Agent(
 tutor_agent = Agent(
     model, name="tutor_agent", instructions=prompts["tutor_agent"]["backstory"]
 )
+
+web_search_agent = Agent(
+    model,
+    name="web_search_agent",
+    instructions=prompts["web_search_agent"]["backstory"],
+)
+
+for tool_func in search_service.get_search_tools():
+    web_search_agent.tool(tool_func)

@@ -7,6 +7,7 @@ from src.crew.agents import (
     physics_agent,
     quiz_agent,
     tutor_agent,
+    web_search_agent,
 )
 from src.crew.orchestrator import OrchestratorDeps, orchestrator
 from src.logger import console, log_agent_response, log_delegation
@@ -19,7 +20,22 @@ async def get_current_datetime(_ctx: RunContext[OrchestratorDeps]) -> str:
 
 
 @orchestrator.tool
-async def planning(_ctx: RunContext[OrchestratorDeps], plan: str) -> str:
+async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str:
+    """
+    Web search tool.
+    - General searching (finding facts, news, or current events).
+    - Deep research (comprehensive analysis on complex topics).
+    - Content extraction (reading full content from specific URLs).
+    Provide clear instructions on what needs to be found, researched, or extracted.
+    """
+    log_delegation("Orchestrator", "Web Search", instruction)
+    result = await web_search_agent.run(instruction, usage=ctx.usage)
+    log_agent_response("Web Search Agent", result.output)
+    return result.output
+
+
+@orchestrator.tool
+async def planning(ctx: RunContext[OrchestratorDeps], plan: str) -> str:
     """Create a plan before executing any other tools. Mandatory first step."""
     console.print(f"[bold cyan]Plan:[/bold cyan] {plan}")
     return "Plan acknowledged. Now proceed with the delegation tool."
