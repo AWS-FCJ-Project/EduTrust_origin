@@ -1,97 +1,34 @@
-from typing import Optional
-
 import yaml
-from crewai import Agent
+from pydantic_ai import Agent
+from pydantic_ai_litellm import LiteLLMModel
+
 from src.app_config import app_config
-from src.llm import LLMProvider
 
+# Load configs
+with open(app_config.AGENTS_CONFIG_PATH) as f:
+    prompts = yaml.safe_load(f)
 
-class CustomAgents:
-    """Factory for creating CrewAI agents from YAML config."""
+with open(app_config.LLMS_CONFIG_PATH) as f:
+    llm_config = yaml.safe_load(f)
 
-    def __init__(self):
-        self.llm_provider = LLMProvider()
-        self.agents_config = self._load_config()
+model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
 
-    def _load_config(self) -> dict:
-        """Load agents config from YAML file."""
-        config_path = app_config.AGENTS_CONFIG_PATH
-        if config_path:
-            with open(config_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        return {}
-
-    def get_agent(
-        self,
-        agent_name: str,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create agent from YAML config by name."""
-        if agent_name not in self.agents_config:
-            raise ValueError(f"Agent '{agent_name}' not found in config")
-        config = self.agents_config[agent_name]
-        return Agent(
-            role=config["role"],
-            goal=config["goal"],
-            backstory=config["backstory"],
-            llm=self.llm_provider.get_llm(model=model, temperature=temperature),
-            tools=tools or [],
-            verbose=config.get("verbose", True),
-        )
-
-    def tutor_agent(
-        self,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create tutor agent from config."""
-        return self.get_agent(
-            "tutor_agent", tools=tools, model=model, temperature=temperature
-        )
-
-    def question_generator_ai(
-        self,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create question generator AI agent from config."""
-        return self.get_agent(
-            "question_generator_ai", tools=tools, model=model, temperature=temperature
-        )
-
-    def math_agent(
-        self,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create math agent from config."""
-        return self.get_agent(
-            "math_agent", tools=tools, model=model, temperature=temperature
-        )
-
-    def physics_chemistry_agent(
-        self,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create physics and chemistry agent from config."""
-        return self.get_agent(
-            "physics_chemistry_agent", tools=tools, model=model, temperature=temperature
-        )
-
-    def literature_history_agent(
-        self,
-        tools: Optional[list] = None,
-        model: Optional[str] = None,
-        temperature: float = 0.5,
-    ) -> Agent:
-        """Create literature and history agent from config."""
-        return self.get_agent(
-            "literature_history_agent", tools=tools, model=model, temperature=temperature
-        )
+math_agent = Agent(
+    model, name="math_agent", instructions=prompts["math_agent"]["backstory"]
+)
+physics_agent = Agent(
+    model,
+    name="physics_agent",
+    instructions=prompts["physics_chemistry_agent"]["backstory"],
+)
+literature_agent = Agent(
+    model,
+    name="literature_agent",
+    instructions=prompts["literature_history_agent"]["backstory"],
+)
+quiz_agent = Agent(
+    model, name="quiz_agent", instructions=prompts["question_generator_ai"]["backstory"]
+)
+tutor_agent = Agent(
+    model, name="tutor_agent", instructions=prompts["tutor_agent"]["backstory"]
+)
