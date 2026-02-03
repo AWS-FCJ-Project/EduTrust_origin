@@ -36,7 +36,7 @@ async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str
 
 @orchestrator.tool
 async def planning(ctx: RunContext[OrchestratorDeps], plan: str) -> str:
-    """Create a plan before executing any other tools. Mandatory first step."""
+    """Create a deeply sequential plan before executing any other tools. Mandatory first step."""
     console.print(f"[bold cyan]Plan:[/bold cyan] {plan}")
     return "Plan acknowledged. Now proceed with the delegation tool."
 

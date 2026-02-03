@@ -1,3 +1,4 @@
+from pydantic_ai import RunContext
 from src.app_config import app_config
 from src.search_services.tavily_search import TavilySearch
 
@@ -17,6 +18,7 @@ class UnifiedSearch:
 
     async def search(
         self,
+        ctx: RunContext,
         query: str,
         search_depth: str = "basic",
         topic: str = "general",
@@ -37,6 +39,7 @@ class UnifiedSearch:
 
     async def extract(
         self,
+        ctx: RunContext,
         urls: list[str] | str,
         extract_depth: str = "basic",
         query: str = None,
@@ -53,7 +56,9 @@ class UnifiedSearch:
             chunks_per_source=chunks_per_source,
         )
 
-    async def create_research_task(self, input: str, model: str = "auto") -> str:
+    async def create_research_task(
+        self, ctx: RunContext, input: str, model: str = "auto"
+    ) -> str:
         """
         Start a deep research task on a complex topic.
         This provides a comprehensive report instead of just snippets.
@@ -61,7 +66,7 @@ class UnifiedSearch:
         """
         return await self.tavily_search.create_research_task(input=input, model=model)
 
-    async def get_research_task_result(self, request_id: str) -> str:
+    async def get_research_task_result(self, ctx: RunContext, request_id: str) -> str:
         """
         Retrieve the final results of a research task using its request_id.
         Call this after create_research_task and a short wait (15-30s).
