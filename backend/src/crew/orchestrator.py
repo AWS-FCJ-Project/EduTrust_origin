@@ -1,13 +1,13 @@
 from dataclasses import dataclass
+from datetime import datetime
 
+import logfire
 import yaml
 from pydantic_ai import Agent, ToolOutput
 from pydantic_ai_litellm import LiteLLMModel
-
 from src.app_config import app_config
-from src.memory.conversation_handler import ConversationHandler
-import logfire
 from src.logger import log_agent_response, log_user_input
+from src.memory.conversation_handler import ConversationHandler
 from src.state import get_conversation_handler
 
 
@@ -78,7 +78,8 @@ async def ask(question: str, conversation_id: str) -> str:
             conversation_id=conversation_id, conversation_handler=handler
         )
         result = await orchestrator.run(
-            f"Context:\n{context_text}\n\nQuestion: {question}", deps=deps
+            f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\nContext:\n{context_text}\n\nQuestion: {question}",
+            deps=deps,
         )
 
         answer = result.output

@@ -4,18 +4,17 @@ import logfire
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from src import state
 from src.app_config import app_config
 from src.memory.conversation_handler import ConversationHandler
 from src.routers import unified_agent_routes
-from src import state
 
-logfire_kwargs = {"environment": "local"}
-if app_config.LOGFIRE_TOKEN:
-    logfire_kwargs["token"] = app_config.LOGFIRE_TOKEN
-
-logfire.configure(**logfire_kwargs)
-logfire.instrument_pydantic()
+logfire.configure(
+    environment="local",
+    token=app_config.LOGFIRE_TOKEN,
+    send_to_logfire=True,
+)
+logfire.instrument_pydantic(record="failure")
 logfire.instrument_pydantic_ai()
 
 
