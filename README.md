@@ -44,16 +44,6 @@ aws-fcj-project/
     └── package.json
 ```
 
-## Quick Start
-1.  **Start Backend**:
-    ```bash
-    cd backend && uv sync && uv run uvicorn src.main:app --reload
-    ```
-2.  **Start Frontend**:
-    ```bash
-    cd frontend && npm install && npm run dev
-    ```
-
 ## Prerequisites
 
 Before running the project, ensure you have the following installed:
