@@ -32,4 +32,4 @@ def send_email(to_email: str, subject: str, body: str):
         return True
     except Exception as e:
         logging.error(f"Error sending email: {e}")
-        return False
+        raise RuntimeError("Failed to send email") from e
