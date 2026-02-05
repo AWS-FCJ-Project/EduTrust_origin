@@ -62,7 +62,7 @@ async def resend_otp(request: Request, data: ResendOTPRequest, background_tasks:
         return {"message": "If email exists, new OTP has been sent."}
     
     if user.get("is_verified"):
-         return {"message": "User already verified."}
+        return {"message": "User already verified."}
 
     # Generate new OTP
     otp = generate_otp()
