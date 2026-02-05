@@ -2,7 +2,6 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from src.auth.jwt_handler import decode_token
 
-# Note: The actual token endpoint is /verify-2fa but for simplicity we assume Bearer token usage.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="verify-2fa")
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):

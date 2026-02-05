@@ -1,6 +1,4 @@
-"""
-OTP storage using MongoDB instead of Redis
-"""
+
 from datetime import datetime, timedelta
 from src.database import db
 
@@ -8,10 +6,6 @@ from src.database import db
 otp_collection = db["otps"]
 
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
-    """
-    Lưu OTP vào MongoDB với thời gian hết hạn
-    purpose: 'email_verification', 'password_reset', etc.
-    """
     expire_at = datetime.utcnow() + timedelta(seconds=expire_seconds)
     
     await otp_collection.update_one(
@@ -27,10 +21,7 @@ async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300
     )
 
 async def verify_otp(email: str, otp: str, purpose: str) -> bool:
-    """
-    Verify OTP và xóa nếu hợp lệ
-    Returns True nếu valid, False nếu không
-    """
+   
     doc = await otp_collection.find_one({
         "email": email,
         "purpose": purpose,
@@ -51,9 +42,7 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
     return True
 
 async def cleanup_expired_otps():
-    """
-    Cleanup OTPs đã hết hạn (có thể chạy định kỳ)
-    """
+    
     await otp_collection.delete_many({
         "expire_at": {"$lt": datetime.utcnow()}
     })
