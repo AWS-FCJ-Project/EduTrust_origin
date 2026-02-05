@@ -13,23 +13,23 @@ class AppConfig(BaseSettings):
     AGENT_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
 
-    MONGO_URI: Optional[str] = "mongodb://localhost:27017"
+    MONGO_URI: Optional[str] = None
     MONGO_USERNAME: Optional[str] = None
     MONGO_PASSWORD: Optional[str] = None
     MONGO_PORT: Optional[str] = None
-    MONGO_DB_NAME: Optional[str] = "proctoring_db"
+    MONGO_DB_NAME: Optional[str] = None
 
     TAVILY_API_KEY: Optional[str] = None
 
     # Auth Settings
-    SECRET_KEY: str = "your_secret_key_for_session_middleware"  # Required for SessionMiddleware
+    SECRET_KEY: str = None  # Required for SessionMiddleware
 
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
     
     # OTP Settings
-    OTP_EXPIRE_SECONDS: int = 300  # 5 minutes
+    OTP_EXPIRE_SECONDS: int = None  # 5 minutes
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

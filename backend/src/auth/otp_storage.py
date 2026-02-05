@@ -2,7 +2,6 @@
 from datetime import datetime, timedelta
 from src.database import db
 
-# Collection để lưu OTP
 otp_collection = db["otps"]
 
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
@@ -31,13 +30,13 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
     if not doc:
         return False
     
-    # Kiểm tra expiry
+
     if doc["expire_at"] < datetime.utcnow():
-        # Xóa OTP đã hết hạn
+
         await otp_collection.delete_one({"_id": doc["_id"]})
         return False
     
-    # OTP hợp lệ - xóa để không dùng lại
+
     await otp_collection.delete_one({"_id": doc["_id"]})
     return True
 
