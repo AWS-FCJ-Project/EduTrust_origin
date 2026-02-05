@@ -22,7 +22,7 @@ class AppConfig(BaseSettings):
     TAVILY_API_KEY: Optional[str] = None
 
     # Auth Settings
-    SECRET_KEY: str = None  # Required for SessionMiddleware
+    SECRET_KEY: Optional[str] = None  # Required for SessionMiddleware
 
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None
