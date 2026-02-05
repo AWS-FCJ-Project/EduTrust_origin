@@ -3,7 +3,7 @@ from src.schemas.auth_schemas import ForgotPassword, ResetPassword
 from src.database import users_collection
 from src.auth.auth_utils import generate_otp, hash_password
 from src.auth.email_service import send_email
-from src.redis_client import redis_client
+from src.auth.otp_storage import save_otp, verify_otp
 from src.app_config import app_config
 from src.extensions import limiter
 
@@ -17,8 +17,9 @@ async def forgot_password(request: Request, data: ForgotPassword, background_tas
         # Don't reveal user existence
         return {"message": "If email exists, OTP sent."}
         
+    # Generate and save OTP to MongoDB
     otp = generate_otp()
-    await redis_client.setex(f"otp:password_reset:{data.email}", app_config.OTP_EXPIRE_SECONDS, otp)
+    await save_otp(data.email, otp, "password_reset", app_config.OTP_EXPIRE_SECONDS)
     
     background_tasks.add_task(send_email, data.email, "Reset Password", f"Your OTP is {otp}")
     
@@ -26,19 +27,17 @@ async def forgot_password(request: Request, data: ForgotPassword, background_tas
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword):
-    key = f"otp:password_reset:{data.email}"
-    saved_otp = await redis_client.get(key)
+    # Verify OTP from MongoDB
+    is_valid = await verify_otp(data.email, data.otp, "password_reset")
     
-    if not saved_otp or saved_otp != data.otp:
+    if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
         
+    # Update password
     hashed = hash_password(data.new_password)
     await users_collection.update_one(
         {"email": data.email},
         {"$set": {"hashed_password": hashed}}
     )
-    
-    # Invalidate OTP
-    await redis_client.delete(key)
     
     return {"message": "Password reset successfully"}

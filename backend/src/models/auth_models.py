@@ -7,7 +7,6 @@ class UserInDB(BaseModel):
     email: EmailStr
     hashed_password: str
     is_verified: bool = False
-    totp_secret: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = None
 

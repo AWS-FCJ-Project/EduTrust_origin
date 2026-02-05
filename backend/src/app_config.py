@@ -22,20 +22,14 @@ class AppConfig(BaseSettings):
     TAVILY_API_KEY: Optional[str] = None
 
     # Auth Settings
-    SECRET_KEY: str = "your_secret_key_for_session_middleware" # Required for SessionMiddleware
+    SECRET_KEY: str = "your_secret_key_for_session_middleware"  # Required for SessionMiddleware
 
-    REDIS_URL: str = "redis://localhost:6379"
+    # Email for OTP
     EMAIL_SENDER: Optional[str] = None
-
     EMAIL_PASSWORD: Optional[str] = None
     
-    JWT_SECRET: Optional[str] = None
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
-    OTP_EXPIRE_SECONDS: int = 300
-    OTP_RATE_LIMIT_SECONDS: int = 60
+    # OTP Settings
+    OTP_EXPIRE_SECONDS: int = 300  # 5 minutes
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
