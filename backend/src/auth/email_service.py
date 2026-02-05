@@ -9,8 +9,9 @@ def send_email(to_email: str, subject: str, body: str):
     sender_password = app_config.EMAIL_PASSWORD
     
     if not sender_email or not sender_password:
-        logging.warning("Email credentials not set. Skipping email sending.")
-        return False
+        error_msg = "Email credentials not set. Please configure EMAIL_SENDER and EMAIL_PASSWORD."
+        logging.error(error_msg)
+        raise RuntimeError(error_msg)
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
