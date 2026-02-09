@@ -21,4 +21,11 @@ dependencies = [
     "black>=26.1.0",
     "pre-commit>=4.5.1",
     "tavily-python>=0.5.0",
+    "motor",
+    "passlib[bcrypt]",
+    "python-multipart",
+    "pydantic[email]",
+    "slowapi",
+    "bcrypt==3.2.2",
+    "itsdangerous>=2.2.0",
 ]
