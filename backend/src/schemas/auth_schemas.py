@@ -1,5 +1,7 @@
 import re
+
 from pydantic import BaseModel, EmailStr, Field, validator
+
 
 class UserRegister(BaseModel):
     email: EmailStr
@@ -14,7 +16,7 @@ class UserRegister(BaseModel):
             or not re.search(r"[^\w\s]", v)
         ):
             raise ValueError(
-                "Password must contain 1 capital letter, 1 letter, 1 number và 1 symbol."
+                "Password must contain 1 capital letter, 1 letter, 1 number and 1 symbol."
             )
         return v
 
