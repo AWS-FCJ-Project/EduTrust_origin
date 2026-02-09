@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-RUN uv pip install --system . 
+RUN uv sync --frozen 
 
 COPY backend /app
 
