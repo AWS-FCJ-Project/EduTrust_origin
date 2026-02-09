@@ -116,7 +116,7 @@ jobs:
           ## Container Status
 
           \`\`\`
-          $(ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps | grep aws-fcj-backend" || echo "Container not running")
+          $(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps | grep aws-fcj-backend" || echo "Container not running")
           \`\`\`
 
           ## Health Check
