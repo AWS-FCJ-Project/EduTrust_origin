@@ -83,8 +83,9 @@ async def ask(question: str, conversation_id: str) -> str:
         deps = OrchestratorDeps(
             conversation_id=conversation_id, conversation_handler=handler
         )
+        time_now = datetime.now().astimezone()
         result = await orchestrator.run(
-            f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\nContext:\n{context_text}\n\nQuestion: {question}",
+            f"Current date and time: {time_now.strftime('%Y-%m-%d %H:%M:%S %z')}\nContext:\n{context_text}\n\nQuestion: {question}",
             deps=deps,
         )
 

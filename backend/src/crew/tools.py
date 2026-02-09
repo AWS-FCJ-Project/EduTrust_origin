@@ -13,6 +13,11 @@ from src.crew.orchestrator import OrchestratorDeps, orchestrator
 from src.logger import console, log_agent_response, log_delegation
 
 
+def _get_current_datetime() -> str:
+    time_now = datetime.now().astimezone()
+    return f"Current date and time: {time_now.strftime('%Y-%m-%d %H:%M:%S %z')}"
+
+
 @orchestrator.tool
 async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str:
     """
@@ -23,7 +28,9 @@ async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str
     Provide clear instructions on what needs to be found, researched, or extracted.
     """
     log_delegation("Orchestrator", "Web Search", instruction)
-    result = await web_search_agent.run(instruction, usage=ctx.usage)
+    result = await web_search_agent.run(
+        f"{_get_current_datetime()}\n\nInstruction: {instruction}", usage=ctx.usage
+    )
     log_agent_response("Web Search Agent", result.output)
     return result.output
 
@@ -39,7 +46,9 @@ async def planning(ctx: RunContext[OrchestratorDeps], plan: str) -> str:
 async def delegate_math(ctx: RunContext[OrchestratorDeps], question: str) -> str:
     """Get math answer. After receiving, call final_math_response with the result."""
     log_delegation("Orchestrator", "Math", question)
-    result = await math_agent.run(question, usage=ctx.usage)
+    result = await math_agent.run(
+        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+    )
     log_agent_response("Math Agent", result.output)
     return result.output
 
@@ -48,7 +57,9 @@ async def delegate_math(ctx: RunContext[OrchestratorDeps], question: str) -> str
 async def delegate_physics(ctx: RunContext[OrchestratorDeps], question: str) -> str:
     """Get physics answer. After receiving, call final_physics_response with the result."""
     log_delegation("Orchestrator", "Physics", question)
-    result = await physics_agent.run(question, usage=ctx.usage)
+    result = await physics_agent.run(
+        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+    )
     log_agent_response("Physics Agent", result.output)
     return result.output
 
@@ -57,7 +68,9 @@ async def delegate_physics(ctx: RunContext[OrchestratorDeps], question: str) -> 
 async def delegate_literature(ctx: RunContext[OrchestratorDeps], question: str) -> str:
     """Get literature answer. After receiving, call final_literature_response with the result."""
     log_delegation("Orchestrator", "Literature", question)
-    result = await literature_agent.run(question, usage=ctx.usage)
+    result = await literature_agent.run(
+        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+    )
     log_agent_response("Literature Agent", result.output)
     return result.output
 
@@ -77,6 +90,8 @@ async def delegate_quiz(ctx: RunContext[OrchestratorDeps], topic: str) -> str:
 async def delegate_general(ctx: RunContext[OrchestratorDeps], question: str) -> str:
     """General Q&A. Use when no specialist tool fits. After receiving, call final_general_response with the result."""
     log_delegation("Orchestrator", "General Chat", question)
-    result = await general_chat_agent.run(question, usage=ctx.usage)
+    result = await general_chat_agent.run(
+        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+    )
     log_agent_response("General Chat Agent", result.output)
     return result.output
