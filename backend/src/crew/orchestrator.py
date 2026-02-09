@@ -32,21 +32,40 @@ orchestrator = Agent(
     deps_type=OrchestratorDeps,
     instructions=prompts["orchestrator"]["instructions"],
     output_type=[
+        # ====================================================================
+        # OLD FINAL RESPONSE TOOLS (DEPRECATED - Commented out for reference)
+        # ====================================================================
+        # ToolOutput(
+        #     str,
+        #     name="final_math_response",
+        #     description="Return math agent's response directly",
+        # ),
+        # ToolOutput(
+        #     str,
+        #     name="final_physics_response",
+        #     description="Return physics agent's response directly",
+        # ),
+        # ToolOutput(
+        #     str,
+        #     name="final_literature_response",
+        #     description="Return literature agent's response directly",
+        # ),
+        # ====================================================================
+        
+        # ====================================================================
+        # NEW CONSOLIDATED FINAL RESPONSE TOOLS
+        # ====================================================================
         ToolOutput(
             str,
-            name="final_math_response",
-            description="Return math agent's response directly",
+            name="final_stem_logic_response",
+            description="Return STEM/Logic agent's response directly (Math, Physics, Chemistry, Science)",
         ),
         ToolOutput(
             str,
-            name="final_physics_response",
-            description="Return physics agent's response directly",
+            name="final_humanities_response",
+            description="Return Humanities agent's response directly (Literature, History, Social Sciences)",
         ),
-        ToolOutput(
-            str,
-            name="final_literature_response",
-            description="Return literature agent's response directly",
-        ),
+        # ====================================================================
         ToolOutput(
             str,
             name="final_quiz_response",

@@ -15,19 +15,38 @@ model = LiteLLMModel(model_name)
 
 search_service = UnifiedSearch()
 
-math_agent = Agent(
-    model, name="math_agent", instructions=prompts["math_agent"]["backstory"]
-)
-physics_agent = Agent(
+# ============================================================================
+# OLD AGENTS (DEPRECATED - Commented out for reference)
+# ============================================================================
+# math_agent = Agent(
+#     model, name="math_agent", instructions=prompts["math_agent"]["backstory"]
+# )
+# physics_agent = Agent(
+#     model,
+#     name="physics_agent",
+#     instructions=prompts["physics_chemistry_agent"]["backstory"],
+# )
+# literature_agent = Agent(
+#     model,
+#     name="literature_agent",
+#     instructions=prompts["literature_history_agent"]["backstory"],
+# )
+# ============================================================================
+
+# ============================================================================
+# NEW CONSOLIDATED AGENTS
+# ============================================================================
+stem_logic_agent = Agent(
     model,
-    name="physics_agent",
-    instructions=prompts["physics_chemistry_agent"]["backstory"],
+    name="stem_logic_agent",
+    instructions=prompts["stem_logic_agent"]["backstory"],
 )
-literature_agent = Agent(
+humanities_agent = Agent(
     model,
-    name="literature_agent",
-    instructions=prompts["literature_history_agent"]["backstory"],
+    name="humanities_agent",
+    instructions=prompts["humanities_agent"]["backstory"],
 )
+# ============================================================================
 quiz_agent = Agent(
     model, name="quiz_agent", instructions=prompts["question_generator_ai"]["backstory"]
 )
