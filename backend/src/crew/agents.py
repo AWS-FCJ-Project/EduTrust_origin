@@ -10,7 +10,8 @@ with open(app_config.AGENTS_CONFIG_PATH) as f:
 with open(app_config.LLMS_CONFIG_PATH) as f:
     llm_config = yaml.safe_load(f)
 
-model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
+model_name = app_config.AGENT_MODEL or llm_config.get("agent_model")
+model = LiteLLMModel(model_name)
 
 search_service = UnifiedSearch()
 
@@ -30,8 +31,10 @@ literature_agent = Agent(
 quiz_agent = Agent(
     model, name="quiz_agent", instructions=prompts["question_generator_ai"]["backstory"]
 )
-tutor_agent = Agent(
-    model, name="tutor_agent", instructions=prompts["tutor_agent"]["backstory"]
+general_chat_agent = Agent(
+    model,
+    name="general_chat_agent",
+    instructions=prompts["general_chat_agent"]["backstory"],
 )
 
 web_search_agent = Agent(

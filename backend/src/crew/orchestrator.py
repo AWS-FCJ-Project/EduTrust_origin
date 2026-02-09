@@ -23,7 +23,8 @@ with open(app_config.AGENTS_CONFIG_PATH) as f:
 with open(app_config.LLMS_CONFIG_PATH) as f:
     llm_config = yaml.safe_load(f)
 
-model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
+model_name = app_config.ORCHESTRATOR_MODEL or llm_config.get("orchestrator_model")
+model = LiteLLMModel(model_name)
 
 orchestrator = Agent(
     model,
@@ -53,8 +54,13 @@ orchestrator = Agent(
         ),
         ToolOutput(
             str,
-            name="final_tutor_response",
-            description="Return tutor agent's response directly",
+            name="final_general_response",
+            description="Return general knowledge agent's response directly",
+        ),
+        ToolOutput(
+            str,
+            name="final_web_search_response",
+            description="Return web search agent's response directly",
         ),
     ],
 )

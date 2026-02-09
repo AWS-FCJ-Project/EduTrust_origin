@@ -2,11 +2,11 @@ from datetime import datetime
 
 from pydantic_ai import RunContext
 from src.crew.agents import (
+    general_chat_agent,
     literature_agent,
     math_agent,
     physics_agent,
     quiz_agent,
-    tutor_agent,
     web_search_agent,
 )
 from src.crew.orchestrator import OrchestratorDeps, orchestrator
@@ -74,9 +74,9 @@ async def delegate_quiz(ctx: RunContext[OrchestratorDeps], topic: str) -> str:
 
 
 @orchestrator.tool
-async def delegate_tutor(ctx: RunContext[OrchestratorDeps], question: str) -> str:
-    """Get tutor answer. After receiving, call final_tutor_response with the result."""
-    log_delegation("Orchestrator", "Tutor", question)
-    result = await tutor_agent.run(question, usage=ctx.usage)
-    log_agent_response("Tutor Agent", result.output)
+async def delegate_general(ctx: RunContext[OrchestratorDeps], question: str) -> str:
+    """General Q&A. Use when no specialist tool fits. After receiving, call final_general_response with the result."""
+    log_delegation("Orchestrator", "General Chat", question)
+    result = await general_chat_agent.run(question, usage=ctx.usage)
+    log_agent_response("General Chat Agent", result.output)
     return result.output
