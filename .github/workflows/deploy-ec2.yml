@@ -55,12 +55,13 @@ jobs:
           # Transfer artifact and .env to EC2
           scp -o StrictHostKeyChecking=no aws-fcj-artifact.tar.gz .env ${EC2_USER}@${EC2_HOST}:~/
 
-          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << ENDSSH
             set -e
             
-            # Ensure app directory exists
-            mkdir -p ${APP_DIR}
-            cd ${APP_DIR}
+            # Ensure app directory exists (using default if blank)
+            TARGET_DIR="${APP_DIR:-aws-fcj-project}"
+            mkdir -p "\$TARGET_DIR"
+            cd "\$TARGET_DIR"
             
             echo "Extracting artifact..."
             tar xzf ~/aws-fcj-artifact.tar.gz
