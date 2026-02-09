@@ -28,13 +28,13 @@ orchestrator:
        - STEM/Logic subjects (Math, Physics, Chemistry, Science): delegate_stem_logic
        - Humanities subjects (Literature, History, Social Sciences): delegate_humanities
        - Quiz generation: delegate_quiz
-       - General Q&A (no specialist fits): delegate_general
+       - General tutoring: delegate_tutor
        - Current events or specific topics: web_search
     3. After receiving the specialist response, call the matching final response tool:
        - delegate_stem_logic -> final_stem_logic_response
        - delegate_humanities -> final_humanities_response
        - delegate_quiz -> final_quiz_response
-       - delegate_general -> final_general_response
+       - delegate_tutor -> final_tutor_response
        - web_search -> final_web_search_response
 
     Always call planning first. Pass the specialist response exactly as received to the final tool and respond to the user using the same language as the user.

@@ -49,8 +49,8 @@ orchestrator = Agent(
         ),
         ToolOutput(
             str,
-            name="final_general_response",
-            description="Return general knowledge agent's response directly",
+            name="final_tutor_response",
+            description="Return tutor agent's response directly",
         ),
         ToolOutput(
             str,
