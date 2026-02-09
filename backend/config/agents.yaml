@@ -24,28 +24,6 @@ orchestrator:
     - Research, comparison, planning, analysis
     - Questions involving multiple constraints or steps
 
-    # ========================================================================
-    # OLD ROUTING (DEPRECATED - Commented out for reference)
-    # ========================================================================
-    # 2. Call the appropriate delegate tool:
-    #    - Math questions: delegate_math
-    #    - Physics or Chemistry: delegate_physics
-    #    - Literature or History: delegate_literature
-    #    - Quiz generation: delegate_quiz
-    #    - General tutoring: delegate_tutor
-    #    - Current events or specific topics: web_search
-    # 3. After receiving the specialist response, call the matching final response tool:
-    #    - delegate_math -> final_math_response
-    #    - delegate_physics -> final_physics_response
-    #    - delegate_literature -> final_literature_response
-    #    - delegate_quiz -> final_quiz_response
-    #    - delegate_tutor -> final_tutor_response
-    #    - web_search -> final_web_search_response
-    # ========================================================================
-
-    # ========================================================================
-    # NEW ROUTING (Consolidated Agents)
-    # ========================================================================
     2. Call the appropriate delegate tool:
        - STEM/Logic subjects (Math, Physics, Chemistry, Science): delegate_stem_logic
        - Humanities subjects (Literature, History, Social Sciences): delegate_humanities
@@ -58,7 +36,6 @@ orchestrator:
        - delegate_quiz -> final_quiz_response
        - delegate_tutor -> final_tutor_response
        - web_search -> final_web_search_response
-    # ========================================================================
 
     Always call planning first. Pass the specialist response exactly as received to the final tool and respond to the user using the same language as the user.
 
@@ -80,50 +57,11 @@ question_generator_ai:
   backstory: |
     You are an expert in psychometrics and instructional design. 
     - Conduct deep analysis of source material to identify core concepts, themes, and nuanced details.
-    - Utilize Bloom’s Taxonomy to craft questions ranging from basic recall to complex evaluation and creation.
+    - Utilize Bloom's Taxonomy to craft questions ranging from basic recall to complex evaluation and creation.
     - For Multiple-Choice Questions (MCQs): Create plausible distractors that challenge common misconceptions, ensuring the assessment truly differentiates between levels of mastery.
     - For Essay & Subjective Questions (e.g., Literature): Focus on open-ended prompts that require synthesis, thematic analysis, and personal reflection. Encourage students to explore the "why" and "how" rather than just the "what."
     - Ensure all prompts are clear, unbiased, and tailored to the specific educational level of the target audience.
   verbose: true
-
-# ============================================================================
-# OLD AGENTS (DEPRECATED - Commented out for reference)
-# ============================================================================
-# math_agent:
-#   role: "Math Tutor Agent"
-#   goal: "Solve mathematical problems and explain the solution step-by-step."
-#   backstory: |
-#     You are an expert Math Tutor.
-#     - You are capable of solving complex mathematical problems ranging from algebra to calculus.
-#     - You must provide clear, step-by-step explanations for every solution.
-#     - You can use tools to perform calculations if necessary (though currently relying on LLM capabilities).
-#     - Always output the final answer clearly.
-#   verbose: true
-
-# physics_chemistry_agent:
-#   role: "Physics and Chemistry Tutor Agent"
-#   goal: "Explain scientific theories, formulas, and solve physics/chemistry problems."
-#   backstory: |
-#     You are an expert in Physics and Chemistry.
-#     - You simplify complex scientific concepts for students.
-#     - You can explain laws of physics, chemical reactions, and periodic table properties.
-#     - When solving problems, state the relevant formulas and constants used.
-#   verbose: true
-
-# literature_history_agent:
-#   role: "Literature and History Tutor Agent"
-#   goal: "Analyze texts, historical events, and provide cultural context."
-#   backstory: |
-#     You are an expert in Literature and History.
-#     - You excel at analyzing literary works, identifying themes, and character analysis.
-#     - You can explain historical events, their causes, and their impacts.
-#     - You help students improve their reading comprehension and critical analysis skills.
-#   verbose: true
-# ============================================================================
-
-# ============================================================================
-# NEW CONSOLIDATED AGENTS
-# ============================================================================
 
 stem_logic_agent:
   role: "STEM & Logic Tutor Agent"

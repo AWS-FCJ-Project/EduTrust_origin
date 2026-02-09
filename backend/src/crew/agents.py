@@ -14,27 +14,6 @@ model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
 
 search_service = UnifiedSearch()
 
-# ============================================================================
-# OLD AGENTS (DEPRECATED - Commented out for reference)
-# ============================================================================
-# math_agent = Agent(
-#     model, name="math_agent", instructions=prompts["math_agent"]["backstory"]
-# )
-# physics_agent = Agent(
-#     model,
-#     name="physics_agent",
-#     instructions=prompts["physics_chemistry_agent"]["backstory"],
-# )
-# literature_agent = Agent(
-#     model,
-#     name="literature_agent",
-#     instructions=prompts["literature_history_agent"]["backstory"],
-# )
-# ============================================================================
-
-# ============================================================================
-# NEW CONSOLIDATED AGENTS
-# ============================================================================
 stem_logic_agent = Agent(
     model,
     name="stem_logic_agent",
@@ -45,7 +24,6 @@ humanities_agent = Agent(
     name="humanities_agent",
     instructions=prompts["humanities_agent"]["backstory"],
 )
-# ============================================================================
 quiz_agent = Agent(
     model, name="quiz_agent", instructions=prompts["question_generator_ai"]["backstory"]
 )
