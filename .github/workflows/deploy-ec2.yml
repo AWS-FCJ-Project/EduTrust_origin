@@ -49,19 +49,25 @@ jobs:
           APP_DIR: ${{ secrets.APP_DIR }}
           BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
         run: |
-          scp -o StrictHostKeyChecking=no aws-fcj-artifact.tar.gz ${EC2_USER}@${EC2_HOST}:~/
+          # Create .env file on the runner
+          echo "$BACKEND_ENV_FILE" > .env
+
+          # Transfer artifact and .env to EC2
+          scp -o StrictHostKeyChecking=no aws-fcj-artifact.tar.gz .env ${EC2_USER}@${EC2_HOST}:~/
 
           ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
             set -e
             
+            # Ensure app directory exists
+            mkdir -p ${APP_DIR}
             cd ${APP_DIR}
             
             echo "Extracting artifact..."
             tar xzf ~/aws-fcj-artifact.tar.gz
             rm ~/aws-fcj-artifact.tar.gz
             
-            echo "Creating .env file..."
-            echo "$BACKEND_ENV_FILE" > .env
+            echo "Moving .env file..."
+            mv ~/.env .
             
             echo "Stopping old container..."
             docker stop aws-fcj-backend || true
@@ -119,9 +125,9 @@ jobs:
           $(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps | grep aws-fcj-backend" || echo "Container not running")
           \`\`\`
 
-          ## Health Check
+          ## Health Check Result
 
-          $(curl -f http://${{ secrets.EC2_HOST }}:8000/health 2>&1 && echo "✅ Backend is healthy" || echo "❌ Health check failed")
+          $(curl -sI http://${{ secrets.EC2_HOST }}:8000/health | head -n 1 && echo "✅ Backend is healthy" || echo "❌ Health check failed")
 
           ---
           **Deployment completed at:** $(date)
