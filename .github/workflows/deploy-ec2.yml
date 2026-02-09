@@ -89,3 +89,40 @@ jobs:
         run: |
           sleep 10
           curl -f http://${{ secrets.EC2_HOST }}:8000/docs || echo "Health check failed"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Deployment Report - AWS FCJ Backend
+
+          ## Deployment Details
+
+          | Parameter | Value |
+          |-----------|-------|
+          | **Environment** | Production (EC2) |
+          | **Instance** | `${{ secrets.EC2_HOST }}` |
+          | **Branch** | `${{ github.ref_name }}` |
+          | **Commit** | `${{ github.sha }}` |
+          | **Triggered By** | @${{ github.actor }} |
+          | **Deployment Time** | $(date -u +"%Y-%m-%d %H:%M:%S UTC") |
+
+          ## Endpoints
+
+          - Backend API: http://${{ secrets.EC2_HOST }}:8000
+          - API Docs: http://${{ secrets.EC2_HOST }}:8000/docs
+          - Cloudflare Worker Proxy: https://aws-fcj-proxy.YOUR_USERNAME.workers.dev
+
+          ## Container Status
+
+          \`\`\`
+          $(ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps | grep aws-fcj-backend" || echo "Container not running")
+          \`\`\`
+
+          ## Health Check
+
+          $(curl -f http://${{ secrets.EC2_HOST }}:8000/health 2>&1 && echo "✅ Backend is healthy" || echo "❌ Health check failed")
+
+          ---
+          **Deployment completed at:** $(date)
+          EOF
