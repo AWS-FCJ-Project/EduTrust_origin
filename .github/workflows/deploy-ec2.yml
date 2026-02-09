@@ -1,0 +1,91 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - feat/cicd-deployment
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create artifact
+        run: tar czf aws-fcj-artifact.tar.gz backend Dockerfile
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-fcj-artifact
+          path: aws-fcj-artifact.tar.gz
+          retention-days: 1
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aws-fcj-artifact
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          APP_DIR: ${{ secrets.APP_DIR }}
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+        run: |
+          scp -o StrictHostKeyChecking=no aws-fcj-artifact.tar.gz ${EC2_USER}@${EC2_HOST}:~/
+
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+            set -e
+            
+            cd ${APP_DIR}
+            
+            echo "Extracting artifact..."
+            tar xzf ~/aws-fcj-artifact.tar.gz
+            rm ~/aws-fcj-artifact.tar.gz
+            
+            echo "Creating .env file..."
+            echo "$BACKEND_ENV_FILE" > .env
+            
+            echo "Stopping old container..."
+            docker stop aws-fcj-backend || true
+            docker rm aws-fcj-backend || true
+            
+            echo "Building image..."
+            docker build -t aws-fcj-backend:latest .
+            
+            echo "Starting container..."
+            docker run -d \
+              --name aws-fcj-backend \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              --env-file .env \
+              aws-fcj-backend:latest
+            
+            echo "Cleanup old images..."
+            docker image prune -f
+            
+            echo "Deployment complete"
+            docker ps | grep aws-fcj-backend
+          ENDSSH
+
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -f http://${{ secrets.EC2_HOST }}:8000/docs || echo "Health check failed"

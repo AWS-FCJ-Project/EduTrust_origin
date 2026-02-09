@@ -1,0 +1,29 @@
+name: Deploy Worker
+
+on:
+    push:
+        branches:
+            - feat/cicd-deployment
+            - main
+        paths:
+            - "worker.js"
+            - "wrangler.toml"
+            - ".github/workflows/deploy-worker.yml"
+    workflow_dispatch:
+
+jobs:
+    deploy:
+        name: Deploy to Cloudflare Workers
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Update EC2 host in wrangler.toml
+              run: |
+                  sed -i "s/YOUR_EC2_PUBLIC_IP/${{ secrets.EC2_HOST }}/g" wrangler.toml
+
+            - name: Deploy to Cloudflare Workers
+              uses: cloudflare/wrangler-action@v3
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
