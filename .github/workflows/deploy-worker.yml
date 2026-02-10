@@ -1,0 +1,33 @@
+name: Deploy Worker
+
+on:
+    push:
+        branches:
+            - feat/cicd-deployment
+            - main
+        paths:
+            - "worker.js"
+            - "wrangler.toml"
+            - ".github/workflows/deploy-worker.yml"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    deploy:
+        name: Deploy to Cloudflare Workers
+        runs-on: ubuntu-latest
+        env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Deploy to Cloudflare Workers
+              uses: cloudflare/wrangler-action@v3
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  secrets: |
+                      EC2_HOST

@@ -30,3 +30,13 @@ pnpm-debug.log*
 # Test and lint caches
 .pytest_cache/
 .mypy_cache/
+
+# Docker
+docker-compose.override.yml
+*.log
+
+# Deployment
+*.pem
+*.key
+id_rsa*
+known_hosts
