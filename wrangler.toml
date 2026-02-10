@@ -2,6 +2,3 @@ name = "aws-fcj-proxy"
 main = "worker.js"
 compatibility_date = "2026-02-09"
 workers_dev = true
-
-[vars]
-EC2_HOST = "ec2-54-169-189-61.ap-southeast-1.compute.amazonaws.com"

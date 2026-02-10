@@ -1,7 +1,16 @@
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
-        const ec2Host = env.EC2_HOST || 'ec2-54-169-189-61.ap-southeast-1.compute.amazonaws.com';
+        const ec2Host = env.EC2_HOST;
+        if (!ec2Host) {
+            return new Response(JSON.stringify({
+                error: 'Configuration Error',
+                message: 'Missing EC2_HOST secret'
+            }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
         const backendUrl = `http://${ec2Host}:8000${url.pathname}${url.search}`;
 
         // Handle CORS preflight
