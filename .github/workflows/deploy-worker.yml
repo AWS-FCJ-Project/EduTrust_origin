@@ -3,7 +3,6 @@ name: Deploy Worker
 on:
     push:
         branches:
-            - feat/cicd-deployment
             - main
         paths:
             - "worker.js"
@@ -29,5 +28,3 @@ jobs:
               with:
                   apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                   accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-                  secrets: |
-                      EC2_HOST
