@@ -106,7 +106,6 @@ jobs:
           | Parameter | Value |
           |-----------|-------|
           | **Environment** | Production (EC2) |
-          | **Instance** | \`${{ secrets.EC2_HOST }}\` |
           | **Branch** | \`${{ github.ref_name }}\` |
           | **Commit** | \`${{ github.sha }}\` |
           | **Triggered By** | @${{ github.actor }} |
