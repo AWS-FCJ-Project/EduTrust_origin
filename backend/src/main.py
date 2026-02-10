@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from src import state
 from src.app_config import app_config
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import unified_agent_routes
+from src.routers import unified_agent_routes, rag_routes
 from src.routers.auth import register, login, password, protected
 from starlette.middleware.sessions import SessionMiddleware
 from src.extensions import limiter
@@ -58,6 +58,7 @@ app.add_middleware(
 app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
 
 app.include_router(unified_agent_routes.router)
+app.include_router(rag_routes.router)
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])

@@ -56,6 +56,11 @@ orchestrator = Agent(
             name="final_tutor_response",
             description="Return tutor agent's response directly",
         ),
+        ToolOutput(
+            str,
+            name="final_rag_response",
+            description="Return RAG document-based response directly",
+        ),
     ],
 )
 

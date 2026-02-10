@@ -80,3 +80,18 @@ async def delegate_tutor(ctx: RunContext[OrchestratorDeps], question: str) -> st
     result = await tutor_agent.run(question, usage=ctx.usage)
     log_agent_response("Tutor Agent", result.output)
     return result.output
+
+
+@orchestrator.tool
+async def delegate_rag(ctx: RunContext[OrchestratorDeps], question: str) -> str:
+    """Search uploaded documents/knowledge base using RAG (Retrieval-Augmented Generation).
+    Use this when the question is about specific documents, uploaded files, or requires
+    document-based knowledge. After receiving, call final_rag_response with the result."""
+    log_delegation("Orchestrator", "RAG", question)
+    from src.routers.rag_routes import get_rag_engine
+
+    rag = get_rag_engine()
+    answer, mode = await rag.query_with_mode(question)
+    console.print(f"[bold green]RAG Mode:[/bold green] {mode}")
+    log_agent_response("RAG Engine", answer)
+    return answer
