@@ -10,7 +10,7 @@ from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import unified_agent_routes
+from src.routers import translate_routes, unified_agent_routes
 from src.routers.auth import login, password, protected, register
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -56,7 +56,8 @@ app.add_middleware(
 # Authorization middleware requires SessionMiddleware
 app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
 
-app.include_router(unified_agent_routes.router)
+app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
+app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])

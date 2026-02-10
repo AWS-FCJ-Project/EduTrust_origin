@@ -11,6 +11,7 @@ class AppConfig(BaseSettings):
 
     ORCHESTRATOR_MODEL: Optional[str] = None
     AGENT_MODEL: Optional[str] = None
+    TRANSLATE_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
 
     MONGO_URI: Optional[str] = None
@@ -27,7 +28,7 @@ class AppConfig(BaseSettings):
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
-    
+
     # OTP Settings
     OTP_EXPIRE_SECONDS: int = None  # 5 minutes
 

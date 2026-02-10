@@ -23,7 +23,8 @@ with open(app_config.AGENTS_CONFIG_PATH) as f:
 with open(app_config.LLMS_CONFIG_PATH) as f:
     llm_config = yaml.safe_load(f)
 
-model = LiteLLMModel(llm_config["model_list"][0]["litellm_params"]["model"])
+model_name = app_config.ORCHESTRATOR_MODEL or llm_config.get("orchestrator_model")
+model = LiteLLMModel(model_name)
 
 orchestrator = Agent(
     model,
@@ -53,8 +54,13 @@ orchestrator = Agent(
         ),
         ToolOutput(
             str,
-            name="final_tutor_response",
-            description="Return tutor agent's response directly",
+            name="final_general_response",
+            description="Return general knowledge agent's response directly",
+        ),
+        ToolOutput(
+            str,
+            name="final_web_search_response",
+            description="Return web search agent's response directly",
         ),
     ],
 )
@@ -77,8 +83,9 @@ async def ask(question: str, conversation_id: str) -> str:
         deps = OrchestratorDeps(
             conversation_id=conversation_id, conversation_handler=handler
         )
+        time_now = datetime.now().astimezone()
         result = await orchestrator.run(
-            f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\nContext:\n{context_text}\n\nQuestion: {question}",
+            f"Current date and time: {time_now.strftime('%Y-%m-%d %H:%M:%S %z')}\nContext:\n{context_text}\n\nQuestion: {question}",
             deps=deps,
         )
 
