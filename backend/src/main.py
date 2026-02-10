@@ -6,14 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-
 from src import state
 from src.app_config import app_config
+from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
 from src.routers import unified_agent_routes
-from src.routers.auth import register, login, password, protected
+from src.routers.auth import login, password, protected, register
 from starlette.middleware.sessions import SessionMiddleware
-from src.extensions import limiter
 
 logfire.configure(
     environment="local",
@@ -67,6 +66,11 @@ app.include_router(protected.router, tags=["Protected"])
 @app.get("/")
 def root():
     return {"message": "Welcome to the AWS-FCJ-Backend API"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
