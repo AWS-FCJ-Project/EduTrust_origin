@@ -18,10 +18,15 @@ export default {
         }
 
         try {
+            // Create a new set of headers, removing the Host header to avoid Error 1003
+            const newHeaders = new Headers(request.headers);
+            newHeaders.delete('host');
+
             const response = await fetch(backendUrl, {
                 method: request.method,
-                headers: request.headers,
+                headers: newHeaders,
                 body: request.body,
+                redirect: 'follow'
             });
 
             // Clone response and add CORS headers

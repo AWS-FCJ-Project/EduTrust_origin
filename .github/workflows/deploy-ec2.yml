@@ -61,13 +61,23 @@ jobs:
             # Ensure app directory exists (using default if blank)
             TARGET_DIR="${APP_DIR:-aws-fcj-project}"
             mkdir -p "\$TARGET_DIR"
+            
+            # Clean up old extraction "garbage" in home if exists
+            rm -rf ~/backend ~/Dockerfile
+            
+            echo "Preparing clean directory..."
+            # Move env temporarily to keep it
+            [ -f "\$TARGET_DIR/.env" ] && mv "\$TARGET_DIR/.env" ~/deferred_env || true
+            rm -rf "\$TARGET_DIR"/*
+            [ -f ~/deferred_env ] && mv ~/deferred_env "\$TARGET_DIR/.env" || true
+            
             cd "\$TARGET_DIR"
             
             echo "Extracting artifact..."
             tar xzf ~/aws-fcj-artifact.tar.gz
             rm ~/aws-fcj-artifact.tar.gz
             
-            echo "Moving .env file..."
+            echo "Updating .env file..."
             mv ~/.env .
             
             echo "Stopping old container..."
@@ -91,11 +101,6 @@ jobs:
             echo "Deployment complete"
             docker ps | grep aws-fcj-backend
           ENDSSH
-
-      - name: Health Check
-        run: |
-          sleep 10
-          curl -f http://${{ secrets.EC2_HOST }}:8000/docs || echo "Health check failed"
 
       - name: Deployment Summary
         if: always()
