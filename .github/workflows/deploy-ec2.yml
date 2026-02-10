@@ -100,7 +100,17 @@ jobs:
       - name: Deployment Summary
         if: always()
         run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Pre-calculate values to avoid complex nesting in heredoc
+          DEPLOY_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          CONTAINER_STATUS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps --filter name=aws-fcj-backend --format 'table {{.ID}}\t{{.Status}}\t{{.Ports}}'" || echo "Container not running")
+          HEALTH_CHECK_RAW=$(curl -sI http://${{ secrets.EC2_HOST }}:8000/health | head -n 1)
+          if [[ "$HEALTH_CHECK_RAW" == *"200"* ]]; then
+            HEALTH_STATUS="✅ Backend is healthy"
+          else
+            HEALTH_STATUS="❌ Health check failed ($HEALTH_CHECK_RAW)"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
           # Deployment Report - AWS FCJ Backend
 
           ## Deployment Details
@@ -108,11 +118,11 @@ jobs:
           | Parameter | Value |
           |-----------|-------|
           | **Environment** | Production (EC2) |
-          | **Instance** | `${{ secrets.EC2_HOST }}` |
-          | **Branch** | `${{ github.ref_name }}` |
-          | **Commit** | `${{ github.sha }}` |
+          | **Instance** | \`${{ secrets.EC2_HOST }}\` |
+          | **Branch** | \`${{ github.ref_name }}\` |
+          | **Commit** | \`${{ github.sha }}\` |
           | **Triggered By** | @${{ github.actor }} |
-          | **Deployment Time** | $(date -u +"%Y-%m-%d %H:%M:%S UTC") |
+          | **Deployment Time** | $DEPLOY_TIME |
 
           ## Endpoints
 
@@ -123,12 +133,12 @@ jobs:
           ## Container Status
 
           \`\`\`
-          $(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "docker ps | grep aws-fcj-backend" || echo "Container not running")
+          $CONTAINER_STATUS
           \`\`\`
 
           ## Health Check Result
 
-          $(curl -sI http://${{ secrets.EC2_HOST }}:8000/health | head -n 1 && echo "✅ Backend is healthy" || echo "❌ Health check failed")
+          $HEALTH_STATUS
 
           ---
           **Deployment completed at:** $(date)
