@@ -1,6 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field
+
 
 class UserInDB(BaseModel):
     id: Optional[str] = Field(None, alias="_id")
@@ -13,6 +15,7 @@ class UserInDB(BaseModel):
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
+
 
 def user_helper(user) -> dict:
     return {

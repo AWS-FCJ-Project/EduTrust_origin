@@ -4,6 +4,7 @@ from src.auth.jwt_handler import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="verify-2fa")
 
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
