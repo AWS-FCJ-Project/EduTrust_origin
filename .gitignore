@@ -30,6 +30,9 @@ pnpm-debug.log*
 # Test and lint caches
 .pytest_cache/
 .mypy_cache/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
 
 # Docker
 docker-compose.override.yml
