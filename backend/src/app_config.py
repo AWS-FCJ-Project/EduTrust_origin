@@ -23,14 +23,14 @@ class AppConfig(BaseSettings):
     TAVILY_API_KEY: Optional[str] = None
 
     # Auth Settings
-    SECRET_KEY: Optional[str] = None  # Required for SessionMiddleware
+    SECRET_KEY: Optional[str] = None
 
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
 
     # OTP Settings
-    OTP_EXPIRE_SECONDS: int = None  # 5 minutes
+    OTP_EXPIRE_SECONDS: Optional[int] = None
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
