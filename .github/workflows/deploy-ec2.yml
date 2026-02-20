@@ -83,9 +83,11 @@ jobs:
 
             mv ~/.env "\$TARGET_DIR/.env"
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            docker pull "$IMAGE:$IMAGE_TAG"
             docker stop aws-fcj-backend || true
             docker rm aws-fcj-backend || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker pull "$IMAGE:$IMAGE_TAG"
 
             docker run -d \
               --name aws-fcj-backend \
