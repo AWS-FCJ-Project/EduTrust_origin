@@ -60,9 +60,8 @@ jobs:
       - name: Run tests with coverage
         run: PYTHONPATH=. uv run pytest tests -v --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
 
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          name: backend-coverage-xml
-          path: backend/coverage.xml
-          retention-days: 1
+          files: backend/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
