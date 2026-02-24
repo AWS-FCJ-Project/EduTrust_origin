@@ -1,17 +1,20 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Form
 from src.auth.auth_utils import verify_password
-from src.auth.jwt_handler import create_access_token, create_refresh_token, decode_token
-from src.auth.session_handler import clear_user_session, set_user_session
+from src.auth.jwt_handler import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+)
 from src.database import users_collection
 from src.extensions import limiter
-from src.schemas.auth_schemas import UserLogin, RefreshTokenRequest
+from src.schemas.auth_schemas import RefreshTokenRequest
 
 router = APIRouter()
 
 
-class SimpleLoginForm:
+class OAuth2LoginForm:
     def __init__(
         self,
         username: str = Form(...),
@@ -21,31 +24,14 @@ class SimpleLoginForm:
         self.password = password
 
 
-@router.post("/login", summary="Login (Session)")
+@router.post("/token", summary="Login and get JWT")
 @limiter.limit("5/minute")
-async def login(request: Request, user: UserLogin):
-    db_user = await users_collection.find_one({"email": user.email})
-    if not db_user or not verify_password(user.password, db_user["hashed_password"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-    if not db_user.get("is_verified"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email not verified. Please verify your email first.",
-        )
-
-    await users_collection.update_one(
-        {"email": user.email},
-        {"$set": {"last_login": datetime.utcnow()}},
-    )
-    set_user_session(request, user.email)
-    return {"message": "Login successful", "email": user.email}
-
-
-@router.post("/token", summary="Get JWT Token (for Swagger testing)")
-async def get_token(form_data: SimpleLoginForm = Depends()):
+async def login(form_data: OAuth2LoginForm = Depends()):
     db_user = await users_collection.find_one({"email": form_data.username})
-    if not db_user or not verify_password(form_data.password, db_user["hashed_password"]):
+
+    if not db_user or not verify_password(
+        form_data.password, db_user["hashed_password"]
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -60,44 +46,34 @@ async def get_token(form_data: SimpleLoginForm = Depends()):
 
     await users_collection.update_one(
         {"email": form_data.username},
-        {"$set": {"last_login": datetime.utcnow()}},
+        {"$set": {"last_login": datetime.now(timezone.utc)}},
     )
 
     return {
         "access_token": create_access_token(subject=form_data.username),
         "refresh_token": create_refresh_token(subject=form_data.username),
         "token_type": "bearer",
-        "email": form_data.username,
     }
 
 
 @router.post("/refresh", summary="Refresh Access Token")
-@limiter.limit("10/minute")
-async def refresh_token(request: Request, data: RefreshTokenRequest):
+async def refresh_token(data: RefreshTokenRequest):
     payload = decode_token(data.refresh_token)
-    if payload is None:
+
+    if not payload or payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail="Invalid refresh token",
         )
-    if payload.get("type") != "refresh":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type, refresh token required",
-        )
-    subject: str = payload.get("sub")
+
+    subject = payload.get("sub")
     if not subject:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing user information",
+            detail="Invalid token payload",
         )
+
     return {
         "access_token": create_access_token(subject=subject),
         "token_type": "bearer",
     }
-
-
-@router.post("/logout", summary="Logout")
-async def logout(request: Request):
-    clear_user_session(request)
-    return {"message": "Logged out successfully"}

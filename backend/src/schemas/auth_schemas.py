@@ -15,9 +15,10 @@ class UserRegister(BaseModel):
             or not re.search(r"[^\w\s]", v)
         ):
             raise ValueError(
-                "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 symbol."
+                "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character."
             )
         return v
+
 
 
 class VerifyEmail(BaseModel):
@@ -25,9 +26,16 @@ class VerifyEmail(BaseModel):
     otp: str = Field(..., min_length=6, max_length=6)
 
 
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
 
 
 class ForgotPassword(BaseModel):
@@ -37,9 +45,6 @@ class ForgotPassword(BaseModel):
 class ResendOTPRequest(BaseModel):
     email: EmailStr
 
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
 
 
 class ResetPassword(BaseModel):
@@ -56,6 +61,6 @@ class ResetPassword(BaseModel):
             or not re.search(r"[^\w\s]", v)
         ):
             raise ValueError(
-                "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 symbol."
+                "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character."
             )
         return v

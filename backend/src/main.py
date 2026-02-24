@@ -12,8 +12,9 @@ from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import unified_agent_routes
-from src.routers.auth import register, login, password
+from src.routers import translate_routes, unified_agent_routes
+from src.routers.auth import login, password, protected, register
+
 
 logfire.configure(
     environment=app_config.ENVIRONMENT,
@@ -40,10 +41,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate Limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_config.ALLOWED_ORIGINS,
@@ -51,21 +55,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Session Middleware (secure in production)
 app.add_middleware(
     SessionMiddleware,
     secret_key=app_config.SECRET_KEY,
     https_only=app_config.ENVIRONMENT == "production",
 )
 
-app.include_router(unified_agent_routes.router)
-app.include_router(register.router, tags=["Auth"])
-app.include_router(login.router, tags=["Auth"])
-app.include_router(password.router, tags=["Auth"])
+# Routers
+app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
+app.include_router(translate_routes.router, tags=["Translate"])
+app.include_router(register.router, tags=["Register"])
+app.include_router(login.router, tags=["Login"])
+app.include_router(password.router, tags=["Password"])
+app.include_router(protected.router, tags=["Protected"])
 
 
 @app.get("/")
 def root():
     return {"message": "Welcome to the AWS-FCJ-Backend API"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":

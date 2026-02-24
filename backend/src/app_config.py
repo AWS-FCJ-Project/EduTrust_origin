@@ -13,6 +13,7 @@ class AppConfig(BaseSettings):
 
     ORCHESTRATOR_MODEL: Optional[str] = None
     AGENT_MODEL: Optional[str] = None
+    TRANSLATE_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
 
     MONGO_URI: Optional[str] = None
@@ -23,13 +24,18 @@ class AppConfig(BaseSettings):
 
     TAVILY_API_KEY: Optional[str] = None
 
+    
+    # Auth Settings
     SECRET_KEY: Optional[str] = None
 
+    # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
 
+    # OTP Settings
     OTP_EXPIRE_SECONDS: Optional[int] = 300
 
+    # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(

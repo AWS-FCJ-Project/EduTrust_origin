@@ -1,0 +1,117 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "Dockerfile"
+      - ".github/workflows/deploy-ec2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image_vars.outputs.image }}
+      image_tag: ${{ steps.image_vars.outputs.image_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image variables
+        id: image_vars
+        run: |
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/backend"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}
+            ${{ steps.image_vars.outputs.image }}:latest
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          APP_DIR: ${{ secrets.APP_DIR }}
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          echo "$BACKEND_ENV_FILE" > .env
+          scp -o StrictHostKeyChecking=no .env ${EC2_USER}@${EC2_HOST}:~/
+
+          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << ENDSSH
+            set -e
+
+            TARGET_DIR="${APP_DIR:-aws-fcj-project}"
+            mkdir -p "\$TARGET_DIR"
+
+            mv ~/.env "\$TARGET_DIR/.env"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            docker stop aws-fcj-backend || true
+            docker rm aws-fcj-backend || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker pull "$IMAGE:$IMAGE_TAG"
+
+            docker run -d \
+              --name aws-fcj-backend \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              --env-file "\$TARGET_DIR/.env" \
+              "$IMAGE:$IMAGE_TAG"
+
+            docker image prune -f
+            docker ps | grep aws-fcj-backend
+          ENDSSH
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # Deployment Report - AWS FCJ Backend
+
+          | Parameter | Value |
+          |-----------|-------|
+          | **Environment** | Production (EC2) |
+          | **Branch** | \`${{ github.ref_name }}\` |
+          | **Commit** | \`${{ github.sha }}\` |
+          | **Image** | \`${{ needs.build.outputs.image }}:${{ needs.build.outputs.image_tag }}\` |
+          | **Triggered By** | @${{ github.actor }} |
+          | **Timestamp** | $(date -u +"%Y-%m-%d %H:%M:%S UTC") |
+          EOF

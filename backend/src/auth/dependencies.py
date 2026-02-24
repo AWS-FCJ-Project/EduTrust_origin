@@ -1,9 +1,8 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-
 from src.auth.jwt_handler import decode_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
@@ -23,7 +22,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    subject: str = payload.get("sub")
+    subject = payload.get("sub")
     if not subject:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
