@@ -30,3 +30,9 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "pyjwt>=2.11.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
