@@ -29,6 +29,7 @@ dependencies = [
     "bcrypt==3.2.2",
     "itsdangerous>=2.2.0",
     "pyjwt>=2.11.0",
+    "langchain-litellm>=0.5.1",
 ]
 
 [dependency-groups]
