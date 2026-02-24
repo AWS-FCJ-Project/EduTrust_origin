@@ -1,15 +1,11 @@
 from datetime import datetime, timedelta, timezone
+
 from src.database import db
 
 otp_collection = db["otps"]
 
 
-async def save_otp(
-    email: str,
-    otp: str,
-    purpose: str,
-    expire_seconds: int = 300
-):
+async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
     now = datetime.now(timezone.utc)
     expire_at = now + timedelta(seconds=expire_seconds)
 
@@ -46,6 +42,4 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
 
 async def cleanup_expired_otps():
     now = datetime.now(timezone.utc)
-    await otp_collection.delete_many(
-        {"expire_at": {"$lt": now}}
-    )
+    await otp_collection.delete_many({"expire_at": {"$lt": now}})

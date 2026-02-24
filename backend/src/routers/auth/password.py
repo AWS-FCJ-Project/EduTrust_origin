@@ -1,5 +1,4 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-
 from src.app_config import app_config
 from src.auth.auth_utils import generate_otp, hash_password
 from src.auth.email_service import send_email

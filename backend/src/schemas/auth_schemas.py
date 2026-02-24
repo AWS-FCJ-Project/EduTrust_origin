@@ -1,4 +1,5 @@
 import re
+
 from pydantic import BaseModel, EmailStr, Field, validator
 
 
@@ -20,11 +21,9 @@ class UserRegister(BaseModel):
         return v
 
 
-
 class VerifyEmail(BaseModel):
     email: EmailStr
     otp: str = Field(..., min_length=6, max_length=6)
-
 
 
 class UserLogin(BaseModel):
@@ -32,10 +31,8 @@ class UserLogin(BaseModel):
     password: str
 
 
-
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
-
 
 
 class ForgotPassword(BaseModel):
@@ -44,7 +41,6 @@ class ForgotPassword(BaseModel):
 
 class ResendOTPRequest(BaseModel):
     email: EmailStr
-
 
 
 class ResetPassword(BaseModel):

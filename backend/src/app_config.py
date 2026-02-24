@@ -24,7 +24,6 @@ class AppConfig(BaseSettings):
 
     TAVILY_API_KEY: Optional[str] = None
 
-    
     # Auth Settings
     SECRET_KEY: Optional[str] = None
 

@@ -1,7 +1,7 @@
-import jwt
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import jwt
 from src.app_config import app_config
 
 ALGORITHM = "HS256"
@@ -29,7 +29,9 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None)
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
-def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_refresh_token(
+    subject: str, expires_delta: Optional[timedelta] = None
+) -> str:
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     )

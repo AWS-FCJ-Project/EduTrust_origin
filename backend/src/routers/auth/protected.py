@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from src.auth.jwt_handler import decode_token
-from fastapi import HTTPException, status
 
 router = APIRouter()
 

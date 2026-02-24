@@ -1,13 +1,13 @@
 from datetime import datetime
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from src.app_config import app_config
 from src.auth.auth_utils import generate_otp, hash_password
 from src.auth.email_service import send_email
 from src.auth.otp_storage import save_otp, verify_otp
 from src.database import users_collection
 from src.extensions import limiter
-from src.schemas.auth_schemas import UserRegister, VerifyEmail, ResendOTPRequest
+from src.schemas.auth_schemas import ResendOTPRequest, UserRegister, VerifyEmail
 
 router = APIRouter()
 
@@ -71,7 +71,6 @@ async def resend_otp(
 ):
     user = await users_collection.find_one({"email": data.email})
 
-  
     if not user:
         return {"message": "If email exists, new OTP has been sent."}
 
