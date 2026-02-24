@@ -30,6 +30,7 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "pyjwt>=2.11.0",
     "langchain-litellm>=0.5.1",
+    "kreuzberg>=4.3.8",
 ]
 
 [dependency-groups]
