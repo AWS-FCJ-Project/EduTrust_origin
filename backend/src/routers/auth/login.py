@@ -1,12 +1,8 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Form
 
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from src.auth.auth_utils import verify_password
-from src.auth.jwt_handler import (
-    create_access_token,
-    create_refresh_token,
-    decode_token,
-)
+from src.auth.jwt_handler import create_access_token, create_refresh_token, decode_token
 from src.database import users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import RefreshTokenRequest
@@ -26,7 +22,7 @@ class OAuth2LoginForm:
 
 @router.post("/token", summary="Login and get JWT")
 @limiter.limit("5/minute")
-async def login(form_data: OAuth2LoginForm = Depends()):
+async def login(request: Request, form_data: OAuth2LoginForm = Depends()):
     db_user = await users_collection.find_one({"email": form_data.username})
 
     if not db_user or not verify_password(
