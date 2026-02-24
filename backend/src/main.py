@@ -6,17 +6,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 
 from src import state
 from src.app_config import app_config
+from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
 from src.routers import unified_agent_routes
-from src.routers.auth import register, login, password, protected
-from starlette.middleware.sessions import SessionMiddleware
-from src.extensions import limiter
+from src.routers.auth import register, login, password
 
 logfire.configure(
-    environment="local",
+    environment=app_config.ENVIRONMENT,
     token=app_config.LOGFIRE_TOKEN,
     send_to_logfire=True,
 )
@@ -37,31 +37,30 @@ app = FastAPI(
     title="AWS-FCJ-Project",
     description="API for AWS-FCJ-Backend",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
-# Rate Limiter Configuration
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=app_config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Authorization middleware requires SessionMiddleware
-app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=app_config.SECRET_KEY,
+    https_only=app_config.ENVIRONMENT == "production",
+)
 
 app.include_router(unified_agent_routes.router)
-app.include_router(register.router, tags=["Register"])
-app.include_router(login.router, tags=["Login"])
-app.include_router(password.router, tags=["Password"])
-app.include_router(protected.router, tags=["Protected"])
+app.include_router(register.router, tags=["Auth"])
+app.include_router(login.router, tags=["Auth"])
+app.include_router(password.router, tags=["Auth"])
 
 
 @app.get("/")

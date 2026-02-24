@@ -1,9 +1,11 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
+    ENVIRONMENT: str = "local"
+
     LITELLM_API_KEY: Optional[str] = None
 
     AGENTS_CONFIG_PATH: Optional[str] = None
@@ -21,15 +23,14 @@ class AppConfig(BaseSettings):
 
     TAVILY_API_KEY: Optional[str] = None
 
-    # Auth Settings
-    SECRET_KEY: Optional[str] = None  # Required for SessionMiddleware
+    SECRET_KEY: Optional[str] = None
 
-    # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
-    
-    # OTP Settings
-    OTP_EXPIRE_SECONDS: int = None  # 5 minutes
+
+    OTP_EXPIRE_SECONDS: Optional[int] = 300
+
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

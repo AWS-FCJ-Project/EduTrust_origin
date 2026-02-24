@@ -28,4 +28,5 @@ dependencies = [
     "slowapi",
     "bcrypt==3.2.2",
     "itsdangerous>=2.2.0",
+    "pyjwt>=2.11.0",
 ]
