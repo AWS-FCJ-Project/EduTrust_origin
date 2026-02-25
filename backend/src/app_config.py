@@ -22,15 +22,15 @@ class AppConfig(BaseSettings):
 
     TAVILY_API_KEY: Optional[str] = None
 
-    # Auth Settings
     SECRET_KEY: Optional[str] = None
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Email for OTP
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
 
-    # OTP Settings
-    OTP_EXPIRE_SECONDS: Optional[int] = None
+    OTP_EXPIRE_SECONDS: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

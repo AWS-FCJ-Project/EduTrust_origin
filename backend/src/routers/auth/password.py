@@ -15,34 +15,29 @@ router = APIRouter()
 async def forgot_password(
     request: Request, data: ForgotPassword, background_tasks: BackgroundTasks
 ):
+    """Send a password reset OTP to the user's email address."""
     user = await users_collection.find_one({"email": data.email})
     if not user:
-        # Don't reveal user existence
-        return {"message": "If email exists, OTP sent."}
+        return {"message": "If the email exists, an OTP has been sent."}
 
-    # Generate and save OTP to MongoDB
     otp = generate_otp()
     await save_otp(data.email, otp, "password_reset", app_config.OTP_EXPIRE_SECONDS)
-
     background_tasks.add_task(
         send_email, data.email, "Reset Password", f"Your OTP is {otp}"
     )
 
-    return {"message": "If email exists, OTP sent."}
+    return {"message": "If the email exists, an OTP has been sent."}
 
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword):
-    # Verify OTP from MongoDB
+    """Reset the user's password using a valid OTP."""
     is_valid = await verify_otp(data.email, data.otp, "password_reset")
-
     if not is_valid:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
-    # Update password
-    hashed = hash_password(data.new_password)
     await users_collection.update_one(
-        {"email": data.email}, {"$set": {"hashed_password": hashed}}
+        {"email": data.email},
+        {"$set": {"hashed_password": hash_password(data.new_password)}},
     )
-
-    return {"message": "Password reset successfully"}
+    return {"message": "Password reset successfully."}

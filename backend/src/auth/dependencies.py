@@ -1,16 +1,47 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from typing import Optional
+
+from fastapi import Header, HTTPException, Query, status
 from src.auth.jwt_handler import decode_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="verify-2fa")
 
+async def get_current_user(
+    authorization: Optional[str] = Header(default=None, include_in_schema=False),
+    token: Optional[str] = Query(
+        default=None, description="Access token (Swagger testing only)"
+    ),
+) -> str:
+    raw_token: Optional[str] = None
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    payload = decode_token(token)
+    if authorization:
+        raw_token = (
+            authorization[7:]
+            if authorization.lower().startswith("bearer ")
+            else authorization
+        )
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_token(raw_token)
     if not payload or payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Invalid or expired token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return payload.get("sub")
+
+    email: str = payload.get("sub", "")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing subject.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return email
