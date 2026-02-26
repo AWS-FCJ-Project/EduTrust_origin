@@ -54,8 +54,8 @@ def test_decode_token_valid():
 
 
 def test_decode_token_invalid():
-    invalid_token = "invalid.token.string"
-    decoded = decode_token(invalid_token)
+    bad_jwt_str = "invalid_jwt_string_data"
+    decoded = decode_token(bad_jwt_str)
     assert decoded is None
 
 
@@ -67,10 +67,10 @@ def test_decode_token_expired():
         "iat": _now(),
         "exp": _now() - timedelta(minutes=10),  # Expired 10 mins ago
     }
-    expired_token = jwt.encode(
+    expired_jwt_str = jwt.encode(
         payload, app_config.SECRET_KEY, algorithm=app_config.JWT_ALGORITHM
     )
 
     # decode_token catches JWTError which includes ExpiredSignatureError
-    decoded = decode_token(expired_token)
+    decoded = decode_token(expired_jwt_str)
     assert decoded is None
