@@ -4,6 +4,7 @@ from src.database import db
 
 otp_collection = db["otps"]
 
+expire_at = datetime.now(timezone.utc)
 
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
     expire_at = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
