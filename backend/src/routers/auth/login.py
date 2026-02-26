@@ -27,7 +27,7 @@ async def login(request: Request, user: UserLogin):
         )
 
     await users_collection.update_one(
-        {"email": user.email}, {"$set": {"last_login": datetime.utcnow()}}
+        {"email": user.email}, {"$set": {"last_login": datetime.now(timezone.utc)}}
     )
 
     return {
