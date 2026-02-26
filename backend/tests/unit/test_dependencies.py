@@ -59,5 +59,5 @@ async def test_get_current_user_with_query_token(mocker):
         "src.auth.dependencies.decode_token",
         return_value={"type": "access", "sub": "test@example.com"},
     )
-    email = await get_current_user(authorization=None, token="valid_query_jwt_string")
+    email = await get_current_user(authorization=None, token="enter_your_jwt_string")
     assert email == "test@example.com"
