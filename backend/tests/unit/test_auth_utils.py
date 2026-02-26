@@ -2,11 +2,11 @@ from src.auth.auth_utils import generate_otp, hash_password, verify_password
 
 
 def test_hash_and_verify_password():
-    dummy_secret = "MySuperSecretString123!"
-    hashed = hash_password(dummy_secret)
+    plain_text = "MyTestStringXYZ123!"
+    hashed = hash_password(plain_text)
 
-    assert hashed != dummy_secret
-    assert verify_password(dummy_secret, hashed) is True
+    assert hashed != plain_text
+    assert verify_password(plain_text, hashed) is True
     assert verify_password("WrongString!", hashed) is False
 
 
