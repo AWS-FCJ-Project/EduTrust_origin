@@ -6,7 +6,9 @@ from src.auth.email_service import send_email
 
 def test_send_email_success(mocker):
     mocker.patch("src.auth.email_service.app_config.EMAIL_SENDER", "sender@example.com")
-    mocker.patch("src.auth.email_service.app_config.EMAIL_PASSWORD", "password123")
+    mocker.patch(
+        "src.auth.email_service.app_config.EMAIL_PASSWORD", "mocked_email_key_123"
+    )
 
     mock_smtp_class = mocker.patch("src.auth.email_service.smtplib.SMTP")
     mock_smtp_instance = MagicMock()
@@ -18,7 +20,7 @@ def test_send_email_success(mocker):
     mock_smtp_class.assert_called_once()
     mock_smtp_instance.starttls.assert_called_once()
     mock_smtp_instance.login.assert_called_once_with(
-        "sender@example.com", "password123"
+        "sender@example.com", "mocked_email_key_123"
     )
     mock_smtp_instance.sendmail.assert_called_once()
     mock_smtp_instance.quit.assert_called_once()
@@ -34,7 +36,9 @@ def test_send_email_missing_credentials(mocker):
 
 def test_send_email_smtp_error(mocker):
     mocker.patch("src.auth.email_service.app_config.EMAIL_SENDER", "sender@example.com")
-    mocker.patch("src.auth.email_service.app_config.EMAIL_PASSWORD", "password123")
+    mocker.patch(
+        "src.auth.email_service.app_config.EMAIL_PASSWORD", "mocked_email_key_123"
+    )
 
     mock_smtp_class = mocker.patch("src.auth.email_service.smtplib.SMTP")
     mock_smtp_class.side_effect = Exception("SMTP Connection Error")
