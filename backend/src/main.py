@@ -10,8 +10,9 @@ from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import translate_routes, unified_agent_routes
-from src.routers.auth import login, password, register
+from src.rag import RagService
+from src.routers import translate_routes, unified_agent_routes, rag_routes
+from src.routers.auth import login, password, protected, register
 from starlette.middleware.sessions import SessionMiddleware
 
 logfire.configure(
@@ -25,9 +26,17 @@ logfire.instrument_pydantic_ai()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Conversation handler
     state.conversation_handler = ConversationHandler()
     state.conversation_handler.connect_to_database()
+
+    # RAG service
+    if app_config.RAG_ENABLED:
+        state.rag_service = RagService()
+        state.rag_service.initialize()
+
     yield
+
     if state.conversation_handler:
         state.conversation_handler.close()
 
@@ -61,6 +70,8 @@ app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
+app.include_router(protected.router, tags=["Protected"])
+app.include_router(rag_routes.router, tags=["RAG"])
 
 
 @app.get("/")

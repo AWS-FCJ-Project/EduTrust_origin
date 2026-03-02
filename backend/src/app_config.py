@@ -32,6 +32,12 @@ class AppConfig(BaseSettings):
     # OTP Settings
     OTP_EXPIRE_SECONDS: Optional[int] = None
 
+    # RAG Settings
+    RAG_ENABLED: Optional[bool] = True
+    RAG_EMBEDDING_MODEL: Optional[str] = "BAAI/bge-small-en-v1.5"
+    RAG_RERANKER_MODEL: Optional[str] = "BAAI/bge-reranker-base"
+    RAG_LLM_MODEL: Optional[str] = "mistralai/Mistral-7B-Instruct-v0.2"
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

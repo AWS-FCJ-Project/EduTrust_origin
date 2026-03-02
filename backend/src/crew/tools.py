@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic_ai import RunContext
+from src import state
 from src.crew.agents import (
     general_chat_agent,
     literature_agent,
@@ -95,3 +96,23 @@ async def delegate_general(ctx: RunContext[OrchestratorDeps], question: str) -> 
     )
     log_agent_response("General Chat Agent", result.output)
     return result.output
+
+
+@orchestrator.tool
+async def delegate_rag(ctx: RunContext[OrchestratorDeps], question: str) -> str:
+    """
+    Document Q&A via RAG pipeline.
+    Use when the user asks about uploaded documents, course materials,
+    lecture notes, or any knowledge-base content indexed into the system.
+    After receiving, call final_rag_response with the result.
+    """
+    log_delegation("Orchestrator", "RAG", question)
+    try:
+        rag = state.rag_service
+        if rag is None:
+            return "RAG service is not initialized. Please enable RAG in configuration."
+        answer = rag.ask(question)
+        log_agent_response("RAG Agent", answer)
+        return answer
+    except Exception as e:
+        return f"RAG error: {str(e)}"

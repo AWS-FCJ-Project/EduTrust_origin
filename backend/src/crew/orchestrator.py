@@ -62,6 +62,11 @@ orchestrator = Agent(
             name="final_web_search_response",
             description="Return web search agent's response directly",
         ),
+        ToolOutput(
+            str,
+            name="final_rag_response",
+            description="Return RAG document Q&A response directly",
+        ),
     ],
 )
 
