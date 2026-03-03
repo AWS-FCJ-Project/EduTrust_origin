@@ -1,5 +1,4 @@
 from pydantic_ai import RunContext
-
 from src.app_config import app_config
 from src.search_services.tavily_search import TavilySearch
 

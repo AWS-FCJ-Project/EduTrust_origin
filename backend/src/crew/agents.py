@@ -1,7 +1,6 @@
 import yaml
 from pydantic_ai import Agent
 from pydantic_ai_litellm import LiteLLMModel
-
 from src.app_config import app_config
 from src.search_services.unified_search import UnifiedSearch
 

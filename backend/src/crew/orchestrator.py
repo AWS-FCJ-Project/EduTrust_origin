@@ -5,7 +5,6 @@ import logfire
 import yaml
 from pydantic_ai import Agent, ToolOutput
 from pydantic_ai_litellm import LiteLLMModel
-
 from src.app_config import app_config
 from src.logger import log_agent_response, log_user_input
 from src.memory.conversation_handler import ConversationHandler

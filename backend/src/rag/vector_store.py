@@ -6,7 +6,6 @@ from typing import List, Optional, Tuple
 import faiss
 import numpy as np
 from sentence_transformers import CrossEncoder, SentenceTransformer
-
 from src.rag.config import (
     BATCH_SIZE,
     DEVICE,

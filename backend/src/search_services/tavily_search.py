@@ -1,8 +1,7 @@
 import json
 
-from tavily import AsyncTavilyClient
-
 from src.app_config import app_config
+from tavily import AsyncTavilyClient
 
 
 class TavilySearch:

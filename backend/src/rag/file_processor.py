@@ -2,14 +2,8 @@ import logging
 import os
 from typing import List
 
+from src.rag.config import CHUNK_SIZE, EMBEDDING_MODEL, OVERLAP, UPLOADS_DIR
 from transformers import AutoTokenizer
-
-from src.rag.config import (
-    CHUNK_SIZE,
-    EMBEDDING_MODEL,
-    OVERLAP,
-    UPLOADS_DIR,
-)
 
 logger = logging.getLogger(__name__)
 

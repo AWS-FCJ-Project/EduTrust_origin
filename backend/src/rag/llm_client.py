@@ -24,11 +24,7 @@ class LLMClient:
             return
 
         import torch
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            pipeline,
-        )
+        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
         logger.info(f"Loading LLM: {LLM_MODEL} on {DEVICE}")
 

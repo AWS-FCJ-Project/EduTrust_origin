@@ -4,7 +4,6 @@ from typing import Annotated
 
 import aiofiles
 from fastapi import APIRouter, File, HTTPException, UploadFile
-
 from src.schemas.rag_schema import (
     RagIndexResponse,
     RagQueryRequest,
