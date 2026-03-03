@@ -48,8 +48,7 @@ class RagService:
             self.vector_store.add_chunks(chunks)
         else:
             self.vector_store.build_index(chunks)
-        safe_log_name = filename.replace("\n", "").replace("\r", "")
-        logger.info("Indexed '%s' — %d chunks.", safe_log_name, len(chunks))
+        logger.info("Indexed file — %d chunks.", len(chunks))
         return len(chunks)
 
     async def index_bytes(
@@ -63,8 +62,7 @@ class RagService:
             self.vector_store.add_chunks(chunks)
         else:
             self.vector_store.build_index(chunks)
-        safe_log_name = name.replace("\n", "").replace("\r", "")
-        logger.info("Indexed bytes (%s) — %d chunks.", safe_log_name, len(chunks))
+        logger.info("Indexed bytes — %d chunks.", len(chunks))
         return len(chunks)
 
     # ------------------------------------------------------------------
