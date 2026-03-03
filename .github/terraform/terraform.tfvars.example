@@ -1,0 +1,9 @@
+#AWS config
+aws_region         = 
+aws_access_key     = 
+aws_secret_key     = 
+
+#EC2 config
+ec2_instance_type  = 
+ec2_ami_id         = 
+ec2_instance_name  = 

@@ -1,0 +1,53 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/terraform/**"
+      - ".github/workflows/deploy-terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    env:
+      TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: 1.7.0
+
+      - name: Create terraform.tfvars from secret
+        run: |
+          mkdir -p .github/terraform
+          cat > .github/terraform/terraform.tfvars << 'EOF'
+          $TERRAFORM_VARS
+          EOF
+
+      - name: Terraform Init
+        run: cd .github/terraform && terraform init
+
+      - name: Terraform Format Check
+        run: cd .github/terraform && terraform fmt -check
+
+      - name: Terraform Validate
+        run: cd .github/terraform && terraform validate
+
+      - name: Terraform Plan
+        run: cd .github/terraform && terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cd .github/terraform && terraform apply -auto-approve tfplan
+
+      

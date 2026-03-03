@@ -1,12 +1,13 @@
-repos:
+﻿repos:
   - repo: https://github.com/PyCQA/isort
     rev: 5.13.2
     hooks:
       - id: isort
-        exclude: notebooks/
+        exclude: ^(notebooks/|\.github/workflows/)
         args: ["--profile", "black", "--filter-files"]
 
   - repo: https://github.com/ambv/black
     rev: 24.8.0
     hooks:
       - id: black
+        exclude: ^\.github/workflows/
