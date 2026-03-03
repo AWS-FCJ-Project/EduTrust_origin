@@ -1,13 +1,10 @@
 name: Deploy
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "Dockerfile"
-      - ".github/workflows/deploy-ec2.yml"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +15,7 @@ jobs:
   build:
     name: Build and Push Image
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
       image: ${{ steps.image_vars.outputs.image }}
       image_tag: ${{ steps.image_vars.outputs.image_tag }}
@@ -100,18 +98,3 @@ jobs:
             docker ps | grep aws-fcj-backend
           ENDSSH
 
-      - name: Deployment Summary
-        if: always()
-        run: |
-          cat >> $GITHUB_STEP_SUMMARY << EOF
-          # Deployment Report - AWS FCJ Backend
-
-          | Parameter | Value |
-          |-----------|-------|
-          | **Environment** | Production (EC2) |
-          | **Branch** | \`${{ github.ref_name }}\` |
-          | **Commit** | \`${{ github.sha }}\` |
-          | **Image** | \`${{ needs.build.outputs.image }}:${{ needs.build.outputs.image_tag }}\` |
-          | **Triggered By** | @${{ github.actor }} |
-          | **Timestamp** | $(date -u +"%Y-%m-%d %H:%M:%S UTC") |
-          EOF
