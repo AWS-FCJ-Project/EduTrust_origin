@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
 import pymongo
+
 from src.app_config import app_config
 
 

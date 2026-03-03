@@ -2,8 +2,8 @@ import logging
 from typing import List, Optional
 
 from src.rag.file_processor import FileProcessor
-from src.rag.vector_store import VectorStore
 from src.rag.llm_client import LLMClient
+from src.rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,9 @@ class RagService:
         logger.info("Indexed '%s' — %d chunks.", safe_log_name, len(chunks))
         return len(chunks)
 
-    async def index_bytes(self, data: bytes, mime_type: str, name: str = "upload") -> int:
+    async def index_bytes(
+        self, data: bytes, mime_type: str, name: str = "upload"
+    ) -> int:
         """
         Nhan du lieu bytes (tu upload API), chunk, va index.
         """

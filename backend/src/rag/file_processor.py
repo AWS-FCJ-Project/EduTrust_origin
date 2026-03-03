@@ -1,14 +1,15 @@
-import os
 import logging
+import os
 from typing import List
+
+from transformers import AutoTokenizer
 
 from src.rag.config import (
     CHUNK_SIZE,
+    EMBEDDING_MODEL,
     OVERLAP,
     UPLOADS_DIR,
-    EMBEDDING_MODEL,
 )
-from transformers import AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,7 @@ class FileProcessor:
         while start < len(tokens):
             end = start + CHUNK_SIZE
             chunk_tokens = tokens[start:end]
-            chunks.append(
-                self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
-            )
+            chunks.append(self.tokenizer.decode(chunk_tokens, skip_special_tokens=True))
             start += CHUNK_SIZE - OVERLAP
 
         return chunks

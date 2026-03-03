@@ -1,23 +1,23 @@
-import os
 import json
 import logging
+import os
 from typing import List, Optional, Tuple
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from src.rag.config import (
-    EMBEDDING_MODEL,
-    RERANKER_MODEL,
-    DEVICE,
     BATCH_SIZE,
-    TOP_K_RETRIEVE,
-    TOP_K_RERANK,
-    NLIST,
-    NPROBE,
+    DEVICE,
+    EMBEDDING_MODEL,
     INDEX_PATH,
     META_PATH,
+    NLIST,
+    NPROBE,
+    RERANKER_MODEL,
+    TOP_K_RERANK,
+    TOP_K_RETRIEVE,
 )
 
 logger = logging.getLogger(__name__)

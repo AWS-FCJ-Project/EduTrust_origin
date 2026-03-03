@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 
-from src.rag.config import LLM_MODEL, DEVICE
+from src.rag.config import DEVICE, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ class LLMClient:
 
         import torch
         from transformers import (
-            AutoTokenizer,
             AutoModelForCausalLM,
+            AutoTokenizer,
             pipeline,
         )
 
@@ -39,6 +39,7 @@ class LLMClient:
         # device_map="auto" yeu cau accelerate, thu dung no truoc
         try:
             import accelerate  # noqa: F401
+
             model = AutoModelForCausalLM.from_pretrained(
                 LLM_MODEL,
                 dtype=dtype,

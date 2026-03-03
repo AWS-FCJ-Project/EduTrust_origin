@@ -1,4 +1,5 @@
 import os
+
 import torch
 
 # ============================
@@ -27,18 +28,18 @@ LLM_MODEL = os.getenv("RAG_LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
 # CHUNKING CONFIG
 # ============================
 
-CHUNK_SIZE = 1000   # tokens per chunk
-OVERLAP = 150       # token overlap between consecutive chunks
+CHUNK_SIZE = 1000  # tokens per chunk
+OVERLAP = 150  # token overlap between consecutive chunks
 
 # ============================
 # RETRIEVAL CONFIG
 # ============================
 
-BATCH_SIZE = 64         # embedding batch size
-TOP_K_RETRIEVE = 8      # number of candidates from FAISS
-TOP_K_RERANK = 3        # number of final contexts after reranking
-NLIST = 100             # FAISS IVF cluster count
-NPROBE = 10             # FAISS IVF search probes
+BATCH_SIZE = 64  # embedding batch size
+TOP_K_RETRIEVE = 8  # number of candidates from FAISS
+TOP_K_RERANK = 3  # number of final contexts after reranking
+NLIST = 100  # FAISS IVF cluster count
+NPROBE = 10  # FAISS IVF search probes
 
 # ============================
 # DEVICE
