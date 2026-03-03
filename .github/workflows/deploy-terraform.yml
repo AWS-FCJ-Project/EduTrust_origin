@@ -16,8 +16,6 @@ jobs:
   terraform:
     name: Terraform Plan & Apply
     runs-on: ubuntu-latest
-    env:
-      TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,11 +25,11 @@ jobs:
         with:
           terraform_version: 1.7.0
 
-      - name: Create terraform.tfvars from secret
+      - name: Create terraform.tfvars from single secret
+        working-directory: .github/terraform
         run: |
-          mkdir -p .github/terraform
-          cat > .github/terraform/terraform.tfvars << EOF
-          $TERRAFORM_VARS
+          cat <<'EOF' > terraform.tfvars
+          ${{ secrets.TERRAFORM_VARIABLES }}
           EOF
 
       - name: Terraform Init
