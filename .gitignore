@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Python packaging
+*.egg-info/
+*.egg/
+
 # Virtual environments
 .venv/
 env/
@@ -43,3 +47,12 @@ docker-compose.override.yml
 *.key
 id_rsa*
 known_hosts
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
