@@ -17,18 +17,10 @@ async def login(request: Request, user: UserLogin):
     if not db_user or not verify_password(user.password, db_user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not db_user.get("is_verified"):
-        raise HTTPException(
-            status_code=403,
-            detail="Email not verified. Please verify your email first.",
-        )
-
-    # Update last login
     await users_collection.update_one(
         {"email": user.email}, {"$set": {"last_login": datetime.utcnow()}}
     )
 
-    # Create session (no JWT, no 2FA)
     set_user_session(request, user.email)
 
     return {"message": "Login successful", "email": user.email}

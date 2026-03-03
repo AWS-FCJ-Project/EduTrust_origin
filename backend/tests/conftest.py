@@ -2,11 +2,9 @@ import os
 import sys
 from pathlib import Path
 
-# Thêm đường dẫn gốc của project vào PYTHONPATH (backend/)
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
-# Mock environment variables needed for module imports during test collection
 os.environ["AGENTS_CONFIG_PATH"] = "config/agents.yaml"
 os.environ["LLMS_CONFIG_PATH"] = "config/llms.yaml"
 os.environ["AGENT_MODEL"] = "gpt-3.5-turbo"
