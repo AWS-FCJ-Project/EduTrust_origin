@@ -16,12 +16,14 @@ jobs:
   terraform:
     name: Terraform Plan & Apply
     runs-on: ubuntu-latest
+    env:
+      TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v3.0.0
         with:
           terraform_version: 1.7.0
 
@@ -29,7 +31,7 @@ jobs:
         run: |
           mkdir -p .github/terraform
           cat > .github/terraform/terraform.tfvars << 'EOF'
-          ${{ secrets.TERRAFORM_VARIABLES }}
+          $TERRAFORM_VARS
           EOF
 
       - name: Terraform Init
