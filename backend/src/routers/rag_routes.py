@@ -1,6 +1,6 @@
-import os
 import logging
 
+import aiofiles
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from src.state import get_rag_service
 from src.schemas.rag_schema import (
@@ -9,11 +9,8 @@ from src.schemas.rag_schema import (
     RagIndexResponse,
     RagStatusResponse,
 )
-from src.rag.config import UPLOADS_DIR
 
 from pathlib import Path
-from fastapi import UploadFile, File, HTTPException
-import shutil
 
 UPLOADS_DIR = Path("uploads").resolve()
 
@@ -73,9 +70,9 @@ async def rag_index(file: UploadFile = File(...)):
         if not str(save_path).startswith(str(UPLOADS_DIR)):
             raise HTTPException(status_code=400, detail="Invalid filename.")
 
-        # Save file
-        with open(save_path, "wb") as f:
-            f.write(content)
+        # Save file (async to avoid blocking event loop)
+        async with aiofiles.open(save_path, "wb") as f:
+            await f.write(content)
 
         # Index trực tiếp từ bytes
         chunks_count = await service.index_bytes(content, mime_type, safe_filename)

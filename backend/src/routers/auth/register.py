@@ -23,7 +23,7 @@ async def register(request: Request, user: UserRegister):
     user_doc = {
         "email": user.email,
         "hashed_password": hashed,
-        "is_verified": True,
+        "is_verified": False,
         "created_at": datetime.now(timezone.utc),
     }
     await users_collection.insert_one(user_doc)

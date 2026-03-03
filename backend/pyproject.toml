@@ -24,6 +24,7 @@ dependencies = [
     "motor",
     "passlib[bcrypt]",
     "python-multipart",
+    "aiofiles>=24.1.0",
     "pydantic[email]",
     "slowapi",
     "bcrypt==3.2.2",
