@@ -11,6 +11,12 @@ from src.schemas.rag_schema import (
 )
 from src.rag.config import UPLOADS_DIR
 
+from pathlib import Path
+from fastapi import UploadFile, File, HTTPException
+import shutil
+
+UPLOADS_DIR = Path("uploads").resolve()
+
 router = APIRouter(prefix="/rag", tags=["RAG"])
 logger = logging.getLogger(__name__)
 
@@ -53,22 +59,34 @@ async def rag_index(file: UploadFile = File(...)):
 
         content = await file.read()
         mime_type = file.content_type or "application/octet-stream"
-        filename = file.filename or "upload"
+        original_filename = file.filename or "upload"
 
-        # Luu file xuong uploads/
-        save_path = os.path.join(UPLOADS_DIR, filename)
+        # Loại bỏ path injection
+        safe_filename = Path(original_filename).name
+
+        # Tạo thư mục nếu chưa tồn tại
+        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Tạo full path và verify không escape khỏi uploads
+        save_path = (UPLOADS_DIR / safe_filename).resolve()
+
+        if not str(save_path).startswith(str(UPLOADS_DIR)):
+            raise HTTPException(status_code=400, detail="Invalid filename.")
+
+        # Save file
         with open(save_path, "wb") as f:
             f.write(content)
 
-        # Index tu bytes (khong re-read tu disk)
-        chunks_count = await service.index_bytes(content, mime_type, filename)
+        # Index trực tiếp từ bytes
+        chunks_count = await service.index_bytes(content, mime_type, safe_filename)
 
         return RagIndexResponse(
             success=True,
-            filename=filename,
+            filename=safe_filename,
             chunks_indexed=chunks_count,
-            message=f"Successfully indexed {chunks_count} chunks from '{filename}'.",
+            message=f"Successfully indexed {chunks_count} chunks from '{safe_filename}'.",
         )
+
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
