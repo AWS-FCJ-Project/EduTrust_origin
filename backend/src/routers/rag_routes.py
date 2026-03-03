@@ -1,16 +1,16 @@
 import logging
+from pathlib import Path
 
 import aiofiles
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from src.state import get_rag_service
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
 from src.schemas.rag_schema import (
+    RagIndexResponse,
     RagQueryRequest,
     RagQueryResponse,
-    RagIndexResponse,
     RagStatusResponse,
 )
-
-from pathlib import Path
+from src.state import get_rag_service
 
 UPLOADS_DIR = Path("uploads").resolve()
 

@@ -6,14 +6,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
+
 from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
 from src.rag import RagService
-from src.routers import translate_routes, unified_agent_routes, rag_routes
+from src.routers import rag_routes, translate_routes, unified_agent_routes
 from src.routers.auth import login, password, protected, register
-from starlette.middleware.sessions import SessionMiddleware
 
 logfire.configure(
     environment="local",
