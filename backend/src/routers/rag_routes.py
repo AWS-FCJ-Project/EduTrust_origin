@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Annotated
 
 import aiofiles
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -18,7 +19,11 @@ router = APIRouter(prefix="/rag", tags=["RAG"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/status", response_model=RagStatusResponse)
+@router.get(
+    "/status",
+    response_model=RagStatusResponse,
+    responses={503: {"description": "RAG service not initialized"}},
+)
 def rag_status():
     """Trang thai cua RAG index va cac model."""
     try:
@@ -28,7 +33,14 @@ def rag_status():
         raise HTTPException(status_code=503, detail=str(e))
 
 
-@router.post("/ask", response_model=RagQueryResponse)
+@router.post(
+    "/ask",
+    response_model=RagQueryResponse,
+    responses={
+        503: {"description": "RAG service not initialized"},
+        500: {"description": "Internal RAG error"},
+    },
+)
 def rag_ask(request: RagQueryRequest):
     """
     Dat cau hoi, RAG pipeline se retrieve context tu tai lieu
@@ -42,12 +54,20 @@ def rag_ask(request: RagQueryRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        logger.error(f"RAG ask error: {e}", exc_info=True)
+        logger.error("RAG ask error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal RAG error")
 
 
-@router.post("/index", response_model=RagIndexResponse)
-async def rag_index(file: UploadFile = File(...)):
+@router.post(
+    "/index",
+    response_model=RagIndexResponse,
+    responses={
+        400: {"description": "Invalid filename"},
+        503: {"description": "RAG service not initialized"},
+        500: {"description": "Failed to index file"},
+    },
+)
+async def rag_index(file: Annotated[UploadFile, File()]):
     """
     Upload file (PDF, TXT, DOCX...) de index vao FAISS vector store.
     """
@@ -56,10 +76,10 @@ async def rag_index(file: UploadFile = File(...)):
 
         content = await file.read()
         mime_type = file.content_type or "application/octet-stream"
-        original_filename = file.filename or "upload"
 
-        # Loại bỏ path injection
-        safe_filename = Path(original_filename).name
+        # Sanitize user-controlled filename at the source to prevent log injection
+        raw_filename = file.filename or "upload"
+        safe_filename = Path(raw_filename).name.replace("\n", "").replace("\r", "")
 
         # Tạo thư mục nếu chưa tồn tại
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,5 +107,5 @@ async def rag_index(file: UploadFile = File(...)):
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        logger.error(f"RAG index error: {e}", exc_info=True)
+        logger.error("RAG index error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to index file: {str(e)}")
