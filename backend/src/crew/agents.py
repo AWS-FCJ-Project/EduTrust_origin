@@ -33,6 +33,11 @@ general_chat_agent = Agent(
     name="general_chat_agent",
     instructions=prompts["general_chat_agent"]["backstory"],
 )
+tutor_agent = Agent(
+    model,
+    name="tutor_agent",
+    instructions=prompts["tutor_agent"]["backstory"],
+)
 
 web_search_agent = Agent(
     model,
