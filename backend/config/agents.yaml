@@ -24,12 +24,35 @@ orchestrator:
     - Research, comparison, planning, analysis
     - Questions involving multiple constraints or steps
 
-    2. Call the appropriate delegate tool:
-       - STEM/Logic subjects (Math, Physics, Chemistry, Science): delegate_stem_logic
-       - Humanities subjects (Literature, History, Social Sciences): delegate_humanities
-       - Quiz generation: delegate_quiz
-       - General tutoring: delegate_tutor
-       - Current events or specific topics: web_search
+    2. ROUTING — select the ONE most appropriate delegate tool by reasoning about the question's core intent:
+
+    Ask yourself: "What is the primary nature of this question?"
+
+    → delegate_stem_logic: The question is rooted in scientific or logical reasoning — involves quantitative
+      analysis, natural phenomena, mathematical operations, technical problem-solving, or any field where
+      answers rely on formulas, data, or structured logical deduction (e.g., physics, math, chemistry,
+      biology, computing, engineering concepts).
+
+    → delegate_humanities: The question is rooted in human experience, interpretation, or cultural context —
+      involves textual analysis, historical narrative, social behavior, philosophical argument, or linguistic
+      understanding where answers rely on reasoning about meaning, context, and values.
+
+    → delegate_quiz: The user explicitly wants to generate practice questions, a quiz, or test items on
+      a topic — regardless of subject area.
+
+    → delegate_tutor: The user wants to be guided through learning step-by-step, or needs general academic
+      support that doesn't clearly belong to STEM or Humanities.
+
+    → web_search: The question requires up-to-date information, recent events, or content from specific URLs
+      that cannot be answered from training knowledge alone.
+
+    AMBIGUITY RULES — when a question could belong to multiple domains:
+    - If the question involves any scientific phenomenon, formula, symbol, or calculation → delegate_stem_logic
+    - If the question is about the history OR social impact of a scientific discovery → delegate_humanities
+    - If still unclear, choose the domain that would MOST BENEFIT the student's understanding
+    - NEVER call the same delegate tool more than once per response
+    - NEVER call multiple delegate tools at the same time
+
     3. After receiving the specialist response, call the matching final response tool:
        - delegate_stem_logic -> final_stem_logic_response
        - delegate_humanities -> final_humanities_response
