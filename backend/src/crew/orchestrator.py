@@ -35,27 +35,39 @@ orchestrator = Agent(
         ToolOutput(
             str,
             name="final_stem_logic_response",
-            description="Return STEM/Logic agent's response directly (Math, Physics, Chemistry, Science)",
+            description=(
+                "Use this to return the response for ANY question about science or logic: "
+                "mathematics (algebra, calculus, geometry, statistics, derivatives, integrals), "
+                "physics (forces, motion, energy, waves, electricity), "
+                "chemistry (reactions, elements, molecules), "
+                "biology, computing, engineering, or any formula/equation-based topic."
+            ),
         ),
         ToolOutput(
             str,
             name="final_humanities_response",
-            description="Return Humanities agent's response directly (Literature, History, Social Sciences)",
+            description=(
+                "Use this to return the response ONLY for non-scientific, human-centered topics: "
+                "literature (novels, poems, authors, literary analysis), "
+                "history (events, civilizations, historical figures), "
+                "social sciences (sociology, politics, economics, philosophy), "
+                "or language/linguistics. Do NOT use for math, science, or formulas."
+            ),
         ),
         ToolOutput(
             str,
             name="final_quiz_response",
-            description="Return quiz agent's response directly",
+            description="Use this to return generated quiz questions or practice test items on any topic.",
         ),
         ToolOutput(
             str,
             name="final_tutor_response",
-            description="Return tutor agent's response directly",
+            description="Use this to return a guided, step-by-step tutoring response for general academic support.",
         ),
         ToolOutput(
             str,
             name="final_web_search_response",
-            description="Return web search agent's response directly",
+            description="Use this to return results from a web search about current events or real-time information.",
         ),
     ],
 )
