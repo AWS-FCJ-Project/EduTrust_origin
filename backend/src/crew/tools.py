@@ -3,8 +3,8 @@ from datetime import datetime
 from pydantic_ai import RunContext
 from src.crew.agents import (
     humanities_agent,
-    stem_logic_agent,
     quiz_agent,
+    stem_logic_agent,
     tutor_agent,
     web_search_agent,
 )
