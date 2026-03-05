@@ -60,8 +60,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          REPO_NAME="$(terraform console -json <<< 'var.ecr_repository_name' | jq -r '.')"
-          echo "ECR repo name from tfvars/default: $REPO_NAME"
+          # Prefer reading from terraform.tfvars (written from secret); fall back to default.
+          if [ -f terraform.tfvars ]; then
+            REPO_NAME="$(awk -F= '
+              $1 ~ /^[[:space:]]*ecr_repository_name[[:space:]]*$/ {
+                v=$2
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                gsub(/\"/, "", v)
+                print v
+                exit
+              }' terraform.tfvars || true)"
+          fi
+
+          REPO_NAME="${REPO_NAME:-edutrust-backend}"
+          echo "ECR repo name: $REPO_NAME"
 
           if aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
             if terraform state show aws_ecr_repository.backend >/dev/null 2>&1; then
