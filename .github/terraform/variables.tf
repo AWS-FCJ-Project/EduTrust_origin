@@ -3,18 +3,6 @@ variable "aws_region" {
   type        = string
 }
 
-variable "aws_access_key" {
-  description = "AWS access key"
-  type        = string
-  sensitive   = true
-}
-
-variable "aws_secret_key" {
-  description = "AWS secret key"
-  type        = string
-  sensitive   = true
-}
-
 variable "ec2_instance_type" {
   description = "EC2 instance type"
   type        = string
@@ -27,5 +15,10 @@ variable "ec2_ami_id" {
 
 variable "ec2_instance_name" {
   description = "EC2 instance name"
+  type        = string
+}
+
+variable "ec2_key_name" {
+  description = "EC2 key pair name for SSH access"
   type        = string
 }

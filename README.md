@@ -105,3 +105,12 @@ The frontend is located in the `frontend/` directory.
 
 -   **Backend**: The `uv run` command automatically handles the virtual environment for you.
 -   **Frontend**: Vite provides a fast development server with Hot Module Replacement (HMR).
+
+## Deployment (Terraform + GitHub Actions)
+
+This repo supports automated provisioning + deployment of the backend to AWS EC2 using Terraform, and optional proxy deployment to Cloudflare Workers.
+
+-   Terraform infrastructure lives in `.github/terraform/` (EC2 + Security Group + remote state on S3).
+-   CI/CD is implemented via GitHub Actions in `.github/workflows/`.
+
+See `/docs/deployment.md` for the end-to-end architecture, required GitHub secrets, and the deploy flow.

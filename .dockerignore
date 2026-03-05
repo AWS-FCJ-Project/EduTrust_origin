@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python / tooling
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+**/*.pyd
+
+# Virtualenvs & local caches
+.venv/
+backend/.venv/
+.pytest_cache/
+backend/.pytest_cache/
+backend/.logfire/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+
+# Local env files (never bake secrets into images)
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Terraform local artifacts
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars

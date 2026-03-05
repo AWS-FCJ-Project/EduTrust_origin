@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy (EC2)
 
 on:
   workflow_run:
@@ -11,9 +11,17 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: deploy-ec2-main
+  cancel-in-progress: false
+
+env:
+  TF_DIR: .github/terraform
+  CONTAINER_NAME: aws-fcj-backend
+
 jobs:
   build:
-    name: Build and Push Image
+    name: Build & Push backend image (GHCR)
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
@@ -47,22 +55,57 @@ jobs:
             ${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}
             ${{ steps.image_vars.outputs.image }}:latest
 
-  deploy:
-    name: Deploy to EC2
+  terraform:
+    name: Provision/Update EC2 (Terraform apply)
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      instance_id: ${{ steps.tf_output.outputs.instance_id }}
+      aws_region: ${{ steps.tf_output.outputs.aws_region }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Deploy to EC2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - name: Write terraform.tfvars from secret
+        working-directory: ${{ env.TF_DIR }}
+        run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve
+
+      - name: Get Terraform Outputs (instance id + region)
+        id: tf_output
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "instance_id=$(terraform output -raw instance_id)" >> "$GITHUB_OUTPUT"
+          echo "aws_region=$(terraform output -raw aws_region)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy backend container (SSM)
+    runs-on: ubuntu-latest
+    needs: [build, terraform]
+    steps:
+      - name: Deploy to EC2 via AWS Systems Manager (no SSH)
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ needs.terraform.outputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ needs.terraform.outputs.aws_region }}
+          INSTANCE_ID: ${{ needs.terraform.outputs.instance_id }}
           APP_DIR: ${{ secrets.APP_DIR }}
           BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
@@ -70,31 +113,64 @@ jobs:
           IMAGE: ${{ needs.build.outputs.image }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
-          echo "$BACKEND_ENV_FILE" > .env
-          scp -o StrictHostKeyChecking=no .env ${EC2_USER}@${EC2_HOST}:~/
+          set -euo pipefail
 
-          ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << ENDSSH
-            set -e
+          echo "Waiting for SSM agent to be online for instance: $INSTANCE_ID"
+          for _ in {1..30}; do
+            STATUS="$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || true)"
+            if [ "$STATUS" = "Online" ]; then
+              break
+            fi
+            sleep 10
+          done
 
-            TARGET_DIR="${APP_DIR:-aws-fcj-project}"
-            mkdir -p "\$TARGET_DIR"
+          if [ "${STATUS:-}" != "Online" ]; then
+            echo "SSM agent is not online yet (PingStatus=$STATUS). Check instance role + outbound 443 + SSM agent."
+            exit 1
+          fi
 
-            mv ~/.env "\$TARGET_DIR/.env"
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            docker stop aws-fcj-backend || true
-            docker rm aws-fcj-backend || true
-            docker image prune -af || true
-            docker builder prune -af || true
-            docker pull "$IMAGE:$IMAGE_TAG"
+          ENV_B64="$(printf "%s" "$BACKEND_ENV_FILE" | base64 -w0)"
+          COMMANDS="$(jq -n \
+            --arg env_b64 "$ENV_B64" \
+            --arg app_dir "${APP_DIR:-aws-fcj-project}" \
+            --arg img "$IMAGE:$IMAGE_TAG" \
+            --arg user "$GHCR_USERNAME" \
+            --arg token "$GHCR_TOKEN" \
+            --arg cname "${CONTAINER_NAME}" \
+            '[
+              "set -euo pipefail",
+              ("TARGET_DIR=" + $app_dir),
+              "mkdir -p \"$TARGET_DIR\"",
+              ("echo \"" + $env_b64 + "\" | base64 -d > \"$TARGET_DIR/.env\""),
+              ("echo \"" + $token + "\" | docker login ghcr.io -u \"" + $user + "\" --password-stdin"),
+              ("docker stop \"" + $cname + "\" || true"),
+              ("docker rm \"" + $cname + "\" || true"),
+              "docker image prune -af || true",
+              "docker builder prune -af || true",
+              ("docker pull \"" + $img + "\""),
+              ("docker run -d --name \"" + $cname + "\" --restart unless-stopped -p 8000:8000 --env-file \"$TARGET_DIR/.env\" \"" + $img + "\""),
+              "docker image prune -f",
+              ("docker ps | grep \"" + $cname + "\"")
+            ]')"
 
-            docker run -d \
-              --name aws-fcj-backend \
-              --restart unless-stopped \
-              -p 8000:8000 \
-              --env-file "\$TARGET_DIR/.env" \
-              "$IMAGE:$IMAGE_TAG"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "{\"commands\": $COMMANDS}" \
+            --query "Command.CommandId" \
+            --output text)"
 
-            docker image prune -f
-            docker ps | grep aws-fcj-backend
-          ENDSSH
+          echo "SSM Command ID: $COMMAND_ID"
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
 
+          STATUS="$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "Status" \
+            --output text)"
+
+          echo "Deploy status: $STATUS"
+          [ "$STATUS" = "Success" ]
