@@ -29,3 +29,8 @@ variable "ec2_instance_name" {
   description = "EC2 instance name"
   type        = string
 }
+
+variable "ec2_key_name" {
+  description = "EC2 key pair name for SSH access"
+  type        = string
+}

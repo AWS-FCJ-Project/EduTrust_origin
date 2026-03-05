@@ -38,21 +38,19 @@ APP_DIR="${HOME}/aws-fcj-project"
 echo "Creating app directory at ${APP_DIR}..."
 mkdir -p ${APP_DIR}
 
-# Clone repository (you'll need to set this up)
+# Notes for GitHub Actions based deployment
 echo ""
 echo "MANUAL STEP REQUIRED:"
-echo "1. Add your GitHub SSH key to this EC2 instance:"
-echo "   ssh-keygen -t ed25519 -C 'your_email@example.com'"
-echo "   cat ~/.ssh/id_ed25519.pub"
-echo "   (Add this public key to GitHub: Settings > SSH and GPG keys)"
+echo "1. Ensure this instance was created with the correct EC2 key pair (Terraform variable: ec2_key_name)."
+echo "   The matching private key must be stored in GitHub secret: EC2_SSH_PRIVATE_KEY."
 echo ""
-echo "2. Clone your repository:"
-echo "   cd ${APP_DIR}"
-echo "   git clone git@github.com:YOUR_USERNAME/aws-fcj-project.git ."
+echo "2. Re-login after Docker install so your SSH user can run docker without sudo:"
+echo "   exit"
+echo "   # SSH back in"
+echo "   docker ps"
 echo ""
-echo "3. Create .env file:"
-echo "   cp .env.example .env"
-echo "   nano .env  # Edit with your actual values"
+echo "3. You do NOT need to clone the repo on the instance for the default workflow."
+echo "   GitHub Actions will copy the backend .env via scp and run the GHCR image via docker."
 echo ""
 
 # Configure firewall

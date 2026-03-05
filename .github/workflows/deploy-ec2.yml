@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy (EC2)
 
 on:
   workflow_run:
@@ -11,9 +11,17 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: deploy-ec2-main
+  cancel-in-progress: false
+
+env:
+  TF_DIR: .github/terraform
+  CONTAINER_NAME: aws-fcj-backend
+
 jobs:
   build:
-    name: Build and Push Image
+    name: Build & Push backend image (GHCR)
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
@@ -47,21 +55,59 @@ jobs:
             ${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}
             ${{ steps.image_vars.outputs.image }}:latest
 
-  deploy:
-    name: Deploy to EC2
+  terraform:
+    name: Provision/Update EC2 (Terraform apply)
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      ec2_ip: ${{ steps.tf_output.outputs.ec2_ip }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
     steps:
-      - name: Setup SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - name: Write terraform.tfvars from secret
+        working-directory: ${{ env.TF_DIR }}
+        run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve
+
+      - name: Get EC2 Public IP
+        id: tf_output
+        working-directory: ${{ env.TF_DIR }}
+        run: echo "ec2_ip=$(terraform output -raw instance_public_ip)" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy backend container (SSH)
+    runs-on: ubuntu-latest
+    needs: [build, terraform]
+    steps:
+      - name: Setup SSH (key + known_hosts)
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.terraform.outputs.ec2_ip }} >> ~/.ssh/known_hosts
 
       - name: Deploy to EC2
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_HOST: ${{ needs.terraform.outputs.ec2_ip }}
           EC2_USER: ${{ secrets.EC2_USER }}
           APP_DIR: ${{ secrets.APP_DIR }}
           BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
@@ -70,9 +116,13 @@ jobs:
           IMAGE: ${{ needs.build.outputs.image }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
-          echo "$BACKEND_ENV_FILE" > .env
-          scp -o StrictHostKeyChecking=no .env ${EC2_USER}@${EC2_HOST}:~/
+          set -euo pipefail
 
+          # 1) Upload backend .env
+          printf "%s\n" "$BACKEND_ENV_FILE" > .env
+          scp -o StrictHostKeyChecking=no .env "${EC2_USER}@${EC2_HOST}:~/.env"
+
+          # 2) SSH to instance and (re)start container from GHCR image
           ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << ENDSSH
             set -e
 
@@ -81,20 +131,19 @@ jobs:
 
             mv ~/.env "\$TARGET_DIR/.env"
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            docker stop aws-fcj-backend || true
-            docker rm aws-fcj-backend || true
+            docker stop "${CONTAINER_NAME}" || true
+            docker rm "${CONTAINER_NAME}" || true
             docker image prune -af || true
             docker builder prune -af || true
             docker pull "$IMAGE:$IMAGE_TAG"
 
             docker run -d \
-              --name aws-fcj-backend \
+              --name "${CONTAINER_NAME}" \
               --restart unless-stopped \
               -p 8000:8000 \
               --env-file "\$TARGET_DIR/.env" \
               "$IMAGE:$IMAGE_TAG"
 
             docker image prune -f
-            docker ps | grep aws-fcj-backend
+            docker ps | grep "${CONTAINER_NAME}"
           ENDSSH
-
