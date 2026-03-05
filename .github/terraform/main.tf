@@ -96,3 +96,12 @@ resource "aws_instance" "backend" {
     Name = var.ec2_instance_name
   }
 }
+
+resource "aws_ecr_repository" "backend" {
+  name                 = var.ecr_repository_name
+  image_tag_mutability = var.ecr_tag_immutable ? "IMMUTABLE" : "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
