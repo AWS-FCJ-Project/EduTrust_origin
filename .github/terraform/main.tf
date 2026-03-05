@@ -99,7 +99,9 @@ resource "aws_instance" "backend" {
   }
 }
 
-# checkov:skip=CKV_AWS_111:Root needs full KMS admin rights to prevent policy lockout; ECR usage is restricted in a separate statement.
+# checkov:skip=CKV_AWS_111:KMS key policy requires admin permissions for account root to avoid lockout; ECR usage is restricted in a separate statement.
+# checkov:skip=CKV_AWS_109:KMS key policy requires permissions management actions for account root (admin); policy scope is limited to this key.
+# checkov:skip=CKV_AWS_356:KMS key policies use Resource="*" by design; access is still scoped to this key by the key policy itself.
 data "aws_iam_policy_document" "ecr_kms_key" {
   statement {
     sid    = "EnableRootAccountPermissions"
