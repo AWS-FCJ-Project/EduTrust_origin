@@ -18,6 +18,14 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_kms_alias" "ecr" {
+  name = "alias/aws/ecr"
+}
+
+data "aws_kms_key" "ecr" {
+  key_id = data.aws_kms_alias.ecr.target_key_id
+}
+
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
     effect  = "Allow"
@@ -94,5 +102,19 @@ resource "aws_instance" "backend" {
 
   tags = {
     Name = var.ec2_instance_name
+  }
+}
+
+resource "aws_ecr_repository" "backend" {
+  name                 = var.ecr_repository_name
+  image_tag_mutability = var.ecr_tag_immutable ? "IMMUTABLE" : "MUTABLE"
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = data.aws_kms_key.ecr.arn
+  }
+
+  image_scanning_configuration {
+    scan_on_push = true
   }
 }
