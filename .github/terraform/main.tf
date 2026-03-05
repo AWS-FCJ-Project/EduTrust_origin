@@ -18,7 +18,13 @@ provider "aws" {
   region = var.aws_region
 }
 
-data "aws_caller_identity" "current" {}
+data "aws_kms_alias" "ecr" {
+  name = "alias/aws/ecr"
+}
+
+data "aws_kms_key" "ecr" {
+  key_id = data.aws_kms_alias.ecr.target_key_id
+}
 
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
@@ -99,60 +105,13 @@ resource "aws_instance" "backend" {
   }
 }
 
-# checkov:skip=CKV_AWS_111:KMS key policy requires admin permissions for account root to avoid lockout; ECR usage is restricted in a separate statement.
-# checkov:skip=CKV_AWS_109:KMS key policy requires permissions management actions for account root (admin); policy scope is limited to this key.
-# checkov:skip=CKV_AWS_356:KMS key policies use Resource="*" by design; access is still scoped to this key by the key policy itself.
-data "aws_iam_policy_document" "ecr_kms_key" {
-  statement {
-    sid    = "EnableRootAccountPermissions"
-    effect = "Allow"
-    actions = [
-      "kms:*",
-    ]
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
-    }
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "AllowEcrUseOfKey"
-    effect = "Allow"
-    actions = [
-      "kms:Encrypt",
-      "kms:Decrypt",
-      "kms:ReEncrypt*",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey",
-    ]
-    principals {
-      type        = "Service"
-      identifiers = ["ecr.amazonaws.com"]
-    }
-    resources = ["*"]
-  }
-}
-
-resource "aws_kms_key" "ecr" {
-  description             = "KMS key for ECR repository encryption"
-  enable_key_rotation     = true
-  deletion_window_in_days = 7
-  policy                  = data.aws_iam_policy_document.ecr_kms_key.json
-}
-
-resource "aws_kms_alias" "ecr" {
-  name          = "alias/${var.ecr_repository_name}-ecr"
-  target_key_id = aws_kms_key.ecr.key_id
-}
-
 resource "aws_ecr_repository" "backend" {
   name                 = var.ecr_repository_name
   image_tag_mutability = var.ecr_tag_immutable ? "IMMUTABLE" : "MUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = aws_kms_key.ecr.arn
+    kms_key         = data.aws_kms_key.ecr.arn
   }
 
   image_scanning_configuration {
