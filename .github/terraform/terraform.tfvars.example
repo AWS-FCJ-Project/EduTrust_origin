@@ -1,9 +1,15 @@
-#AWS config
-aws_region         = 
-aws_access_key     = 
-aws_secret_key     = 
+# ⚠️ File này KHÔNG được commit lên Git (đã có trong .gitignore)
+# Copy từ terraform.tfvars.example và điền giá trị thực vào đây
 
-#EC2 config
-ec2_instance_type  = 
-ec2_ami_id         = 
-ec2_instance_name  = 
+# AWS Account credentials (dùng để Terraform tạo resources)
+aws_region     = "ap-southeast-1"
+aws_access_key = "AKIA..."          # ← Điền Access Key ID của AWS account
+aws_secret_key = "xxxxxxxxxxxx"     # ← Điền Secret Access Key của AWS account
+
+# EC2 config (nếu muốn Terraform tạo EC2 mới)
+ec2_instance_type = "t3.micro"
+ec2_ami_id        = "ami-0995922d49dc9a17d"   # Amazon Linux 2023 - Singapore
+ec2_instance_name = "aws-fcj-backend"
+
+# S3 config (Terraform sẽ tạo bucket này)
+s3_bucket_name = "aws-fcj-project-uploads"

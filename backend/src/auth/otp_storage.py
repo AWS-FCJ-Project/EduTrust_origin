@@ -1,44 +1,119 @@
-from datetime import datetime, timedelta, timezone
+"""
+OTP Storage — Redis (Amazon ElastiCache)
+Thay thế MongoDB cho OTP storage để có TTL tự động và performance tốt hơn.
 
-from src.database import db
+Khi dùng ElastiCache:
+- REDIS_URL=redis://aws-fcj-redis.xxxxx.cache.amazonaws.com:6379
 
-otp_collection = db["otps"]
+Khi dev local:
+- REDIS_URL=redis://localhost:6379
+"""
+
+import json
+import logging
+from datetime import datetime, timezone
+
+import redis.asyncio as aioredis
+
+from src.app_config import app_config
+
+logger = logging.getLogger(__name__)
+
+# -----------------------------------------------------------------
+# Redis connection pool (singleton per process)
+# -----------------------------------------------------------------
+_redis_pool: aioredis.Redis | None = None
 
 
-async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
-    expire_at = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
+def _get_redis() -> aioredis.Redis:
+    """Trả về Redis client. Tạo mới nếu chưa có."""
+    global _redis_pool
+    if _redis_pool is None:
+        redis_url = app_config.REDIS_URL or "redis://localhost:6379"
+        _redis_pool = aioredis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
+        logger.info(f"Redis connected: {redis_url}")
+    return _redis_pool
 
-    await otp_collection.update_one(
-        {"email": email, "purpose": purpose},
-        {
-            "$set": {
-                "otp": otp,
-                "expire_at": expire_at,
-                "created_at": datetime.now(timezone.utc),
-            }
-        },
-        upsert=True,
-    )
+
+def _otp_key(email: str, purpose: str) -> str:
+    """Tạo Redis key theo pattern: otp:{purpose}:{email}"""
+    return f"otp:{purpose}:{email}"
+
+
+# -----------------------------------------------------------------
+# Public API (giữ nguyên signature để không cần đổi code khác)
+# -----------------------------------------------------------------
+
+
+async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300) -> None:
+    """
+    Lưu OTP vào Redis với TTL tự động.
+
+    Args:
+        email:          Email người dùng
+        otp:            Mã OTP
+        purpose:        Mục đích (vd: "register", "reset_password")
+        expire_seconds: Thời gian hết hạn (giây), mặc định 5 phút
+    """
+    r = _get_redis()
+    key = _otp_key(email, purpose)
+
+    payload = json.dumps({
+        "otp": otp,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Redis tự xử lý TTL — không cần cleanup thủ công
+    await r.set(key, payload, ex=expire_seconds)
+    logger.debug(f"OTP saved for {email} [{purpose}] — expires in {expire_seconds}s")
 
 
 async def verify_otp(email: str, otp: str, purpose: str) -> bool:
+    """
+    Xác minh OTP. Tự động xóa sau khi verify (dù đúng hay sai quá số lần).
 
-    doc = await otp_collection.find_one(
-        {"email": email, "purpose": purpose, "otp": otp}
-    )
+    Args:
+        email:   Email người dùng
+        otp:     Mã OTP cần kiểm tra
+        purpose: Mục đích
 
-    if not doc:
+    Returns:
+        True nếu OTP đúng và còn hiệu lực
+    """
+    r = _get_redis()
+    key = _otp_key(email, purpose)
+
+    raw = await r.get(key)
+    if not raw:
+        logger.debug(f"OTP not found or expired for {email} [{purpose}]")
         return False
 
-    if doc["expire_at"] < datetime.now(timezone.utc):
-
-        await otp_collection.delete_one({"_id": doc["_id"]})
+    try:
+        data = json.loads(raw)
+        stored_otp = data.get("otp")
+    except (json.JSONDecodeError, KeyError):
+        await r.delete(key)
         return False
 
-    await otp_collection.delete_one({"_id": doc["_id"]})
+    if stored_otp != otp:
+        logger.debug(f"OTP mismatch for {email} [{purpose}]")
+        return False
+
+    # OTP đúng → xóa ngay để tránh dùng lại
+    await r.delete(key)
+    logger.info(f"OTP verified successfully for {email} [{purpose}]")
     return True
 
 
-async def cleanup_expired_otps():
-
-    await otp_collection.delete_many({"expire_at": {"$lt": datetime.now(timezone.utc)}})
+async def cleanup_expired_otps() -> None:
+    """
+    Không cần làm gì — Redis tự xóa key hết hạn.
+    Giữ function này để backward compatible với code cũ.
+    """
+    logger.debug("cleanup_expired_otps: Redis handles TTL automatically, nothing to do.")

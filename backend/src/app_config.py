@@ -25,12 +25,21 @@ class AppConfig(BaseSettings):
     # Auth Settings
     SECRET_KEY: Optional[str] = None
 
-    # Email for OTP
+    # Email — Gmail SMTP (tạm thời, OTP dự kiến sẽ bỏ)
     EMAIL_SENDER: Optional[str] = None
     EMAIL_PASSWORD: Optional[str] = None
 
     # OTP Settings
     OTP_EXPIRE_SECONDS: Optional[int] = None
+
+    # Redis — ElastiCache (production) hoặc localhost (local dev)
+    REDIS_URL: Optional[str] = "redis://localhost:6379"
+
+    # AWS S3 — File uploads
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION: Optional[str] = "ap-southeast-1"
+    S3_BUCKET_NAME: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

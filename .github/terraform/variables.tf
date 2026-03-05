@@ -29,3 +29,9 @@ variable "ec2_instance_name" {
   description = "EC2 instance name"
   type        = string
 }
+
+variable "s3_bucket_name" {
+  description = "S3 bucket name for file uploads"
+  type        = string
+  default     = "aws-fcj-project-uploads"
+}
