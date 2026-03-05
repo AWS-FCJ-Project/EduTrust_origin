@@ -12,42 +12,53 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: terraform-deploy-main
+  cancel-in-progress: false
+
+env:
+  TF_DIR: .github/terraform
+
 jobs:
   terraform:
     name: Terraform Plan & Apply
     runs-on: ubuntu-latest
     env:
       TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.0
-
-      - name: Create terraform.tfvars from secret
-        run: |
-          mkdir -p .github/terraform
-          cat > .github/terraform/terraform.tfvars << 'EOF'
-          $TERRAFORM_VARS
-          EOF
+          terraform_version: "1.10.0"
 
       - name: Terraform Init
-        run: cd .github/terraform && terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
 
       - name: Terraform Format Check
-        run: cd .github/terraform && terraform fmt -check
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform fmt -check -recursive
 
       - name: Terraform Validate
-        run: cd .github/terraform && terraform validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+
+      - name: Write terraform.tfvars from secret
+        working-directory: ${{ env.TF_DIR }}
+        run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
       - name: Terraform Plan
-        run: cd .github/terraform && terraform plan -out=tfplan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: cd .github/terraform && terraform apply -auto-approve tfplan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve tfplan
 
       
