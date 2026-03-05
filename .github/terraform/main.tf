@@ -99,6 +99,7 @@ resource "aws_instance" "backend" {
   }
 }
 
+# checkov:skip=CKV_AWS_111:Root needs full KMS admin rights to prevent policy lockout; ECR usage is restricted in a separate statement.
 data "aws_iam_policy_document" "ecr_kms_key" {
   statement {
     sid    = "EnableRootAccountPermissions"
