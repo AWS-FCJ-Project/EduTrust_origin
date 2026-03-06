@@ -11,7 +11,7 @@ from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
 from src.routers import translate_routes, unified_agent_routes
-from src.routers.auth import login, password, protected, register
+from src.routers.auth import login, password, register
 from starlette.middleware.sessions import SessionMiddleware
 
 logfire.configure(
@@ -61,7 +61,6 @@ app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
-app.include_router(protected.router, tags=["Protected"])
 
 
 @app.get("/")

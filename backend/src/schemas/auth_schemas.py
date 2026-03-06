@@ -21,21 +21,12 @@ class UserRegister(BaseModel):
         return v
 
 
-class VerifyEmail(BaseModel):
-    email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
-
-
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
 
 class ForgotPassword(BaseModel):
-    email: EmailStr
-
-
-class ResendOTPRequest(BaseModel):
     email: EmailStr
 
 
