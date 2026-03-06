@@ -1,61 +1,29 @@
 import logging
-from typing import List, Optional
+from typing import List
 
-from src.rag.config import DEVICE, LLM_MODEL
+from langchain_core.messages import HumanMessage
+from langchain_litellm import ChatLiteLLM
+
+from src.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
 
 class LLMClient:
     """
-    Local LLM client su dung transformers pipeline.
+    LLM client using LiteLLM via LangChain.
     Ho tro sinh cau tra loi tu RAG context.
     """
 
     def __init__(self):
-        self._pipeline = None
-
-    # ------------------------------------------------------------------
-    # Lazy loading
-    # ------------------------------------------------------------------
-
-    def _load(self):
-        if self._pipeline is not None:
-            return
-
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-
-        logger.info(f"Loading LLM: {LLM_MODEL} on {DEVICE}")
-
-        dtype = torch.float16 if DEVICE == "cuda" else torch.float32
-
-        tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
-
-        # device_map="auto" yeu cau accelerate, thu dung no truoc
-        try:
-            import accelerate  # noqa: F401
-
-            model = AutoModelForCausalLM.from_pretrained(
-                LLM_MODEL,
-                dtype=dtype,
-                device_map="auto",
-            )
-        except ImportError:
-            # Fallback: load binh thuong, chuyen sang device thu cong
-            logger.warning("`accelerate` not found, loading model without device_map.")
-            model = AutoModelForCausalLM.from_pretrained(
-                LLM_MODEL,
-                dtype=dtype,
-            )
-            model = model.to(DEVICE)
-
-        self._pipeline = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-        )
-        logger.info("LLM loaded successfully.")
+        # Always use the main project's model for RAG API
+        model_name = app_config.AGENT_MODEL
+        if not model_name:
+            logger.warning("AGENT_MODEL is not set in app_config! Using fallback.")
+            model_name = "gpt-4-mini" # default fallback if empty
+            
+        logger.info(f"Initializing LLMClient with model: {model_name}")
+        self.llm = ChatLiteLLM(model=model_name, temperature=0)
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,8 +33,6 @@ class LLMClient:
         """
         Sinh cau tra loi dua tren query va danh sach context da retrieve.
         """
-        self._load()
-
         context_text = "\n\n".join(contexts)
 
         prompt = (
@@ -78,19 +44,28 @@ class LLMClient:
             "Answer:"
         )
 
-        output = self._pipeline(
-            prompt,
-            max_new_tokens=512,
-            do_sample=False,
-            pad_token_id=self._pipeline.tokenizer.eos_token_id,
-        )
+        messages = [
+            HumanMessage(content=prompt)
+        ]
 
-        full_text: str = output[0]["generated_text"]
-
-        # Chi lay phan sau "Answer:"
-        if "Answer:" in full_text:
-            return full_text.split("Answer:")[-1].strip()
-        return full_text.strip()
+        logger.info("Sending prompt to LLM...")
+        try:
+            response = self.llm.invoke(messages)
+            
+            # Extract content from response
+            full_text = str(response.content).strip()
+            
+            if "Answer:" in full_text:
+                return full_text.split("Answer:")[-1].strip()
+            return full_text
+            
+        except Exception as e:
+            logger.error(f"Error generating answer: {e}")
+            return "An error occurred while generating the answer."
 
     def is_loaded(self) -> bool:
-        return self._pipeline is not None
+        """
+        For API usage, the model is always considered 'loaded' or ready
+        since there's no local heavy pipeline to load.
+        """
+        return True
