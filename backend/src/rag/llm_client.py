@@ -3,6 +3,7 @@ from typing import List
 
 from langchain_core.messages import HumanMessage
 from langchain_litellm import ChatLiteLLM
+from opik import track
 
 from src.app_config import app_config
 
@@ -29,6 +30,7 @@ class LLMClient:
     # Public API
     # ------------------------------------------------------------------
 
+    @track(name="generate_answer")
     def generate_answer(self, query: str, contexts: List[str]) -> str:
         """
         Sinh cau tra loi dua tren query va danh sach context da retrieve.

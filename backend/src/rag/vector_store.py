@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 
 import faiss
 import numpy as np
+from opik import track
 from sentence_transformers import CrossEncoder, SentenceTransformer
 from src.rag.config import (
     BATCH_SIZE,
@@ -126,6 +127,7 @@ class VectorStore:
     # Retrieval
     # ------------------------------------------------------------------
 
+    @track(name="retrieve_context")
     def retrieve(self, query: str) -> List[str]:
         """
         Tim kiem va rerank: tra ve top-K contexts phu hop nhat voi query.
