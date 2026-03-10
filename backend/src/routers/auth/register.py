@@ -36,18 +36,22 @@ async def register(request: Request, user: UserRegister):
 async def register_bulk(request: Request, file: UploadFile = File(...)):
     try:
         content = await file.read()
-        df = pd.read_excel(io.BytesIO(content))
+        filename = getattr(file, "filename", "") or ""
+        if filename.lower().endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
     except Exception:
         raise HTTPException(
             status_code=400,
-            detail="Invalid Excel file. Please upload a valid .xlsx or .xls file.",
+            detail="Invalid file format. Please upload a valid .csv, .xlsx, or .xls file.",
         )
 
     df.columns = [str(c).lower().strip() for c in df.columns]
 
     if "email" not in df.columns or "password" not in df.columns:
         raise HTTPException(
-            status_code=400, detail="Excel must contain 'email' and 'password' columns"
+            status_code=400, detail="File must contain 'email' and 'password' columns"
         )
 
     added = 0
