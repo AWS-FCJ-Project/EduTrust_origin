@@ -50,6 +50,22 @@ resource "aws_security_group" "backend" {
   description = "Security group for backend EC2"
 
   ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.ssh_ingress_cidr_blocks
+  }
+
+  ingress {
+    description = "HTTPS (Cloudflare -> origin)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.https_ingress_cidr_blocks
+  }
+
+  ingress {
     description = "FastAPI"
     from_port   = 8000
     to_port     = 8000
@@ -71,6 +87,22 @@ resource "aws_security_group" "backend" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "DocumentDB (MongoDB) outbound"
+    from_port   = 27017
+    to_port     = 27017
+    protocol    = "tcp"
+    cidr_blocks = var.docdb_egress_cidr_blocks
+  }
+
+  egress {
+    description = "ElastiCache Redis outbound"
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = var.redis_egress_cidr_blocks
   }
 
   tags = {
