@@ -1,12 +1,17 @@
-#AWS config
+//AWS config
 aws_region         = 
-
-#EC2 config
+//EC2 config
 ec2_instance_type  = 
 ec2_ami_id         = 
 ec2_instance_name  = 
 ec2_key_name       = 
 
-#ECR config
+//ECR config
 ecr_repository_name =
-ecr_tag_immutable   = true
+ecr_tag_immutable   = 
+
+//Security group rules
+ssh_ingress_cidr_blocks   = 
+https_ingress_cidr_blocks = 
+docdb_egress_cidr_blocks  = 
+redis_egress_cidr_blocks  = 

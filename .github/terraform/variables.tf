@@ -34,3 +34,27 @@ variable "ecr_tag_immutable" {
   type        = bool
   default     = true
 }
+
+variable "ssh_ingress_cidr_blocks" {
+  description = "Allowed IPv4 CIDR blocks for inbound SSH (port 22)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "https_ingress_cidr_blocks" {
+  description = "Allowed IPv4 CIDR blocks for inbound HTTPS (port 443) to the origin (e.g., Cloudflare)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "docdb_egress_cidr_blocks" {
+  description = "Allowed IPv4 CIDR blocks for outbound DocumentDB (MongoDB) traffic (port 27017)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "redis_egress_cidr_blocks" {
+  description = "Allowed IPv4 CIDR blocks for outbound ElastiCache Redis traffic (port 6379)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
