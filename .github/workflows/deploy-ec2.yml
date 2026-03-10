@@ -236,10 +236,10 @@ jobs:
             --arg token "$ECR_PASSWORD" \
             --arg cname "${CONTAINER_NAME}" \
             '[
-              "set -euo pipefail",
+              "set -eu",
               "export DEBIAN_FRONTEND=noninteractive",
               # Ensure Docker exists (SSM runs as root; no SSH key needed).
-              "if ! command -v docker >/dev/null 2>&1; then (apt-get update -y || true); apt-get install -y ca-certificates curl || true; curl -fsSL https://get.docker.com | sh; fi",
+              "if ! command -v docker >/dev/null 2>&1; then (apt-get update -y || true); apt-get install -y ca-certificates curl || true; curl -fsSL https://get.docker.com -o /tmp/get-docker.sh; sh /tmp/get-docker.sh; fi",
               "systemctl enable --now docker || true",
               ("TARGET_DIR=" + $app_dir),
               "mkdir -p \"$TARGET_DIR\"",
