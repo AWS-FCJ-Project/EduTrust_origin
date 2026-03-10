@@ -58,7 +58,7 @@ resource "aws_security_group" "backend" {
   }
 
   ingress {
-    description = "HTTPS (Cloudflare -> origin)"
+    description = "HTTPS (Cloudflare to origin)"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
