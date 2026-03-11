@@ -1,4 +1,6 @@
 import re
+from datetime import datetime, timezone
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, validator
 
@@ -47,3 +49,26 @@ class ResetPassword(BaseModel):
                 "Password must contain 1 capital letter, 1 letter, 1 number and 1 symbol."
             )
         return v
+
+
+class UserInDB(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    email: EmailStr
+    hashed_password: str
+    is_verified: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_login: Optional[datetime] = None
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+
+
+def user_helper(user) -> dict:
+    return {
+        "id": str(user["_id"]),
+        "email": user["email"],
+        "is_verified": user.get("is_verified"),
+        "created_at": user.get("created_at"),
+        "last_login": user.get("last_login"),
+    }
