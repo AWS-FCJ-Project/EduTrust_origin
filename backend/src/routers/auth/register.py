@@ -1,6 +1,6 @@
 import io
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated
 
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
@@ -54,43 +54,66 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             status_code=400, detail="File must contain 'email' and 'password' columns"
         )
 
-    added = 0
     errors = []
+    unique_users: dict[str, tuple[str, int]] = {}
     for index, row in df.iterrows():
-        row_email = str(row["email"]).strip()
-        row_password = str(row["password"]).strip()
+        row_number = index + 2
+        row_email_raw = row["email"]
+        row_password_raw = row["password"]
 
-        if (
-            not row_email
-            or not row_password
-            or row_email == "nan"
-            or row_password == "nan"
-        ):
+        if pd.isna(row_email_raw) or pd.isna(row_password_raw):
+            continue
+
+        row_email = str(row_email_raw).strip()
+        row_password = str(row_password_raw).strip()
+
+        if not row_email or not row_password:
             continue
 
         try:
             valid_user = UserRegister(email=row_email, password=row_password)
         except Exception as e:
             err_msg = str(e).split("\n")[0]
-            errors.append(f"Row {index+2}: Invalid data - {err_msg}")
+            errors.append(f"Row {row_number}: Invalid data - {err_msg}")
             continue
 
-        existing = await users_collection.find_one({"email": valid_user.email})
-        if existing:
-            errors.append(f"Row {index+2}: Email {valid_user.email} already registered")
+        if valid_user.email in unique_users:
+            errors.append(
+                f"Row {row_number}: Email {valid_user.email} is duplicated in the file"
+            )
             continue
 
-        hashed = hash_password(valid_user.password)
-        user_doc = {
-            "email": valid_user.email,
-            "hashed_password": hashed,
-            "is_verified": True,
-            "created_at": datetime.now(timezone.utc),
-        }
-        await users_collection.insert_one(user_doc)
-        added += 1
+        unique_users[valid_user.email] = (valid_user.password, row_number)
+
+    existing_emails: set[str] = set()
+    if unique_users:
+        cursor = users_collection.find(
+            {"email": {"$in": list(unique_users.keys())}},
+            {"email": 1},
+        )
+        existing_docs = await cursor.to_list(length=len(unique_users))
+        existing_emails = {doc["email"] for doc in existing_docs if "email" in doc}
+
+    docs_to_insert = []
+    for email, (password, row_number) in unique_users.items():
+        if email in existing_emails:
+            errors.append(f"Row {row_number}: Email {email} already registered")
+            continue
+
+        hashed = hash_password(password)
+        docs_to_insert.append(
+            {
+                "email": email,
+                "hashed_password": hashed,
+                "is_verified": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+
+    if docs_to_insert:
+        await users_collection.insert_many(docs_to_insert, ordered=False)
 
     return {
-        "message": f"Registration completed. Successfully registered {added} users.",
+        "message": f"Registration completed. Successfully registered {len(docs_to_insert)} users.",
         "errors": errors,
     }

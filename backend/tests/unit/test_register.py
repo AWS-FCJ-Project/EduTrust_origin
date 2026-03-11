@@ -20,18 +20,12 @@ client = TestClient(app)
 def test_multi_register_csv():
     csv_content = b"email,password\ntestcsv1@example.com,Pass@word1\ntestcsv2@example.com,Pass@word2"
 
-    with patch(
-        "src.routers.auth.register.users_collection.find_one", new_callable=AsyncMock
-    ) as mock_find_one, patch(
-        "src.routers.auth.register.users_collection.insert_one", new_callable=AsyncMock
+    with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
+        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
     ):
-
-        def mock_find(query):
-            if query.get("email") == "testcsv1@example.com":
-                return {"email": "testcsv1@example.com"}
-            return None
-
-        mock_find_one.side_effect = mock_find
+        cursor = AsyncMock()
+        cursor.to_list = AsyncMock(return_value=[{"email": "testcsv1@example.com"}])
+        mock_find.return_value = cursor
 
         files = {"file": ("users.csv", csv_content, "text/csv")}
         response = client.post("/multi-register", files=files)
@@ -55,13 +49,12 @@ def test_multi_register_excel():
     df.to_excel(excel_file, index=False)
     excel_file.seek(0)
 
-    with patch(
-        "src.routers.auth.register.users_collection.find_one", new_callable=AsyncMock
-    ) as mock_find_one, patch(
-        "src.routers.auth.register.users_collection.insert_one", new_callable=AsyncMock
+    with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
+        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
     ):
-
-        mock_find_one.return_value = None  # None of them exists
+        cursor = AsyncMock()
+        cursor.to_list = AsyncMock(return_value=[])
+        mock_find.return_value = cursor
 
         files = {
             "file": (
