@@ -29,7 +29,12 @@ async def forgot_password(
     return {"message": "If email exists, OTP sent."}
 
 
-@router.post("/reset-password", responses={400: {"description": "Bad Request"}})
+@router.post(
+    "/reset-password",
+    responses={
+        400: {"description": "Invalid or expired OTP"},
+    },
+)
 async def reset_password(data: ResetPassword):
     is_valid = await verify_otp(data.email, data.otp, "password_reset")
 
