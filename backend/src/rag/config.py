@@ -28,8 +28,8 @@ LLM_MODEL = os.getenv("RAG_LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
 # CHUNKING CONFIG
 # ============================
 
-CHUNK_SIZE = 1000  # tokens per chunk
-OVERLAP = 150  # token overlap between consecutive chunks
+CHUNK_SIZE = 500  # tokens per chunk
+OVERLAP = 50  # token overlap between consecutive chunks
 
 # ============================
 # RETRIEVAL CONFIG
