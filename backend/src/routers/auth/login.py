@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from src.auth.auth_utils import verify_password
 from src.auth.session_handler import clear_user_session, set_user_session
 from src.database import users_collection
@@ -10,13 +10,7 @@ from src.schemas.auth_schemas import UserLogin
 router = APIRouter()
 
 
-@router.post(
-    "/login",
-    responses={
-        401: {"description": "Invalid credentials"},
-        403: {"description": "Email not verified"},
-    },
-)
+@router.post("/login", responses={401: {"description": "Unauthorized"}})
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin):
     db_user = await users_collection.find_one({"email": user.email})
