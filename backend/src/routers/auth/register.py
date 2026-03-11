@@ -1,6 +1,6 @@
 import io
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
@@ -12,7 +12,7 @@ from src.schemas.auth_schemas import UserRegister
 router = APIRouter()
 
 
-@router.post("/register")
+@router.post("/register", responses={400: {"description": "Bad Request"}})
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserRegister):
     existing = await users_collection.find_one({"email": user.email})
@@ -24,16 +24,16 @@ async def register(request: Request, user: UserRegister):
         "email": user.email,
         "hashed_password": hashed,
         "is_verified": True,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
     }
     await users_collection.insert_one(user_doc)
 
     return {"message": "User registered successfully, you can now login."}
 
 
-@router.post("/multi-register")
+@router.post("/multi-register", responses={400: {"description": "Bad Request"}})
 @limiter.limit("5/minute")
-async def register_bulk(request: Request, file: UploadFile = File(...)):
+async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]):
     try:
         content = await file.read()
         filename = getattr(file, "filename", "") or ""
@@ -85,7 +85,7 @@ async def register_bulk(request: Request, file: UploadFile = File(...)):
             "email": valid_user.email,
             "hashed_password": hashed,
             "is_verified": True,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         }
         await users_collection.insert_one(user_doc)
         added += 1

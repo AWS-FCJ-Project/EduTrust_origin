@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
@@ -9,7 +9,7 @@ class UserInDB(BaseModel):
     email: EmailStr
     hashed_password: str
     is_verified: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
 
     class Config:

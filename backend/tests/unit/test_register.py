@@ -24,9 +24,9 @@ def test_multi_register_csv():
         "src.routers.auth.register.users_collection.find_one", new_callable=AsyncMock
     ) as mock_find_one, patch(
         "src.routers.auth.register.users_collection.insert_one", new_callable=AsyncMock
-    ) as mock_insert_one:
+    ):
 
-        async def mock_find(query):
+        def mock_find(query):
             if query.get("email") == "testcsv1@example.com":
                 return {"email": "testcsv1@example.com"}
             return None
@@ -59,7 +59,7 @@ def test_multi_register_excel():
         "src.routers.auth.register.users_collection.find_one", new_callable=AsyncMock
     ) as mock_find_one, patch(
         "src.routers.auth.register.users_collection.insert_one", new_callable=AsyncMock
-    ) as mock_insert_one:
+    ):
 
         mock_find_one.return_value = None  # None of them exists
 
