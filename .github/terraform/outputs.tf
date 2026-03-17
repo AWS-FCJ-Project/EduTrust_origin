@@ -1,26 +1,46 @@
-output "instance_id" {
-  description = "EC2 instance ID"
-  value       = aws_instance.backend.id
-}
-
 output "aws_region" {
-  description = "AWS region used by the provider"
+  description = "AWS region where resources are deployed"
   value       = var.aws_region
 }
 
-output "instance_public_ip" {
-  description = "EC2 instance public IP"
-  value       = aws_instance.backend.public_ip
+output "vpc_id" {
+  description = "The ID of the VPC"
+  value       = aws_vpc.main.id
 }
 
-output "instance_private_ip" {
-  description = "EC2 instance private IP"
-  value       = aws_instance.backend.private_ip
+output "igw_id" {
+  description = "The ID of the Internet Gateway"
+  value       = aws_internet_gateway.main.id
 }
 
-output "instance_public_dns" {
-  description = "EC2 instance public DNS"
-  value       = aws_instance.backend.public_dns
+output "backend_port" {
+  description = "The port configured for the backend application"
+  value       = var.backend_port
+}
+
+output "backend_1_id" {
+  description = "EC2 instance 1 ID"
+  value       = aws_instance.backend_1.id
+}
+
+output "backend_1_private_ip" {
+  description = "EC2 instance 1 private IP"
+  value       = aws_instance.backend_1.private_ip
+}
+
+output "backend_2_id" {
+  description = "EC2 instance 2 ID"
+  value       = aws_instance.backend_2.id
+}
+
+output "backend_2_private_ip" {
+  description = "EC2 instance 2 private IP"
+  value       = aws_instance.backend_2.private_ip
+}
+
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer"
+  value       = aws_lb.main.dns_name
 }
 
 output "ecr_repository_url" {

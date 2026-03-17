@@ -3,6 +3,24 @@ variable "aws_region" {
   type        = string
 }
 
+variable "vpc_name" {
+  description = "Name for the VPC"
+  type        = string
+  default     = "my-backend-vpc"
+}
+
+variable "igw_name" {
+  description = "Name for the Internet Gateway"
+  type        = string
+  default     = "my-backend-igw"
+}
+
+variable "backend_port" {
+  description = "The port the backend application listens on"
+  type        = number
+  default     = 8000
+}
+
 variable "ec2_instance_type" {
   description = "EC2 instance type"
   type        = string
@@ -14,13 +32,14 @@ variable "ec2_ami_id" {
 }
 
 variable "ec2_instance_name" {
-  description = "EC2 instance name"
+  description = "EC2 instance name (used as resource name prefix)"
   type        = string
 }
 
 variable "ec2_key_name" {
-  description = "EC2 key pair name for SSH access"
+  description = "EC2 key pair name for SSH access (optional, for debug/testing)"
   type        = string
+  default     = null
 }
 
 variable "ecr_repository_name" {
@@ -57,4 +76,31 @@ variable "redis_egress_cidr_blocks" {
   description = "Allowed IPv4 CIDR blocks for outbound ElastiCache Redis traffic (port 6379)"
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+# --- VPC & Subnet Network Variables ---
+
+variable "vpc_cidr_block" {
+  description = "CIDR block for the VPC"
+  type        = string
+}
+
+variable "private_subnet_1a_cidr" {
+  description = "CIDR block for private subnet in AZ 1a"
+  type        = string
+}
+
+variable "private_subnet_1c_cidr" {
+  description = "CIDR block for private subnet in AZ 1c"
+  type        = string
+}
+
+variable "public_subnet_1a_cidr" {
+  description = "CIDR block for public subnet in AZ 1a"
+  type        = string
+}
+
+variable "public_subnet_1c_cidr" {
+  description = "CIDR block for public subnet in AZ 1c"
+  type        = string
 }

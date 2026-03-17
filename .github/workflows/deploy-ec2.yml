@@ -20,17 +20,22 @@ env:
   CONTAINER_NAME: aws-fcj-backend
 
 jobs:
+  #Terraform build EC2 and ECR
   terraform:
     name: Provision/Update EC2 (Terraform apply)
     runs-on: ubuntu-latest
     outputs:
-      instance_id: ${{ steps.tf_output.outputs.instance_id }}
+      instance_ids: ${{ steps.tf_output.outputs.instance_ids }}
       aws_region: ${{ steps.tf_output.outputs.aws_region }}
       ecr_repository_url: ${{ steps.tf_output.outputs.ecr_repository_url }}
+      backend_port: ${{ steps.tf_output.outputs.backend_port }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-southeast-1
       TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
+    
+    #Environment Setup
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,6 +49,7 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
+      #Terraform Init & AWS credentials config
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
@@ -53,8 +59,9 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
+      #Check ECR's state in Terraform's state file (ecr_repository_name )
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
         run: |
@@ -85,7 +92,8 @@ jobs:
           else
             echo "ECR repo not found in AWS; Terraform will create it."
           fi
-
+      
+      #Apply main.tf 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
@@ -94,10 +102,16 @@ jobs:
         id: tf_output
         working-directory: ${{ env.TF_DIR }}
         run: |
-          echo "instance_id=$(terraform output -raw instance_id)" >> "$GITHUB_OUTPUT"
+          B1_ID=$(terraform output -raw backend_1_id)
+          B2_ID=$(terraform output -raw backend_2_id)
+          # Format as a JSON array string for GitHub Actions Matrix
+          JSON_ARRAY="[\"$B1_ID\", \"$B2_ID\"]"
+          echo "instance_ids=$JSON_ARRAY" >> "$GITHUB_OUTPUT"
           echo "aws_region=$(terraform output -raw aws_region)" >> "$GITHUB_OUTPUT"
           echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "backend_port=$(terraform output -raw backend_port)" >> "$GITHUB_OUTPUT"
 
+  #Build & Push backend image into ECR
   build:
     name: Build & Push backend image (ECR)
     runs-on: ubuntu-latest
@@ -143,10 +157,16 @@ jobs:
             ${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}
             ${{ steps.image_vars.outputs.image }}:latest
 
+  #Pull backend container from ECR and deploy on EC2 by SSM Agent
   deploy:
     name: Deploy backend container (SSM)
     runs-on: ubuntu-latest
     needs: [terraform, build]
+    strategy:
+      matrix:
+        instance_id: ${{ fromJson(needs.terraform.outputs.instance_ids) }}
+      # If one fails, don't cancel the other (useful if 1 EC2 is somehow unreachable)
+      fail-fast: false  
     steps:
       - name: Deploy to EC2 via AWS Systems Manager (no SSH)
         env:
@@ -154,7 +174,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ needs.terraform.outputs.aws_region }}
           AWS_DEFAULT_REGION: ${{ needs.terraform.outputs.aws_region }}
-          INSTANCE_ID: ${{ needs.terraform.outputs.instance_id }}
+          INSTANCE_ID: ${{ matrix.instance_id }}
+          BACKEND_PORT: ${{ needs.terraform.outputs.backend_port }}
           APP_DIR: ${{ secrets.APP_DIR }}
           BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
           IMAGE: ${{ needs.build.outputs.image }}
@@ -190,6 +211,7 @@ jobs:
             --arg registry "$ECR_REGISTRY" \
             --arg token "$ECR_PASSWORD" \
             --arg cname "${CONTAINER_NAME}" \
+            --arg port "${BACKEND_PORT:-8000}" \
             '[
               "set -euo pipefail",
               "export DEBIAN_FRONTEND=noninteractive",
@@ -205,7 +227,7 @@ jobs:
               "docker image prune -af || true",
               "docker builder prune -af || true",
               ("docker pull \"" + $img + "\""),
-              ("docker run -d --name \"" + $cname + "\" --restart unless-stopped -p 8000:8000 --env-file \"$TARGET_DIR/.env\" \"" + $img + "\""),
+              ("docker run -d --name \"" + $cname + "\" --restart unless-stopped -p " + $port + ":" + $port + " --env-file \"$TARGET_DIR/.env\" \"" + $img + "\""),
               "docker image prune -f",
               ("docker ps | grep \"" + $cname + "\"")
             ]')"
@@ -216,7 +238,7 @@ jobs:
             --parameters "{\"commands\": $COMMANDS}" \
             --query "Command.CommandId" \
             --output text)"
-
+          
           echo "SSM Command ID: $COMMAND_ID"
           # Wait/poll and always print output on failure (waiter exits 255 on Failed before logs are fetched).
           FINAL_STATUS=""
