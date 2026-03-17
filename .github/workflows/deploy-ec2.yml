@@ -24,18 +24,19 @@ jobs:
   terraform:
     name: Provision/Update EC2 (Terraform apply)
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       instance_ids: ${{ steps.tf_output.outputs.instance_ids }}
       aws_region: ${{ steps.tf_output.outputs.aws_region }}
       ecr_repository_url: ${{ steps.tf_output.outputs.ecr_repository_url }}
       backend_port: ${{ steps.tf_output.outputs.backend_port }}
+      ecr_tag_immutable: ${{ steps.ecr_vars.outputs.ecr_tag_immutable }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ap-southeast-1
       TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
-    
-    #Environment Setup
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -49,6 +50,32 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
+      - name: Read ECR tag immutability (ecr_tag_immutable)
+        id: ecr_vars
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+
+          IMMUTABLE=""
+          if [ -f terraform.tfvars ]; then
+            IMMUTABLE="$(awk -F= '
+              $1 ~ /^[[:space:]]*ecr_tag_immutable[[:space:]]*$/ {
+                v=$2
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                gsub(/\"/, "", v)
+                print v
+                exit
+              }' terraform.tfvars || true)"
+          fi
+
+          IMMUTABLE="${IMMUTABLE:-true}"
+          case "$IMMUTABLE" in
+            true|false) ;;
+            *) echo "Invalid ecr_tag_immutable value: $IMMUTABLE" >&2; exit 1 ;;
+          esac
+
+          echo "ecr_tag_immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
+
       #Terraform Init & AWS credentials config
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
@@ -61,13 +88,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
-      #Check ECR's state in Terraform's state file (ecr_repository_name )
+      #Check ECR's state in Terraform's state file (ecr_repository_name)
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
         run: |
           set -euo pipefail
 
-          # Prefer reading from terraform.tfvars (written from secret); fall back to default.
           if [ -f terraform.tfvars ]; then
             REPO_NAME="$(awk -F= '
               $1 ~ /^[[:space:]]*ecr_repository_name[[:space:]]*$/ {
@@ -92,13 +118,13 @@ jobs:
           else
             echo "ECR repo not found in AWS; Terraform will create it."
           fi
-      
-      #Apply main.tf 
+
+      #Apply main.tf
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
 
-      - name: Get Terraform Outputs (instance id + region)
+      - name: Get Terraform Outputs (instance ids + region + port)
         id: tf_output
         working-directory: ${{ env.TF_DIR }}
         run: |
@@ -116,7 +142,7 @@ jobs:
     name: Build & Push backend image (ECR)
     runs-on: ubuntu-latest
     needs: terraform
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       image: ${{ steps.image_vars.outputs.image }}
       image_tag: ${{ steps.image_vars.outputs.image_tag }}
@@ -147,26 +173,43 @@ jobs:
         id: login_ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Compute Docker tags
+        id: docker_tags
+        run: |
+          set -euo pipefail
+
+          SHA_TAG="${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}"
+          if [ "${{ needs.terraform.outputs.ecr_tag_immutable }}" = "true" ]; then
+            TAGS="$SHA_TAG"
+          else
+            TAGS="$SHA_TAG\n${{ steps.image_vars.outputs.image }}:latest"
+          fi
+
+          {
+            echo "tags<<EOF"
+            printf "%b\n" "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: true
-          tags: |
-            ${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}
-            ${{ steps.image_vars.outputs.image }}:latest
+          tags: ${{ steps.docker_tags.outputs.tags }}
 
   #Pull backend container from ECR and deploy on EC2 by SSM Agent
   deploy:
     name: Deploy backend container (SSM)
     runs-on: ubuntu-latest
     needs: [terraform, build]
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     strategy:
       matrix:
         instance_id: ${{ fromJson(needs.terraform.outputs.instance_ids) }}
       # If one fails, don't cancel the other (useful if 1 EC2 is somehow unreachable)
-      fail-fast: false  
+      fail-fast: false
     steps:
       - name: Deploy to EC2 via AWS Systems Manager (no SSH)
         env:
@@ -213,10 +256,9 @@ jobs:
             --arg cname "${CONTAINER_NAME}" \
             --arg port "${BACKEND_PORT:-8000}" \
             '[
-              "set -euo pipefail",
+              "set -eu",
               "export DEBIAN_FRONTEND=noninteractive",
-              # Ensure Docker exists (SSM runs as root; no SSH key needed).
-              "if ! command -v docker >/dev/null 2>&1; then (apt-get update -y || true); apt-get install -y ca-certificates curl || true; curl -fsSL https://get.docker.com | sh; fi",
+              "if ! command -v docker >/dev/null 2>&1; then (apt-get update -y || true); apt-get install -y ca-certificates curl || true; curl -fsSL https://get.docker.com -o /tmp/get-docker.sh; sh /tmp/get-docker.sh; fi",
               "systemctl enable --now docker || true",
               ("TARGET_DIR=" + $app_dir),
               "mkdir -p \"$TARGET_DIR\"",
@@ -238,9 +280,8 @@ jobs:
             --parameters "{\"commands\": $COMMANDS}" \
             --query "Command.CommandId" \
             --output text)"
-          
+
           echo "SSM Command ID: $COMMAND_ID"
-          # Wait/poll and always print output on failure (waiter exits 255 on Failed before logs are fetched).
           FINAL_STATUS=""
           for _ in {1..60}; do
             FINAL_STATUS="$(aws ssm get-command-invocation \
