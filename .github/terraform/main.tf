@@ -229,11 +229,12 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_lb" "main" {
-  name               = "${var.ec2_instance_name}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = [aws_subnet.public_1a.id, aws_subnet.public_1c.id]
+  name                       = "${var.ec2_instance_name}-alb"
+  internal                   = false
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.alb.id]
+  subnets                    = [aws_subnet.public_1a.id, aws_subnet.public_1c.id]
+  drop_invalid_header_fields = true
 
   enable_deletion_protection = false
 
