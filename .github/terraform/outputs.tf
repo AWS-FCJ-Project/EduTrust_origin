@@ -14,7 +14,7 @@ output "igw_id" {
 }
 
 output "backend_port" {
-  description = "The port configured for the backend application"
+  description = "The port configured for the backend application."
   value       = var.backend_port
 }
 
