@@ -7,7 +7,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "aws-fcj-terraform-setup"
+    bucket       = "aws-fcj-terraform-641458060045"
     key          = "backend/terraform.tfstate"
     region       = "ap-southeast-1"
     use_lockfile = true
