@@ -216,7 +216,7 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  #Allow all outbound 
+
   egress {
     description = "Allow all outbound"
     from_port   = 0
