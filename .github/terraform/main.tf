@@ -115,7 +115,7 @@ resource "aws_eip" "nat_1a" {
   }
 }
 
-# NAT Gateway (single, in public 1a — shared by both private subnets to reduce cost)
+# NAT Gateway (shared by both private subnets to reduce cost)
 resource "aws_nat_gateway" "nat_1a" {
   allocation_id = aws_eip.nat_1a.id
   subnet_id     = aws_subnet.public_1a.id
@@ -199,6 +199,7 @@ resource "aws_security_group" "alb" {
   description = "Security group for ALB"
   vpc_id      = aws_vpc.main.id
 
+  # Allow HTTP and HTTPS from the internet
   ingress {
     description = "HTTP from Internet"
     from_port   = 80
@@ -215,6 +216,7 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  #Allow all outbound 
   egress {
     description = "Allow all outbound"
     from_port   = 0
@@ -287,14 +289,6 @@ resource "aws_security_group" "backend" {
   name        = "${var.ec2_instance_name}-sg"
   description = "Security group for backend EC2"
   vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "SSH - Temporary Hotfix"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = var.ssh_ingress_cidr_blocks
-  }
 
   ingress {
     description     = "App port from ALB"
