@@ -84,7 +84,7 @@ variable "vpc_cidr_block" {
   description = "CIDR block for the VPC"
   type        = string
   validation {
-    condition     = length(trim(var.vpc_cidr_block)) > 0
+    condition     = length(trimspace(var.vpc_cidr_block)) > 0
     error_message = "vpc_cidr_block must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the VPC network to be created."
   }
 }
@@ -92,7 +92,7 @@ variable "private_subnet_1a_cidr" {
   description = "CIDR block for private subnet in AZ 1a"
   type        = string
   validation {
-    condition     = length(trim(var.private_subnet_1a_cidr)) > 0
+    condition     = length(trimspace(var.private_subnet_1a_cidr)) > 0
     error_message = "private_subnet_1a_cidr must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the private subnet in AZ 1a."
   }
 }
@@ -100,7 +100,7 @@ variable "private_subnet_1c_cidr" {
   description = "CIDR block for private subnet in AZ 1c"
   type        = string
   validation {
-    condition     = length(trim(var.private_subnet_1c_cidr)) > 0
+    condition     = length(trimspace(var.private_subnet_1c_cidr)) > 0
     error_message = "private_subnet_1c_cidr must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the private subnet in AZ 1c."
   }
 }
@@ -108,7 +108,7 @@ variable "public_subnet_1a_cidr" {
   description = "CIDR block for public subnet in AZ 1a"
   type        = string
   validation {
-    condition     = length(trim(var.public_subnet_1a_cidr)) > 0
+    condition     = length(trimspace(var.public_subnet_1a_cidr)) > 0
     error_message = "public_subnet_1a_cidr must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the public subnet in AZ 1a."
   }
 }
@@ -116,7 +116,7 @@ variable "public_subnet_1c_cidr" {
   description = "CIDR block for public subnet in AZ 1c"
   type        = string
   validation {
-    condition     = length(trim(var.public_subnet_1c_cidr)) > 0
+    condition     = length(trimspace(var.public_subnet_1c_cidr)) > 0
     error_message = "public_subnet_1c_cidr must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the public subnet in AZ 1c."
   }
 }
