@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
-
 from src.document_search.document_search_service import DocumentSearchService
 
 router = APIRouter(prefix="/document-search", tags=["Document Search"])

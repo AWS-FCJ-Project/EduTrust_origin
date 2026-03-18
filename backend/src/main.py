@@ -10,7 +10,7 @@ from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import translate_routes, unified_agent_routes, document_search_routes
+from src.routers import document_search_routes, translate_routes, unified_agent_routes
 from src.routers.auth import login, password, register
 from starlette.middleware.sessions import SessionMiddleware
 

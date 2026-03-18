@@ -2,7 +2,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 from litellm import embedding
-
 from src.app_config import app_config
 from src.document_search.vector_store import VectorStore
 
