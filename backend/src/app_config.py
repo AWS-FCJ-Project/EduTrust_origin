@@ -13,6 +13,7 @@ class AppConfig(BaseSettings):
     AGENT_MODEL: Optional[str] = None
     TRANSLATE_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
+    ALLOWED_ORIGINS: list[str] = ["*"]
 
     MONGO_URI: Optional[str] = None
     MONGO_USERNAME: Optional[str] = None
