@@ -120,3 +120,9 @@ variable "public_subnet_1c_cidr" {
     error_message = "public_subnet_1c_cidr must be set (e.g. via TERRAFORM_VARIABLES -> terraform.tfvars) for the public subnet in AZ 1c."
   }
 }
+
+variable "certificate_arn" {
+  description = "The ARN of the ACM certificate for HTTPS"
+  type        = string
+  default     = ""
+}
