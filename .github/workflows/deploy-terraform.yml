@@ -36,6 +36,10 @@ jobs:
         with:
           terraform_version: "1.10.0"
 
+      - name: Write terraform.tfvars from secret
+        working-directory: ${{ env.TF_DIR }}
+        run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
+
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
@@ -47,10 +51,6 @@ jobs:
       - name: Terraform Validate
         working-directory: ${{ env.TF_DIR }}
         run: terraform validate
-
-      - name: Write terraform.tfvars from secret
-        working-directory: ${{ env.TF_DIR }}
-        run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_DIR }}
