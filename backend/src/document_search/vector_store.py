@@ -14,7 +14,7 @@ class VectorStore:
     ):
         self.index_path = index_path
         self.metadata_path = metadata_path
-        self.dimension = 1536
+        self.dimension = 384
         self.index = faiss.IndexFlatL2(self.dimension)
         self.metadata: List[Dict[str, Any]] = []
 
