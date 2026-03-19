@@ -137,6 +137,29 @@ type StreamEventHandlers = Readonly<{
   onError: (message: string) => void;
 }>;
 
+const consumeSseStream = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  handleData: (data: string) => boolean,
+) => {
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+
+    buffer += decoder.decode(value, { stream: true });
+    const { events, rest } = extractSseEvents(buffer);
+    buffer = rest;
+
+    for (const rawEvent of events) {
+      const data = extractSseData(rawEvent);
+      if (!data) continue;
+      if (handleData(data)) return;
+    }
+  }
+};
+
 const parseStreamEvent = (data: string): StreamEvent | null => {
   try {
     return JSON.parse(data) as StreamEvent;
@@ -167,6 +190,14 @@ const applyStreamEvent = (
   }
 
   return true;
+};
+
+const createStreamDataProcessor = (handlers: StreamEventHandlers) => {
+  return (data: string) => {
+    const parsed = parseStreamEvent(data);
+    if (!parsed) return false;
+    return applyStreamEvent(parsed, handlers);
+  };
 };
 
 function App() {
@@ -360,42 +391,18 @@ function App() {
       throw new Error("Streaming is not supported by this browser.");
     }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let completed = false;
+    const processor = createStreamDataProcessor({
+      onTextDelta: (delta) =>
+        appendAssistantDelta(assistantId, delta, assistantCreatedAt),
+      onToolEvent: (type, content) =>
+        setToolEvents((prev) => [
+          ...prev,
+          { id: createId(), type, content, createdAt: Date.now() },
+        ]),
+      onError: (message) => setError(message),
+    });
 
-    while (!completed) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { events, rest } = extractSseEvents(buffer);
-      buffer = rest;
-
-      for (const rawEvent of events) {
-        const data = extractSseData(rawEvent);
-        if (!data) continue;
-
-        const parsed = parseStreamEvent(data);
-        if (!parsed) continue;
-
-        const didComplete = applyStreamEvent(parsed, {
-          onTextDelta: (delta) =>
-            appendAssistantDelta(assistantId, delta, assistantCreatedAt),
-          onToolEvent: (type, content) =>
-            setToolEvents((prev) => [
-              ...prev,
-              { id: createId(), type, content, createdAt: Date.now() },
-            ]),
-          onError: (message) => setError(message),
-        });
-
-        if (didComplete) {
-          completed = true;
-          break;
-        }
-      }
-    }
+    await consumeSseStream(reader, processor);
   };
 
   const handleSend = async () => {
