@@ -28,6 +28,69 @@ orchestrator = Agent(
     instructions=prompts["orchestrator"]["instructions"],
 )
 
+TOOL_CALL_PART_TYPES = tuple(
+    part_type
+    for part_type in (
+        getattr(messages, "ToolCallPart", None),
+        getattr(messages, "BuiltinToolCallPart", None),
+    )
+    if part_type is not None
+)
+TOOL_RETURN_PART_TYPES = tuple(
+    part_type
+    for part_type in (
+        getattr(messages, "ToolReturnPart", None),
+        getattr(messages, "BuiltinToolReturnPart", None),
+    )
+    if part_type is not None
+)
+
+
+def _extract_text_chunk(event) -> Optional[str]:
+    if isinstance(event, messages.PartDeltaEvent) and isinstance(
+        event.delta, messages.TextPartDelta
+    ):
+        return event.delta.content_delta or None
+
+    if isinstance(event, messages.PartStartEvent) and isinstance(
+        event.part, messages.TextPart
+    ):
+        return event.part.content or None
+
+    return None
+
+
+def _tool_call_arguments(part) -> Optional[object]:
+    tool_arguments = getattr(part, "args", None)
+    if tool_arguments not in (None, ""):
+        return tool_arguments
+    if hasattr(part, "args_as_json_str") and callable(
+        getattr(part, "args_as_json_str")
+    ):
+        return part.args_as_json_str()
+    return tool_arguments
+
+
+def _extract_tool_event(part) -> Optional[OrchestratorStreamEvent]:
+    if TOOL_CALL_PART_TYPES and isinstance(part, TOOL_CALL_PART_TYPES):
+        tool_name = getattr(part, "tool_name", None)
+        return OrchestratorStreamEvent(
+            type="tool_call",
+            content={"tool_name": tool_name, "arguments": _tool_call_arguments(part)},
+        )
+
+    if TOOL_RETURN_PART_TYPES and isinstance(part, TOOL_RETURN_PART_TYPES):
+        tool_name = getattr(part, "tool_name", None)
+        tool_result = getattr(part, "content", None)
+        if tool_result is None:
+            tool_result = str(part)
+        return OrchestratorStreamEvent(
+            type="tool_result",
+            content={"tool_name": tool_name, "result": tool_result},
+        )
+
+    return None
+
 
 async def ask(question: str, conversation_id: str) -> str:
     with logfire.span(
@@ -73,23 +136,6 @@ async def ask_stream_with_tool_calls(
     Stream the orchestrator's response with tool call / tool result events.
     """
 
-    tool_call_part_types = tuple(
-        part_type
-        for part_type in (
-            getattr(messages, "ToolCallPart", None),
-            getattr(messages, "BuiltinToolCallPart", None),
-        )
-        if part_type is not None
-    )
-    tool_return_part_types = tuple(
-        part_type
-        for part_type in (
-            getattr(messages, "ToolReturnPart", None),
-            getattr(messages, "BuiltinToolReturnPart", None),
-        )
-        if part_type is not None
-    )
-
     with logfire.span(
         "ask_orchestrator_stream_with_tools",
         question=question,
@@ -123,49 +169,20 @@ async def ask_stream_with_tool_calls(
         async for event in orchestrator.run_stream_events(
             prompt_text, deps=orchestrator_deps
         ):
-            if isinstance(event, messages.PartDeltaEvent) and isinstance(
-                event.delta, messages.TextPartDelta
-            ):
-                chunk = event.delta.content_delta
-                if chunk:
-                    sent_any_text = True
-                    fallback_text_parts.append(chunk)
-                    yield OrchestratorStreamEvent(type="text_delta", content=chunk)
-            elif isinstance(event, messages.PartStartEvent) and isinstance(
-                event.part, messages.TextPart
-            ):
-                chunk = event.part.content
-                if chunk:
-                    sent_any_text = True
-                    fallback_text_parts.append(chunk)
-                    yield OrchestratorStreamEvent(type="text_delta", content=chunk)
-            elif isinstance(event, messages.PartEndEvent):
-                part = event.part
+            text_chunk = _extract_text_chunk(event)
+            if text_chunk:
+                sent_any_text = True
+                fallback_text_parts.append(text_chunk)
+                yield OrchestratorStreamEvent(type="text_delta", content=text_chunk)
+                continue
 
-                if tool_call_part_types and isinstance(part, tool_call_part_types):
-                    tool_name = getattr(part, "tool_name", None)
-                    tool_arguments = getattr(part, "args", None)
-                    if (
-                        (tool_arguments is None or tool_arguments == "")
-                        and hasattr(part, "args_as_json_str")
-                        and callable(getattr(part, "args_as_json_str"))
-                    ):
-                        tool_arguments = part.args_as_json_str()
+            if isinstance(event, messages.PartEndEvent):
+                tool_event = _extract_tool_event(event.part)
+                if tool_event is not None:
+                    yield tool_event
+                continue
 
-                    yield OrchestratorStreamEvent(
-                        type="tool_call",
-                        content={"tool_name": tool_name, "arguments": tool_arguments},
-                    )
-                elif tool_return_part_types and isinstance(part, tool_return_part_types):
-                    tool_name = getattr(part, "tool_name", None)
-                    tool_result = getattr(part, "content", None)
-                    if tool_result is None:
-                        tool_result = str(part)
-                    yield OrchestratorStreamEvent(
-                        type="tool_result",
-                        content={"tool_name": tool_name, "result": tool_result},
-                    )
-            elif isinstance(event, AgentRunResultEvent):
+            if isinstance(event, AgentRunResultEvent):
                 final_answer = str(event.result.output)
 
         if final_answer and not sent_any_text:
