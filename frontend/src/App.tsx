@@ -8,6 +8,20 @@ type Message = {
   createdAt: number;
 };
 
+type StreamEvent =
+  | { type: "text_delta"; content: string }
+  | { type: "tool_call"; content: unknown }
+  | { type: "tool_result"; content: unknown }
+  | { type: "error"; content: string }
+  | { type: "complete" };
+
+type ToolEvent = {
+  id: string;
+  type: "tool_call" | "tool_result";
+  content: unknown;
+  createdAt: number;
+};
+
 type BackendStatus = "checking" | "online" | "offline";
 type RunPhase = "idle" | "planning" | "tools" | "synthesizing";
 
@@ -20,8 +34,8 @@ const createId = () => {
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
 
-const buildEndpoint = (baseUrl: string) =>
-  `${normalizeBaseUrl(baseUrl)}/unified-agent/ask`;
+const buildEndpoint = (baseUrl: string, path: string) =>
+  `${normalizeBaseUrl(baseUrl)}${path}`;
 
 const DEFAULT_API_URL = "http://localhost:8000";
 
@@ -29,7 +43,9 @@ function App() {
   const [conversationId, setConversationId] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [pending, setPending] = useState(false);
+  const [useStreaming, setUseStreaming] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] =
     useState<BackendStatus>("checking");
@@ -37,13 +53,21 @@ function App() {
   const [slowNotice, setSlowNotice] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const apiUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_API_URL as string | undefined;
     return envUrl && envUrl.trim().length > 0 ? envUrl : DEFAULT_API_URL;
   }, []);
 
-  const endpoint = useMemo(() => buildEndpoint(apiUrl), [apiUrl]);
+  const askEndpoint = useMemo(
+    () => buildEndpoint(apiUrl, "/unified-agent/ask"),
+    [apiUrl],
+  );
+  const streamEndpoint = useMemo(
+    () => buildEndpoint(apiUrl, "/unified-agent/ask/streaming"),
+    [apiUrl],
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -120,6 +144,55 @@ function App() {
     synthesizing: "Synthesizing answer",
   }[runPhase];
 
+  const parseSseEvents = (buffer: string) => {
+    const events: string[] = [];
+    let rest = buffer;
+    while (true) {
+      const index = rest.indexOf("\n\n");
+      if (index === -1) break;
+      events.push(rest.slice(0, index));
+      rest = rest.slice(index + 2);
+    }
+    return { events, rest };
+  };
+
+  const parseSseData = (rawEvent: string) => {
+    const dataLines = rawEvent
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.startsWith("data:"));
+    if (dataLines.length === 0) return null;
+    return dataLines.map((line) => line.slice(5).trimStart()).join("\n");
+  };
+
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  };
+
+  const appendAssistantDelta = (
+    assistantId: string,
+    delta: string,
+    createdAt: number,
+  ) => {
+    if (!delta) return;
+
+    setMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === assistantId);
+      if (index === -1) {
+        return [
+          ...prev,
+          { id: assistantId, role: "assistant", content: delta, createdAt },
+        ];
+      }
+
+      const next = [...prev];
+      const existing = next[index];
+      next[index] = { ...existing, content: existing.content + delta };
+      return next;
+    });
+  };
+
   const handleSend = async () => {
     if (pending) return;
 
@@ -143,13 +216,65 @@ function App() {
     setInput("");
     setPending(true);
     setError(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
 
     try {
-      const response = await fetch(endpoint, {
+      if (!useStreaming) {
+        const response = await fetch(askEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            question,
+            conversation_id: activeConversationId,
+          }),
+        });
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(detail || `Request failed (${response.status}).`);
+        }
+
+        const data = (await response.json()) as {
+          answer: string;
+          conversation_id: string;
+        };
+
+        const assistantMessage: Message = {
+          id: createId(),
+          role: "assistant",
+          content: data.answer,
+          createdAt: Date.now(),
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        return;
+      }
+
+      const assistantId = createId();
+      const assistantCreatedAt = Date.now();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: assistantCreatedAt,
+        },
+      ]);
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+      setToolEvents([]);
+
+      const response = await fetch(streamEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        signal: abortController.signal,
         body: JSON.stringify({
           question,
           conversation_id: activeConversationId,
@@ -161,24 +286,66 @@ function App() {
         throw new Error(detail || `Request failed (${response.status}).`);
       }
 
-      const data = (await response.json()) as {
-        answer: string;
-        conversation_id: string;
-      };
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Streaming is not supported by this browser.");
+      }
 
-      const assistantMessage: Message = {
-        id: createId(),
-        role: "assistant",
-        content: data.answer,
-        createdAt: Date.now(),
-      };
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let completed = false;
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const { events, rest } = parseSseEvents(buffer);
+        buffer = rest;
+
+        for (const rawEvent of events) {
+          const data = parseSseData(rawEvent);
+          if (!data) continue;
+
+          let parsed: StreamEvent | null = null;
+          try {
+            parsed = JSON.parse(data) as StreamEvent;
+          } catch {
+            continue;
+          }
+
+          if (parsed.type === "text_delta") {
+            const delta = typeof parsed.content === "string" ? parsed.content : "";
+            appendAssistantDelta(assistantId, delta, assistantCreatedAt);
+          } else if (parsed.type === "tool_call" || parsed.type === "tool_result") {
+            setToolEvents((prev) => [
+              ...prev,
+              {
+                id: createId(),
+                type: parsed.type,
+                content: parsed.content,
+                createdAt: Date.now(),
+              },
+            ]);
+          } else if (parsed.type === "error") {
+            setError(parsed.content || "Streaming error.");
+          } else if (parsed.type === "complete") {
+            completed = true;
+          }
+        }
+
+        if (completed) break;
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Request failed.";
-      setError(message);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Streaming stopped.");
+      } else {
+        const message = err instanceof Error ? err.message : "Request failed.";
+        setError(message);
+      }
     } finally {
       setPending(false);
+      abortRef.current = null;
     }
   };
 
@@ -192,7 +359,9 @@ function App() {
   };
 
   const handleReset = () => {
+    stopStreaming();
     setMessages([]);
+    setToolEvents([]);
     setInput("");
     setError(null);
     setPending(false);
@@ -260,7 +429,25 @@ function App() {
                   placeholder="e.g. demo-convo-001"
                 />
               </label>
+              <label className="field toggle">
+                <span>Mode</span>
+                <div className="toggle-row">
+                  <input
+                    id="streaming"
+                    type="checkbox"
+                    checked={useStreaming}
+                    disabled={pending}
+                    onChange={(event) => setUseStreaming(event.target.checked)}
+                  />
+                  <label htmlFor="streaming">Streaming</label>
+                </div>
+              </label>
               <div className="controls">
+                {pending && useStreaming ? (
+                  <button type="button" className="ghost" onClick={stopStreaming}>
+                    Stop
+                  </button>
+                ) : null}
                 <button type="button" className="ghost" onClick={handleReset}>
                   New chat
                 </button>
@@ -306,6 +493,32 @@ function App() {
               ) : null}
               <div ref={endRef} />
             </section>
+
+            {useStreaming && toolEvents.length > 0 ? (
+              <section className="tool-events">
+                <header>
+                  <h3>Tool events</h3>
+                  <span>{toolEvents.length}</span>
+                </header>
+                <div className="tool-events-list">
+                  {toolEvents.map((eventItem) => (
+                    <article key={eventItem.id} className={`tool-event ${eventItem.type}`}>
+                      <div className="tool-event-head">
+                        <strong>{eventItem.type}</strong>
+                        <span>
+                          {new Date(eventItem.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      <pre>{JSON.stringify(eventItem.content, null, 2)}</pre>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <section className="composer">
               <div className="composer-inner">
