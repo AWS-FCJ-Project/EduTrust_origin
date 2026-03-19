@@ -62,6 +62,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Load backend .env 
+        env:
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+        run: |
+          if [ -n "${BACKEND_ENV_FILE}" ]; then
+            printf '%s' "${BACKEND_ENV_FILE}" > .env
+          fi
+
       - name: Run tests with coverage
         run: PYTHONPATH=. uv run pytest tests -v --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
 
