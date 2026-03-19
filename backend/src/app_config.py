@@ -10,7 +10,7 @@ class AppConfig(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     TAVILY_API_KEY: Optional[str] = None
 
-    #Config Paths
+    # Config Paths
     AGENTS_CONFIG_PATH: Optional[str] = None
     LLMS_CONFIG_PATH: Optional[str] = None
 

@@ -2,7 +2,6 @@ import os
 from typing import Any, Dict, Optional
 
 import yaml
-
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.litellm import LiteLLMProvider
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -66,7 +65,10 @@ class LLM:
             if isinstance(params.get("model"), str) and params.get("model")
             else resolved_name
         )
-        api_base = self._resolve_secret_ref(params.get("api_base")) or self._config.LITELLM_BASE_URL
+        api_base = (
+            self._resolve_secret_ref(params.get("api_base"))
+            or self._config.LITELLM_BASE_URL
+        )
         api_key = (
             self._resolve_secret_ref(params.get("api_key"))
             or self._config.LITELLM_API_KEY

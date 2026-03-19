@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 def sse_json(payload: Dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
+
 def sse_response(events: AsyncIterable[str]) -> StreamingResponse:
     return StreamingResponse(
         events,
