@@ -92,29 +92,44 @@ def _extract_tool_event(part) -> Optional[OrchestratorStreamEvent]:
     return None
 
 
+def _build_context_text(conversation_handler, conversation_id: str) -> str:
+    context = conversation_handler.get_context(conversation_id, k=10)
+    return "\n".join(
+        f"{message['role']}: {message['content']}"
+        for message in context
+        if message.get("content")
+    )
+
+
+def _build_prompt_text(question: str, context_text: str) -> str:
+    return (
+        f"{get_current_datetime()}\n"
+        f"Context:\n{context_text}\n\n"
+        f"Question: {question}"
+    )
+
+
+def _build_run_inputs(question: str, conversation_id: str):
+    log_user_input(question, conversation_id)
+
+    conversation_handler = get_conversation_handler()
+    conversation_handler.add_message(conversation_id, role="user", content=question)
+
+    orchestrator_deps = OrchestratorDeps(
+        conversation_id=conversation_id, conversation_handler=conversation_handler
+    )
+
+    context_text = _build_context_text(conversation_handler, conversation_id)
+    prompt_text = _build_prompt_text(question, context_text)
+    return conversation_handler, orchestrator_deps, prompt_text
+
+
 async def ask(question: str, conversation_id: str) -> str:
     with logfire.span(
         "ask_orchestrator", question=question, conversation_id=conversation_id
     ):
-        log_user_input(question, conversation_id)
-
-        conversation_handler = get_conversation_handler()
-        conversation_handler.add_message(conversation_id, role="user", content=question)
-
-        context = conversation_handler.get_context(conversation_id, k=10)
-        context_text = "\n".join(
-            f"{message['role']}: {message['content']}"
-            for message in context
-            if message.get("content")
-        )
-
-        orchestrator_deps = OrchestratorDeps(
-            conversation_id=conversation_id, conversation_handler=conversation_handler
-        )
-        prompt_text = (
-            f"{get_current_datetime()}\n"
-            f"Context:\n{context_text}\n\n"
-            f"Question: {question}"
+        conversation_handler, orchestrator_deps, prompt_text = _build_run_inputs(
+            question, conversation_id
         )
         result = await orchestrator.run(
             prompt_text,
@@ -141,25 +156,8 @@ async def ask_stream_with_tool_calls(
         question=question,
         conversation_id=conversation_id,
     ):
-        log_user_input(question, conversation_id)
-
-        conversation_handler = get_conversation_handler()
-        conversation_handler.add_message(conversation_id, role="user", content=question)
-
-        context = conversation_handler.get_context(conversation_id, k=10)
-        context_text = "\n".join(
-            f"{message['role']}: {message['content']}"
-            for message in context
-            if message.get("content")
-        )
-
-        orchestrator_deps = OrchestratorDeps(
-            conversation_id=conversation_id, conversation_handler=conversation_handler
-        )
-        prompt_text = (
-            f"{get_current_datetime()}\n"
-            f"Context:\n{context_text}\n\n"
-            f"Question: {question}"
+        conversation_handler, orchestrator_deps, prompt_text = _build_run_inputs(
+            question, conversation_id
         )
 
         final_answer: Optional[str] = None
