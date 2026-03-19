@@ -25,6 +25,96 @@ type ToolEvent = {
 type BackendStatus = "checking" | "online" | "offline";
 type RunPhase = "idle" | "planning" | "tools" | "synthesizing";
 
+const extractSseEvents = (buffer: string) => {
+  const events: string[] = [];
+  let rest = buffer;
+  while (true) {
+    const index = rest.indexOf("\n\n");
+    if (index === -1) break;
+    events.push(rest.slice(0, index));
+    rest = rest.slice(index + 2);
+  }
+  return { events, rest };
+};
+
+const extractSseData = (rawEvent: string) => {
+  const dataLines = rawEvent
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith("data:"));
+  if (dataLines.length === 0) return null;
+  return dataLines.map((line) => line.slice(5).trimStart()).join("\n");
+};
+
+const toErrorMessage = (err: unknown) => {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Streaming stopped.";
+  }
+  return err instanceof Error ? err.message : "Request failed.";
+};
+
+function RunState({
+  runPhase,
+  pending,
+  slowNotice,
+}: {
+  runPhase: RunPhase;
+  pending: boolean;
+  slowNotice: boolean;
+}) {
+  return (
+    <section className="run-state">
+      <div className={`run-step ${runPhase === "planning" && pending ? "active" : ""}`}>
+        <span className="run-dot" />
+        <span>Planning</span>
+      </div>
+      <div className={`run-step ${runPhase === "tools" && pending ? "active" : ""}`}>
+        <span className="run-dot" />
+        <span>Tool calls</span>
+      </div>
+      <div
+        className={`run-step ${
+          runPhase === "synthesizing" && pending ? "active" : ""
+        }`}
+      >
+        <span className="run-dot" />
+        <span>Final answer</span>
+      </div>
+      {slowNotice ? <div className="run-note">Waiting longer than usual...</div> : null}
+    </section>
+  );
+}
+
+function ToolEventsPanel({ toolEvents }: { toolEvents: ToolEvent[] }) {
+  if (toolEvents.length === 0) return null;
+
+  return (
+    <section className="tool-events">
+      <header>
+        <h3>Tool events</h3>
+        <span>{toolEvents.length}</span>
+      </header>
+      <div className="tool-events-list">
+        {toolEvents.map((eventItem) => (
+          <article key={eventItem.id} className={`tool-event ${eventItem.type}`}>
+            <div className="tool-event-head">
+              <strong>{eventItem.type}</strong>
+              <span>
+                {new Date(eventItem.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </span>
+            </div>
+            <pre>{JSON.stringify(eventItem.content, null, 2)}</pre>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 const createId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -144,27 +234,6 @@ function App() {
     synthesizing: "Synthesizing answer",
   }[runPhase];
 
-  const parseSseEvents = (buffer: string) => {
-    const events: string[] = [];
-    let rest = buffer;
-    while (true) {
-      const index = rest.indexOf("\n\n");
-      if (index === -1) break;
-      events.push(rest.slice(0, index));
-      rest = rest.slice(index + 2);
-    }
-    return { events, rest };
-  };
-
-  const parseSseData = (rawEvent: string) => {
-    const dataLines = rawEvent
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter((line) => line.startsWith("data:"));
-    if (dataLines.length === 0) return null;
-    return dataLines.map((line) => line.slice(5).trimStart()).join("\n");
-  };
-
   const stopStreaming = () => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -193,26 +262,135 @@ function App() {
     });
   };
 
+  const startNonStreamingRequest = async (
+    question: string,
+    activeConversationId: string,
+  ) => {
+    const response = await fetch(askEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, conversation_id: activeConversationId }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `Request failed (${response.status}).`);
+    }
+
+    const data = (await response.json()) as {
+      answer: string;
+      conversation_id: string;
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: createId(),
+        role: "assistant",
+        content: data.answer,
+        createdAt: Date.now(),
+      },
+    ]);
+  };
+
+  const startStreamingRequest = async (
+    question: string,
+    activeConversationId: string,
+    assistantId: string,
+    assistantCreatedAt: number,
+  ) => {
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    setToolEvents([]);
+
+    const response = await fetch(streamEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: abortController.signal,
+      body: JSON.stringify({ question, conversation_id: activeConversationId }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `Request failed (${response.status}).`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Streaming is not supported by this browser.");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = false;
+
+    while (!completed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const { events, rest } = extractSseEvents(buffer);
+      buffer = rest;
+
+      for (const rawEvent of events) {
+        const data = extractSseData(rawEvent);
+        if (!data) continue;
+
+        let parsed: StreamEvent | null = null;
+        try {
+          parsed = JSON.parse(data) as StreamEvent;
+        } catch {
+          continue;
+        }
+
+        switch (parsed.type) {
+          case "text_delta": {
+            const delta = typeof parsed.content === "string" ? parsed.content : "";
+            appendAssistantDelta(assistantId, delta, assistantCreatedAt);
+            break;
+          }
+          case "tool_call":
+          case "tool_result": {
+            setToolEvents((prev) => [
+              ...prev,
+              {
+                id: createId(),
+                type: parsed.type,
+                content: parsed.content,
+                createdAt: Date.now(),
+              },
+            ]);
+            break;
+          }
+          case "error": {
+            setError(parsed.content || "Streaming error.");
+            break;
+          }
+          case "complete": {
+            completed = true;
+            break;
+          }
+        }
+      }
+    }
+  };
+
   const handleSend = async () => {
     if (pending) return;
 
     const question = input.trim();
-    if (question.length === 0) return;
+    if (!question) return;
 
     let activeConversationId = conversationId.trim();
-    if (activeConversationId.length === 0) {
+    if (!activeConversationId) {
       activeConversationId = `conv-${Date.now()}`;
       setConversationId(activeConversationId);
     }
 
-    const userMessage: Message = {
-      id: createId(),
-      role: "user",
-      content: question,
-      createdAt: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev,
+      { id: createId(), role: "user", content: question, createdAt: Date.now() },
+    ]);
     setInput("");
     setPending(true);
     setError(null);
@@ -221,35 +399,7 @@ function App() {
 
     try {
       if (!useStreaming) {
-        const response = await fetch(askEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            question,
-            conversation_id: activeConversationId,
-          }),
-        });
-
-        if (!response.ok) {
-          const detail = await response.text();
-          throw new Error(detail || `Request failed (${response.status}).`);
-        }
-
-        const data = (await response.json()) as {
-          answer: string;
-          conversation_id: string;
-        };
-
-        const assistantMessage: Message = {
-          id: createId(),
-          role: "assistant",
-          content: data.answer,
-          createdAt: Date.now(),
-        };
-
-        setMessages((prev) => [...prev, assistantMessage]);
+        await startNonStreamingRequest(question, activeConversationId);
         return;
       }
 
@@ -265,84 +415,14 @@ function App() {
         },
       ]);
 
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-      setToolEvents([]);
-
-      const response = await fetch(streamEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: abortController.signal,
-        body: JSON.stringify({
-          question,
-          conversation_id: activeConversationId,
-        }),
-      });
-
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed (${response.status}).`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Streaming is not supported by this browser.");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let completed = false;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const { events, rest } = parseSseEvents(buffer);
-        buffer = rest;
-
-        for (const rawEvent of events) {
-          const data = parseSseData(rawEvent);
-          if (!data) continue;
-
-          let parsed: StreamEvent | null = null;
-          try {
-            parsed = JSON.parse(data) as StreamEvent;
-          } catch {
-            continue;
-          }
-
-          if (parsed.type === "text_delta") {
-            const delta = typeof parsed.content === "string" ? parsed.content : "";
-            appendAssistantDelta(assistantId, delta, assistantCreatedAt);
-          } else if (parsed.type === "tool_call" || parsed.type === "tool_result") {
-            setToolEvents((prev) => [
-              ...prev,
-              {
-                id: createId(),
-                type: parsed.type,
-                content: parsed.content,
-                createdAt: Date.now(),
-              },
-            ]);
-          } else if (parsed.type === "error") {
-            setError(parsed.content || "Streaming error.");
-          } else if (parsed.type === "complete") {
-            completed = true;
-          }
-        }
-
-        if (completed) break;
-      }
+      await startStreamingRequest(
+        question,
+        activeConversationId,
+        assistantId,
+        assistantCreatedAt,
+      );
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Streaming stopped.");
-      } else {
-        const message = err instanceof Error ? err.message : "Request failed.";
-        setError(message);
-      }
+      setError(toErrorMessage(err));
     } finally {
       setPending(false);
       abortRef.current = null;
@@ -397,27 +477,7 @@ function App() {
           </header>
 
           <main className="chat-shell">
-            <section className="run-state">
-              <div className={`run-step ${runPhase === "planning" && pending ? "active" : ""}`}>
-                <span className="run-dot" />
-                <span>Planning</span>
-              </div>
-              <div className={`run-step ${runPhase === "tools" && pending ? "active" : ""}`}>
-                <span className="run-dot" />
-                <span>Tool calls</span>
-              </div>
-              <div
-                className={`run-step ${
-                  runPhase === "synthesizing" && pending ? "active" : ""
-                }`}
-              >
-                <span className="run-dot" />
-                <span>Final answer</span>
-              </div>
-              {slowNotice ? (
-                <div className="run-note">Waiting longer than usual...</div>
-              ) : null}
-            </section>
+            <RunState runPhase={runPhase} pending={pending} slowNotice={slowNotice} />
 
             <section className="control-row">
               <label className="field">
@@ -494,31 +554,7 @@ function App() {
               <div ref={endRef} />
             </section>
 
-            {useStreaming && toolEvents.length > 0 ? (
-              <section className="tool-events">
-                <header>
-                  <h3>Tool events</h3>
-                  <span>{toolEvents.length}</span>
-                </header>
-                <div className="tool-events-list">
-                  {toolEvents.map((eventItem) => (
-                    <article key={eventItem.id} className={`tool-event ${eventItem.type}`}>
-                      <div className="tool-event-head">
-                        <strong>{eventItem.type}</strong>
-                        <span>
-                          {new Date(eventItem.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                      <pre>{JSON.stringify(eventItem.content, null, 2)}</pre>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+            {useStreaming ? <ToolEventsPanel toolEvents={toolEvents} /> : null}
 
             <section className="composer">
               <div className="composer-inner">
