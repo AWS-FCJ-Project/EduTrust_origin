@@ -1,7 +1,7 @@
 import yaml
 from pydantic_ai import Agent
-from pydantic_ai_litellm import LiteLLMModel
 from src.app_config import app_config
+from src.llm import LLM
 from src.search_services.unified_search import UnifiedSearch
 
 with open(app_config.AGENTS_CONFIG_PATH) as f:
@@ -11,7 +11,8 @@ with open(app_config.LLMS_CONFIG_PATH) as f:
     llm_config = yaml.safe_load(f)
 
 model_name = app_config.AGENT_MODEL or llm_config.get("agent_model")
-model = LiteLLMModel(model_name)
+llm = LLM(app_config)
+model = llm.chat_model(model_name)
 
 search_service = UnifiedSearch()
 

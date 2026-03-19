@@ -4,23 +4,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
+    # API Key Settings
     LITELLM_API_KEY: Optional[str] = None
+    LITELLM_BASE_URL: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
 
+    #Config Paths
     AGENTS_CONFIG_PATH: Optional[str] = None
     LLMS_CONFIG_PATH: Optional[str] = None
 
+    # Model Settings
     ORCHESTRATOR_MODEL: Optional[str] = None
     AGENT_MODEL: Optional[str] = None
     TRANSLATE_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
 
+    # Database Settings
     MONGO_URI: Optional[str] = None
     MONGO_USERNAME: Optional[str] = None
     MONGO_PASSWORD: Optional[str] = None
     MONGO_PORT: Optional[str] = None
     MONGO_DB_NAME: Optional[str] = None
-
-    TAVILY_API_KEY: Optional[str] = None
 
     # Auth Settings
     SECRET_KEY: Optional[str] = None
