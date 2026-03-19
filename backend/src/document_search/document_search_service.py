@@ -2,7 +2,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
-
 from src.document_search.vector_store import VectorStore
 
 
@@ -40,7 +39,9 @@ class DocumentSearchService:
                 return []
 
             query_embedding = await self.get_embedding(query)
-            raw_results = self.vector_store.search(query_embedding.reshape(1, -1), top_k)
+            raw_results = self.vector_store.search(
+                query_embedding.reshape(1, -1), top_k
+            )
 
             return [
                 res for res in raw_results if res["score"] <= self.relevance_threshold
