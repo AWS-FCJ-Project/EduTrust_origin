@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
 from src.document_search.document_search_service import DocumentSearchService
 
 router = APIRouter(prefix="/document-search", tags=["Document Search"])
@@ -20,18 +21,33 @@ class SearchResult(BaseModel):
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
-    # Simple check for PDF
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+async def upload_documents(files: List[UploadFile] = File(...)):
+    indexed_files = []
+    failed_files = []
 
-    # In this simplified version, we only index the filename (title)
-    success = await search_service.process_document(file.filename)
+    for file in files:
+        if not file.filename.endswith(".pdf"):
+            failed_files.append(
+                {"filename": file.filename, "reason": "Only PDF files are supported."}
+            )
+            continue
 
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to index document title.")
+        success = await search_service.process_document(file.filename)
 
-    return {"message": f"Document title '{file.filename}' indexed successfully."}
+        if success:
+            indexed_files.append(file.filename)
+        else:
+            failed_files.append(
+                {"filename": file.filename, "reason": "Failed to index document title."}
+            )
+
+    return {
+        "message": f"Processed {len(files)} files.",
+        "indexed_count": len(indexed_files),
+        "indexed_files": indexed_files,
+        "failed_count": len(failed_files),
+        "failed_files": failed_files,
+    }
 
 
 @router.post("/search", response_model=List[SearchResult])
