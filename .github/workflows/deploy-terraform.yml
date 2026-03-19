@@ -36,6 +36,10 @@ jobs:
         with:
           terraform_version: "1.10.0"
 
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform fmt -check -recursive
+
       - name: Write terraform.tfvars from secret
         working-directory: ${{ env.TF_DIR }}
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
@@ -43,10 +47,6 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
-
-      - name: Terraform Format Check
-        working-directory: ${{ env.TF_DIR }}
-        run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_DIR }}
