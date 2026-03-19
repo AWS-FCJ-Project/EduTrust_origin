@@ -124,5 +124,8 @@ variable "public_subnet_1c_cidr" {
 variable "certificate_arn" {
   description = "The ARN of the ACM certificate for HTTPS"
   type        = string
-  default     = ""
+  validation {
+    condition     = length(trimspace(var.certificate_arn)) > 0
+    error_message = "certificate_arn must be set (ACM ARN) to create the HTTPS ALB listener."
+  }
 }
