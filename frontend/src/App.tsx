@@ -53,15 +53,13 @@ const toErrorMessage = (err: unknown) => {
   return err instanceof Error ? err.message : "Request failed.";
 };
 
-function RunState({
-  runPhase,
-  pending,
-  slowNotice,
-}: {
+type RunStateProps = Readonly<{
   runPhase: RunPhase;
   pending: boolean;
   slowNotice: boolean;
-}) {
+}>;
+
+function RunState({ runPhase, pending, slowNotice }: RunStateProps) {
   return (
     <section className="run-state">
       <div className={`run-step ${runPhase === "planning" && pending ? "active" : ""}`}>
@@ -85,7 +83,11 @@ function RunState({
   );
 }
 
-function ToolEventsPanel({ toolEvents }: { toolEvents: ToolEvent[] }) {
+type ToolEventsPanelProps = Readonly<{
+  toolEvents: ToolEvent[];
+}>;
+
+function ToolEventsPanel({ toolEvents }: ToolEventsPanelProps) {
   if (toolEvents.length === 0) return null;
 
   return (
@@ -128,6 +130,44 @@ const buildEndpoint = (baseUrl: string, path: string) =>
   `${normalizeBaseUrl(baseUrl)}${path}`;
 
 const DEFAULT_API_URL = "http://localhost:8000";
+
+type StreamEventHandlers = Readonly<{
+  onTextDelta: (delta: string) => void;
+  onToolEvent: (type: ToolEvent["type"], content: unknown) => void;
+  onError: (message: string) => void;
+}>;
+
+const parseStreamEvent = (data: string): StreamEvent | null => {
+  try {
+    return JSON.parse(data) as StreamEvent;
+  } catch {
+    return null;
+  }
+};
+
+const applyStreamEvent = (
+  streamEvent: StreamEvent,
+  handlers: StreamEventHandlers,
+): boolean => {
+  if (streamEvent.type === "text_delta") {
+    const delta =
+      typeof streamEvent.content === "string" ? streamEvent.content : "";
+    handlers.onTextDelta(delta);
+    return false;
+  }
+
+  if (streamEvent.type === "tool_call" || streamEvent.type === "tool_result") {
+    handlers.onToolEvent(streamEvent.type, streamEvent.content);
+    return false;
+  }
+
+  if (streamEvent.type === "error") {
+    handlers.onError(streamEvent.content || "Streaming error.");
+    return false;
+  }
+
+  return true;
+};
 
 function App() {
   const [conversationId, setConversationId] = useState("");
@@ -336,40 +376,23 @@ function App() {
         const data = extractSseData(rawEvent);
         if (!data) continue;
 
-        let parsed: StreamEvent | null = null;
-        try {
-          parsed = JSON.parse(data) as StreamEvent;
-        } catch {
-          continue;
-        }
+        const parsed = parseStreamEvent(data);
+        if (!parsed) continue;
 
-        switch (parsed.type) {
-          case "text_delta": {
-            const delta = typeof parsed.content === "string" ? parsed.content : "";
-            appendAssistantDelta(assistantId, delta, assistantCreatedAt);
-            break;
-          }
-          case "tool_call":
-          case "tool_result": {
+        const didComplete = applyStreamEvent(parsed, {
+          onTextDelta: (delta) =>
+            appendAssistantDelta(assistantId, delta, assistantCreatedAt),
+          onToolEvent: (type, content) =>
             setToolEvents((prev) => [
               ...prev,
-              {
-                id: createId(),
-                type: parsed.type,
-                content: parsed.content,
-                createdAt: Date.now(),
-              },
-            ]);
-            break;
-          }
-          case "error": {
-            setError(parsed.content || "Streaming error.");
-            break;
-          }
-          case "complete": {
-            completed = true;
-            break;
-          }
+              { id: createId(), type, content, createdAt: Date.now() },
+            ]),
+          onError: (message) => setError(message),
+        });
+
+        if (didComplete) {
+          completed = true;
+          break;
         }
       }
     }
