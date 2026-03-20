@@ -37,6 +37,17 @@ class AppConfig(BaseSettings):
     # OTP Settings
     OTP_EXPIRE_SECONDS: Optional[int] = None
 
+    # AWS Credentials
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION: Optional[str] = "ap-southeast-1"
+
+    # Vector Search Settings
+    S3_BUCKET_NAME: Optional[str] = None
+    VECTOR_SEARCH_BUCKET: str = "my-vector-doc-search"
+    VECTOR_SEARCH_PREFIX: str = "doc-search/"
+    VECTOR_SEARCH_INDEX_NAME: str = "document-index"
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

@@ -10,7 +10,7 @@ from src import state
 from src.app_config import app_config
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
-from src.routers import translate_routes, unified_agent_routes
+from src.routers import document_search_routes, translate_routes, unified_agent_routes
 from src.routers.auth import login, password, register
 
 logfire.configure(
@@ -45,6 +45,13 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+# Authorization middleware requires SessionMiddleware
+import starlette.middleware.sessions
+
+app.add_middleware(
+    starlette.middleware.sessions.SessionMiddleware, secret_key=app_config.SECRET_KEY
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -55,6 +62,7 @@ app.add_middleware(
 
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
 app.include_router(translate_routes.router, tags=["Translate"])
+app.include_router(document_search_routes.router, tags=["Document Search"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
