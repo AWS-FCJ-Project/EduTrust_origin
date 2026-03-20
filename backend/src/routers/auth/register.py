@@ -4,6 +4,7 @@ from typing import Annotated
 
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+
 from src.auth.auth_utils import hash_password
 from src.database import users_collection
 from src.extensions import limiter
