@@ -155,9 +155,9 @@ variable "ecr_repository_name" {
 }
 
 variable "ecr_tag_immutable" {
-  description = "Whether ECR image tags are immutable"
+  description = "Whether ECR image tags are immutable (set to false to allow overwriting existing tags)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "certificate_arn" {
