@@ -83,28 +83,33 @@ function CameraDetection() {
     }, "image/jpeg", 0.7);
   };
 
+  const processIPCamera = () => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`;
+    img.onload = () => captureAndSend(img);
+  };
+
+  const processWebcam = () => {
+    if (videoRef.current) {
+      captureAndSend(videoRef.current);
+    }
+  };
+
   useEffect(() => {
+    let intervalId: number;
+
     const startCamera = async () => {
       if (IP_CAMERA_URL) {
         setStatus(`Using IP Cam: ${IP_CAMERA_URL}`);
-        const interval = setInterval(() => {
-          const img = new Image();
-          img.crossOrigin = "Anonymous";
-          img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`;
-          img.onload = () => captureAndSend(img);
-        }, 500);
-        return () => clearInterval(interval);
+        intervalId = window.setInterval(processIPCamera, 500);
+        return;
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) videoRef.current.srcObject = stream;
-
-        const interval = setInterval(() => {
-          if (videoRef.current) captureAndSend(videoRef.current);
-        }, 300);
-
-        return () => clearInterval(interval);
+        intervalId = window.setInterval(processWebcam, 300);
       } catch (err) {
         console.error("Local camera error", err);
         setStatus("Không tìm thấy Camera. Vui lòng kiểm tra quyền truy cập.");
@@ -112,6 +117,7 @@ function CameraDetection() {
     };
 
     startCamera();
+    return () => clearInterval(intervalId);
   }, [IP_CAMERA_URL]);
 
   return (
