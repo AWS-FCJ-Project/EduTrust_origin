@@ -1,10 +1,12 @@
-from typing import Any, Dict, List
 import os
+from typing import Any, Dict, List
+
 import boto3
 from fastapi import UploadFile
-from src.document_search.vector_store import BM25Store
-from src.document_handler.document_handler import DocumentHandler
+
 from src.app_config import app_config
+from src.document_handler.document_handler import DocumentHandler
+from src.document_search.vector_store import BM25Store
 
 # =============================================================================
 # OLD VECTOR SEARCH CODE (COMMENTED OUT FOR RESTORATION)
@@ -46,6 +48,7 @@ from src.app_config import app_config
 #             return []
 # =============================================================================
 
+
 class DocumentSearchService:
     def __init__(self):
         self.bm25_store = BM25Store()
@@ -66,40 +69,36 @@ class DocumentSearchService:
 
             # 1. Read file content
             content_bytes = await file.read()
-            
+
             # 2. Upload original file to regular S3
             s3_key = f"uploads/{filename}"
             print(f"Uploading original file to S3: {self.bucket_name}/{s3_key}")
             self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=s3_key,
-                Body=content_bytes
+                Bucket=self.bucket_name, Key=s3_key, Body=content_bytes
             )
 
             # 3. Extract text from content
             mime_type = file.content_type or "application/pdf"
             print(f"Extracting text from {filename} (MIME: {mime_type})...")
-            text_content = await self.doc_handler.extract_from_bytes(content_bytes, mime_type)
-            
+            text_content = await self.doc_handler.extract_from_bytes(
+                content_bytes, mime_type
+            )
+
             if not text_content:
                 print(f"WARNING: No text extracted from {filename}")
-                text_content = filename # Fallback to filename if text extraction fails
+                text_content = filename  # Fallback to filename if text extraction fails
 
             # 4. Add to BM25 index
             # Store a snippet for the search result display
             snippet = text_content[:300] + ("..." if len(text_content) > 300 else "")
-            metadata = {
-                "filename": filename,
-                "content": snippet,
-                "s3_key": s3_key
-            }
-            
+            metadata = {"filename": filename, "content": snippet, "s3_key": s3_key}
+
             print(f"Indexing document in BM25: {filename}")
             self.bm25_store.add_document(text_content, metadata)
-            
+
             # Reset file cursor just in case
             await file.seek(0)
-            
+
             return True
         except Exception as e:
             print(f"Error processing document '{file.filename}': {str(e)}")
@@ -109,9 +108,10 @@ class DocumentSearchService:
         try:
             if not query:
                 return []
-            
+
             print(f"Searching BM25 for query: '{query}'")
             return self.bm25_store.search(query, top_k)
         except Exception as e:
             print(f"Error searching BM25 for query '{query}': {str(e)}")
             return []
+

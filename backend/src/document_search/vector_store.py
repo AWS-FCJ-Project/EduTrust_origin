@@ -90,12 +90,13 @@ from typing import Any, Dict, List
 
 import boto3
 from rank_bm25 import BM25Okapi
+
 from src.app_config import app_config
 
 
 class BM25Store:
     def __init__(self):
-        self.bucket_name = app_config.S3_BUCKET_NAME # Use regular S3 bucket
+        self.bucket_name = app_config.S3_BUCKET_NAME  # Use regular S3 bucket
         self.prefix = "bm25_index/"
         self.corpus_path = f"{self.prefix}corpus.pkl"
         self.metadata_path = f"{self.prefix}metadata.pkl"
@@ -109,7 +110,9 @@ class BM25Store:
         self.metadata: List[Dict[str, Any]] = []
         self.bm25: BM25Okapi = None
 
-        print(f"BM25Store initialized with Bucket: {self.bucket_name}, Prefix: {self.prefix}")
+        print(
+            f"BM25Store initialized with Bucket: {self.bucket_name}, Prefix: {self.prefix}"
+        )
         self.load_from_s3()
 
     def tokenize(self, text: str) -> List[str]:
@@ -118,16 +121,22 @@ class BM25Store:
     def load_from_s3(self):
         try:
             # Load Corpus
-            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=self.corpus_path)
+            response = self.s3_client.get_object(
+                Bucket=self.bucket_name, Key=self.corpus_path
+            )
             self.corpus = pickle.loads(response["Body"].read())
 
             # Load Metadata
-            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=self.metadata_path)
+            response = self.s3_client.get_object(
+                Bucket=self.bucket_name, Key=self.metadata_path
+            )
             self.metadata = pickle.loads(response["Body"].read())
 
             if self.corpus:
                 self.bm25 = BM25Okapi(self.corpus)
-            print(f"Successfully loaded BM25 index from S3: {self.bucket_name}/{self.prefix}")
+            print(
+                f"Successfully loaded BM25 index from S3: {self.bucket_name}/{self.prefix}"
+            )
         except Exception as e:
             print(f"Could not load BM25 from S3 (maybe it doesn't exist yet): {str(e)}")
 
@@ -137,16 +146,18 @@ class BM25Store:
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=self.corpus_path,
-                Body=pickle.dumps(self.corpus)
+                Body=pickle.dumps(self.corpus),
             )
 
             # Save Metadata
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=self.metadata_path,
-                Body=pickle.dumps(self.metadata)
+                Body=pickle.dumps(self.metadata),
             )
-            print(f"Successfully saved BM25 index to S3: {self.bucket_name}/{self.prefix}")
+            print(
+                f"Successfully saved BM25 index to S3: {self.bucket_name}/{self.prefix}"
+            )
         except Exception as e:
             print(f"ERROR: Could not save BM25 to S3: {str(e)}")
 
@@ -164,15 +175,18 @@ class BM25Store:
         tokenized_query = self.tokenize(query)
         # Get scores
         scores = self.bm25.get_scores(tokenized_query)
-        
+
         # Get top indices
-        top_n = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
-        
+        top_n = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[
+            :top_k
+        ]
+
         results = []
         for i in top_n:
-            if scores[i] > 0: # Only return relevant results
+            if scores[i] > 0:  # Only return relevant results
                 res = self.metadata[i].copy()
                 res["score"] = float(scores[i])
                 results.append(res)
-        
+
         return results
+
