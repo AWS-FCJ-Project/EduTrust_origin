@@ -207,6 +207,13 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
         ]
         Effect   = "Allow"
         Resource = [aws_ssm_parameter.backend_env.arn]
+      },
+      {
+        Action = [
+          "kms:Decrypt"
+        ]
+        Effect   = "Allow"
+        Resource = [aws_kms_key.ssm_key.arn]
       }
     ]
   })
@@ -454,8 +461,25 @@ resource "aws_ssm_parameter" "backend_env" {
   description = "Backend environment variables for EduTrust"
   type        = "SecureString"
   value       = "PLACEHOLDER=true" # Should be updated via CI/CD
+  key_id      = aws_kms_key.ssm_key.arn
 
   lifecycle {
     ignore_changes = [value]
   }
+}
+
+# KMS Key for SSM Parameter Encryption (Fix CKV_AWS_337)
+resource "aws_kms_key" "ssm_key" {
+  description             = "KMS key for SSM parameter encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "${var.ec2_instance_name}-ssm-key"
+  }
+}
+
+resource "aws_kms_alias" "ssm_key_alias" {
+  name          = "alias/${var.ec2_instance_name}-ssm-key"
+  target_key_id = aws_kms_key.ssm_key.key_id
 }
