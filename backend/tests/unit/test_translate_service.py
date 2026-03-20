@@ -45,4 +45,3 @@ class TestTranslateService:
 
         with pytest.raises(ValueError, match="Unsupported file type"):
             await translate_service.translate_file(file=upload_file, language="vi")
-

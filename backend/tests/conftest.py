@@ -14,4 +14,3 @@ os.environ["MONGO_DB_NAME"] = "test_db"
 os.environ["LOGFIRE_TOKEN"] = "test-token"
 os.environ["TAVILY_API_KEY"] = "tvly-test-key"
 os.environ["LITELLM_API_KEY"] = "sk-test-key"
-
