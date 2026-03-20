@@ -60,8 +60,8 @@ function CameraDetection() {
     return () => socket.close();
   }, []);
 
-  // Cấu hình Camera: Để trống "" để dùng Webcam local, hoặc điền URL (ví dụ: "http://192.168.1.177")
-  const IP_CAMERA_URL = "http://192.168.1.177:8554";
+  // Cấu hình Camera: Để trống "" để dùng Webcam local, hoặc điền URL vào .env (VITE_CAMERA_URL)
+  const IP_CAMERA_URL = import.meta.env.VITE_CAMERA_URL || "";
 
   const captureAndSend = (source: HTMLVideoElement | HTMLImageElement) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN || !canvasRef.current) return;
