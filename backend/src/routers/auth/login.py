@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
+
 from src.auth.auth_utils import verify_password
 from src.auth.jwt_handler import create_access_token
 from src.database import users_collection
