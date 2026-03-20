@@ -13,4 +13,3 @@ def test_database_module():
         assert backend.src.database.db is not None
         assert backend.src.database.users_collection is not None
         assert mock_motor.call_count >= 1
-

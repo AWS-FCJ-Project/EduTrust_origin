@@ -46,7 +46,7 @@ class TranslateService:
         content_type = file.content_type or "application/octet-stream"
 
         if not self.doc_handler.is_supported(content_type):
-            raise ValueError(f"Unsupported file type: {content_type}")
+            raise ValueError("Unsupported file type")
 
         text = await self.doc_handler.extract_from_bytes(file_bytes, content_type)
 
