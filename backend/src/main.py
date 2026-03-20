@@ -47,7 +47,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logfire.instrument_fastapi(app)
 # Authorization middleware requires SessionMiddleware
 import starlette.middleware.sessions
-app.add_middleware(starlette.middleware.sessions.SessionMiddleware, secret_key=app_config.SECRET_KEY)
+
+app.add_middleware(
+    starlette.middleware.sessions.SessionMiddleware, secret_key=app_config.SECRET_KEY
+)
 
 app.add_middleware(
     CORSMiddleware,
