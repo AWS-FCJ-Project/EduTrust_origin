@@ -4,6 +4,7 @@ from typing import Optional
 import logfire
 import yaml
 from pydantic_ai import Agent, AgentRunResultEvent, messages
+
 from backend.src.app_config import app_config
 from backend.src.llm import LLM
 from backend.src.logger import log_agent_response, log_user_input

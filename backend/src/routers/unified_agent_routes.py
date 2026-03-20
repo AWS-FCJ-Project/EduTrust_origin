@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+
 from backend.src.auth.dependencies import get_current_user
 from backend.src.crew import tools
 from backend.src.crew.orchestrator import ask, ask_stream_with_tool_calls
