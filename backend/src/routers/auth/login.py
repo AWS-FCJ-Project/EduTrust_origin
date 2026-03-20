@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
 from src.auth.auth_utils import verify_password
-from src.auth.session_handler import clear_user_session, set_user_session
+from src.auth.jwt_handler import create_access_token
 from src.database import users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import UserLogin
@@ -10,7 +10,13 @@ from src.schemas.auth_schemas import UserLogin
 router = APIRouter()
 
 
-@router.post("/login", responses={401: {"description": "Unauthorized"}})
+@router.post(
+    "/login",
+    responses={
+        401: {"description": "Invalid credentials"},
+        429: {"description": "Too Many Requests"},
+    },
+)
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin):
     db_user = await users_collection.find_one({"email": user.email})
@@ -21,13 +27,12 @@ async def login(request: Request, user: UserLogin):
         {"email": user.email}, {"$set": {"last_login": datetime.now(timezone.utc)}}
     )
 
-    set_user_session(request, user.email)
+    access_token = create_access_token(data={"sub": user.email})
 
-    return {"message": "Login successful", "email": user.email}
+    return {"access_token": access_token, "token_type": "bearer", "email": user.email}
 
 
 @router.post("/logout")
-async def logout(request: Request):
-    """Logout user by clearing session"""
-    clear_user_session(request)
-    return {"message": "Logged out successfully"}
+async def logout():
+    """Logout user (client-side handles token removal)"""
+    return {"message": "Client should remove the token to logout"}
