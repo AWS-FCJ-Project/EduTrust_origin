@@ -1,4 +1,4 @@
-from src.memory.conversation_handler import ConversationHandler
+from backend.src.memory.conversation_handler import ConversationHandler
 
 conversation_handler: ConversationHandler | None = None
 

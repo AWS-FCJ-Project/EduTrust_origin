@@ -1,4 +1,5 @@
 import base64
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -9,14 +10,23 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
-from src.detection.camera_service import get_camera_service
-from src.schemas.camera_schema import CameraDetectionResponse
+from backend.src.detection.camera_service import get_camera_service
+from backend.src.schemas.camera_schema import CameraDetectionResponse
 
 router = APIRouter(prefix="/camera", tags=["Camera"])
 
 
-@router.post("/process", response_model=CameraDetectionResponse)
-async def process_camera_frame(file: UploadFile = File(...), visualize: bool = True):
+@router.post(
+    "/process",
+    response_model=CameraDetectionResponse,
+    responses={
+        400: {"description": "Invalid file type. Must be an image."},
+        500: {"description": "Internal server error during processing."},
+    },
+)
+async def process_camera_frame(
+    file: Annotated[UploadFile, File(...)], visualize: bool = True
+):
     if not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400, detail="Invalid file type. Must be an image."
@@ -84,5 +94,5 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass

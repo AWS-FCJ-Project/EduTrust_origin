@@ -8,12 +8,12 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
-from src import state
-from src.app_config import app_config
-from src.extensions import limiter
-from src.memory.conversation_handler import ConversationHandler
-from src.routers import camera_routes, translate_routes, unified_agent_routes
-from src.routers.auth import login, password, register
+from backend.src import state
+from backend.src.app_config import app_config
+from backend.src.extensions import limiter
+from backend.src.memory.conversation_handler import ConversationHandler
+from backend.src.routers import camera_routes, translate_routes, unified_agent_routes
+from backend.src.routers.auth import login, password, register
 
 logfire.configure(
     environment="local",

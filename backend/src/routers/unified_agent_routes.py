@@ -1,14 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from src.auth.dependencies import get_current_user
-from src.crew import tools
-from src.crew.orchestrator import ask, ask_stream_with_tool_calls
-from src.schemas.unified_agent_schema import (
+from backend.src.auth.dependencies import get_current_user
+from backend.src.crew import tools
+from backend.src.crew.orchestrator import ask, ask_stream_with_tool_calls
+from backend.src.schemas.unified_agent_schema import (
     UnifiedAgentRequestSchema,
     UnifiedAgentResponseSchema,
 )
-from src.streaming import sse_json, sse_response
+from backend.src.streaming import sse_json, sse_response
 
 router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
 

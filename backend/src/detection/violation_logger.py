@@ -13,7 +13,7 @@ class ViolationLogger:
             try:
                 with open(self.log_file, "r") as f:
                     self.violations = json.load(f)
-            except:
+            except (json.JSONDecodeError, IOError):
                 self.violations = []
         else:
             self.violations = []

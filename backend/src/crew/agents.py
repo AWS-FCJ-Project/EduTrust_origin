@@ -1,8 +1,8 @@
 import yaml
 from pydantic_ai import Agent
-from src.app_config import app_config
-from src.llm import LLM
-from src.search_services.unified_search import UnifiedSearch
+from backend.src.app_config import app_config
+from backend.src.llm import LLM
+from backend.src.search_services.unified_search import UnifiedSearch
 
 with open(app_config.AGENTS_CONFIG_PATH) as f:
     prompts = yaml.safe_load(f)

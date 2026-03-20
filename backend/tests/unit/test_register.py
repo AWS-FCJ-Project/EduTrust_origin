@@ -8,11 +8,11 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def mock_dependencies():
-    with patch("src.main.ConversationHandler"):
+    with patch("backend.src.main.ConversationHandler"):
         yield
 
 
-from src.main import app
+from backend.src.main import app
 
 client = TestClient(app)
 
@@ -20,8 +20,11 @@ client = TestClient(app)
 def test_multi_register_csv():
     csv_content = b"email,password\ntestcsv1@example.com,Pass@word1\ntestcsv2@example.com,Pass@word2"
 
-    with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+    with patch(
+        "backend.src.routers.auth.register.users_collection.find"
+    ) as mock_find, patch(
+        "backend.src.routers.auth.register.users_collection.insert_many",
+        new_callable=AsyncMock,
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[{"email": "testcsv1@example.com"}])
@@ -49,8 +52,11 @@ def test_multi_register_excel():
     df.to_excel(excel_file, index=False)
     excel_file.seek(0)
 
-    with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+    with patch(
+        "backend.src.routers.auth.register.users_collection.find"
+    ) as mock_find, patch(
+        "backend.src.routers.auth.register.users_collection.insert_many",
+        new_callable=AsyncMock,
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[])

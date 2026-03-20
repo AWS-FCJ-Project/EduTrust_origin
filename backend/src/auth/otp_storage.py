@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from src.database import db
+from backend.src.database import db
 
 otp_collection = db["otps"]
 

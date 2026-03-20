@@ -2,12 +2,13 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from src.auth.otp_storage import cleanup_expired_otps, save_otp, verify_otp
+
+from backend.src.auth.otp_storage import cleanup_expired_otps, save_otp, verify_otp
 
 
 @pytest.fixture
 def mock_otp_collection():
-    with patch("src.auth.otp_storage.otp_collection") as mock_col:
+    with patch("backend.src.auth.otp_storage.otp_collection") as mock_col:
         yield mock_col
 
 
