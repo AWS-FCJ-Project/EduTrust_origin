@@ -278,59 +278,23 @@ jobs:
           terraform apply -auto-approve \
             -var="backend_image_tag=${{ github.sha }}"
 
-      - name: Wait for ASG Instance Refresh
+      - name: Check ASG Instance Refresh Status
         run: |
           set -euo pipefail
           ASG_NAME="${{ needs.terraform.outputs.asg_name }}"
-          echo "Monitoring Instance Refresh for $ASG_NAME..."
+          echo "Checking Instance Refresh for $ASG_NAME..."
 
-          NONE_COUNT=0
+          RAW_STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --query 'InstanceRefreshes[0].Status' \
+            --output text 2>/dev/null) || RAW_STATUS="CLI_ERROR"
 
-          for i in {1..20}; do
-            # AWS CLI exits 0 with empty string when no refreshes exist (not "None")
-            # Use || echo "EMPTY" only as true fallback for CLI errors
-            RAW_STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "$ASG_NAME" \
-              --query 'InstanceRefreshes[0].Status' \
-              --output text 2>/dev/null) || RAW_STATUS="CLI_ERROR"
+          if [ -z "$RAW_STATUS" ] || [ "$RAW_STATUS" = "None" ] || [ "$RAW_STATUS" = "null" ]; then
+            STATUS="NONE"
+          else
+            STATUS="$RAW_STATUS"
+          fi
 
-            # Normalize: empty string or "None" from AWS CLI both mean "no refresh"
-            if [ -z "$RAW_STATUS" ] || [ "$RAW_STATUS" = "None" ] || [ "$RAW_STATUS" = "null" ]; then
-              STATUS="NONE"
-            else
-              STATUS="$RAW_STATUS"
-            fi
-
-            echo "Check $i/20 — status: $STATUS"
-
-            case "$STATUS" in
-              Successful)
-                echo "Deployment Successful!"
-                exit 0
-                ;;
-              Failed|Cancelled)
-                echo "Deployment $STATUS!"
-                exit 1
-                ;;
-              InProgress|Pending|RollbackInProgress|RollbackSuccessful)
-                echo "Refresh in progress, waiting..."
-                NONE_COUNT=0
-                ;;
-              NONE)
-                NONE_COUNT=$((NONE_COUNT + 1))
-                echo "No active refresh (${NONE_COUNT}/2 checks)."
-                if [ "$NONE_COUNT" -ge 2 ]; then
-                  echo "No instance refresh was started. Considering deployment complete."
-                  exit 0
-                fi
-                ;;
-              CLI_ERROR)
-                echo "AWS CLI error occurred while checking status."
-                ;;
-              *)
-                echo "Unknown status: $STATUS"
-                ;;
-            esac
-            sleep 15
-          done
-          echo "Wait timed out, but refresh may still be in progress."
+          echo "Current status: $STATUS"
+          echo "Deployment triggered successfully! AWS Auto Scaling Group will handle the Instance Refresh in the background."
+          exit 0
