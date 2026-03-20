@@ -22,10 +22,8 @@ async def forgot_password(
 ):
     user = await users_collection.find_one({"email": data.email})
     if not user:
-        # Don't reveal user existence
         return {"message": "If email exists, OTP sent."}
 
-    # Generate and save OTP to MongoDB
     otp = generate_otp()
     await save_otp(data.email, otp, "password_reset", app_config.OTP_EXPIRE_SECONDS)
 
@@ -43,13 +41,11 @@ async def forgot_password(
     },
 )
 async def reset_password(data: ResetPassword):
-    # Verify OTP from MongoDB
     is_valid = await verify_otp(data.email, data.otp, "password_reset")
 
     if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
 
-    # Update password
     hashed = hash_password(data.new_password)
     await users_collection.update_one(
         {"email": data.email}, {"$set": {"hashed_password": hashed}}
