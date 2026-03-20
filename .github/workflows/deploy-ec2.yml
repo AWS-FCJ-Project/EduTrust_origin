@@ -191,19 +191,25 @@ jobs:
       - name: Check if image tag exists in ECR
         id: ecr_check
         run: |
-          set -euo pipefail
           IMAGE_TAG="${{ steps.image_vars.outputs.image_tag }}"
-          REPO_NAME=$(echo "${ECR_REPOSITORY_URL}" | sed 's|.*dkr.ecr.[^/]*/||')
-          if aws ecr describe-images --repository-name "$REPO_NAME" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
-            echo "Image tag $IMAGE_TAG already exists in ECR. Skipping build and push."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          # Extract repo name from ECR URL (everything after the last /)
+          REPO_NAME=$(basename "${ECR_REPOSITORY_URL}")
+          echo "Checking ECR repo: $REPO_NAME for tag: $IMAGE_TAG"
+
+          if aws ecr describe-images \
+               --repository-name "$REPO_NAME" \
+               --image-ids imageTag="$IMAGE_TAG" \
+               --query 'imageDetails[0].imageTags' \
+               --output text >/dev/null 2>&1; then
+            echo "Tag $IMAGE_TAG already exists in ECR. Skipping push."
+            echo "should_push=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Image tag $IMAGE_TAG not found. Will build and push."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $IMAGE_TAG not found. Will build and push."
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push Docker image
-        if: steps.ecr_check.outputs.skip != 'true'
+        if: steps.ecr_check.outputs.should_push == 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
