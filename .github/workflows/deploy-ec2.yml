@@ -40,10 +40,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@8205f771746f34e321598f654b0c20f014856096 # v3.1.2
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "1.10.0"
 
@@ -83,7 +83,7 @@ jobs:
         run: terraform init
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@8c30a7b45f1b6727bb1c206cfd38bb393bc3bb21 # v4.0.2
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -152,7 +152,7 @@ jobs:
       ECR_REPOSITORY_URL: ${{ needs.terraform.outputs.ecr_repository_url }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set image variables
         id: image_vars
@@ -161,7 +161,7 @@ jobs:
           echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@8c30a7b45f1b6727bb1c206cfd38bb393bc3bb21 # v4.0.2
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -169,7 +169,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login_ecr
-        uses: aws-actions/amazon-ecr-login@d92723c3b0696b99de24f923d6a3666b6167f311 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@261fc3d4806db1fa66a15cc11113c456db8870a7 # v2
 
       - name: Compute Docker tags
         id: docker_tags
@@ -190,7 +190,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@408a0d78ddc870a4980718507797743d5440623a # v6.15.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile
@@ -205,10 +205,10 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@8c30a7b45f1b6727bb1c206cfd38bb393bc3bb21 # v4.0.2
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -228,7 +228,7 @@ jobs:
             --overwrite
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@8205f771746f34e321598f654b0c20f014856096 # v3.1.2
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "1.10.0"
 
