@@ -4,12 +4,16 @@ from typing import Optional
 import logfire
 import yaml
 from pydantic_ai import Agent, AgentRunResultEvent, messages
-from src.app_config import app_config
-from src.llm import LLM
-from src.logger import log_agent_response, log_user_input
-from src.schemas.orchestrator_schema import OrchestratorDeps, OrchestratorStreamEvent
-from src.state import get_conversation_handler
-from src.utils import get_current_datetime
+
+from backend.src.app_config import app_config
+from backend.src.llm import LLM
+from backend.src.logger import log_agent_response, log_user_input
+from backend.src.schemas.orchestrator_schema import (
+    OrchestratorDeps,
+    OrchestratorStreamEvent,
+)
+from backend.src.state import get_conversation_handler
+from backend.src.utils import get_current_datetime
 
 with open(app_config.AGENTS_CONFIG_PATH) as f:
     prompts = yaml.safe_load(f)

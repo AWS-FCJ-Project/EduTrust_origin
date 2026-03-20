@@ -1,9 +1,12 @@
 from fastapi import UploadFile
 from langchain_litellm import ChatLiteLLM
 
-from src.app_config import app_config
-from src.document_handler.document_handler import DocumentHandler
-from src.prompt_template import translate_output_parser, translate_prompt_template
+from backend.src.app_config import app_config
+from backend.src.document_handler.document_handler import DocumentHandler
+from backend.src.prompt_template import (
+    translate_output_parser,
+    translate_prompt_template,
+)
 
 
 class TranslateService:

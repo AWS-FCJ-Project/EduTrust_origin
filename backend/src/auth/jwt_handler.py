@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from src.app_config import app_config
+
+from backend.src.app_config import app_config
 
 SECRET_KEY = app_config.SECRET_KEY
 ALGORITHM = "HS256"

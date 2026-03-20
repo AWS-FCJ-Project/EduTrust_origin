@@ -1,6 +1,6 @@
 from pydantic_ai import RunContext
 
-from src.crew.agents import (
+from backend.src.crew.agents import (
     general_chat_agent,
     literature_agent,
     math_agent,
@@ -8,10 +8,10 @@ from src.crew.agents import (
     quiz_agent,
     web_search_agent,
 )
-from src.crew.orchestrator import orchestrator
-from src.logger import console, log_agent_response, log_delegation
-from src.schemas.orchestrator_schema import OrchestratorDeps
-from src.utils import get_current_datetime
+from backend.src.crew.orchestrator import orchestrator
+from backend.src.logger import console, log_agent_response, log_delegation
+from backend.src.schemas.orchestrator_schema import OrchestratorDeps
+from backend.src.utils import get_current_datetime
 
 
 @orchestrator.tool

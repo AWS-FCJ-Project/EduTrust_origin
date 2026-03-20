@@ -1,7 +1,7 @@
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 
-from src.schemas.translate_schema import TranslateResponse
+from backend.src.schemas.translate_schema import TranslateResponse
 
 translate_output_parser = PydanticOutputParser(pydantic_object=TranslateResponse)
 
