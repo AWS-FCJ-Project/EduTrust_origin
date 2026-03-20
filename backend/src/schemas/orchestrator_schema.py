@@ -1,8 +1,7 @@
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-
-from backend.src.memory.conversation_handler import ConversationHandler
+from src.memory.conversation_handler import ConversationHandler
 
 
 class OrchestratorDeps(BaseModel):

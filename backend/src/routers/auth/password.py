@@ -1,12 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-
-from backend.src.app_config import app_config
-from backend.src.auth.auth_utils import generate_otp, hash_password
-from backend.src.auth.email_service import send_email
-from backend.src.auth.otp_storage import save_otp, verify_otp
-from backend.src.database import users_collection
-from backend.src.extensions import limiter
-from backend.src.schemas.auth_schemas import ForgotPassword, ResetPassword
+from src.app_config import app_config
+from src.auth.auth_utils import generate_otp, hash_password
+from src.auth.email_service import send_email
+from src.auth.otp_storage import save_otp, verify_otp
+from src.database import users_collection
+from src.extensions import limiter
+from src.schemas.auth_schemas import ForgotPassword, ResetPassword
 
 router = APIRouter()
 

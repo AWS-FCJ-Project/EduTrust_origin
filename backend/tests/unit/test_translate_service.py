@@ -3,8 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from backend.src.translate_service.translate import TranslateService
+from src.translate_service.translate import TranslateService
 
 
 @pytest.fixture

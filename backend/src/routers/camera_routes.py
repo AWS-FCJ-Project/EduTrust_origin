@@ -9,9 +9,8 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-
-from backend.src.detection.camera_service import get_camera_service
-from backend.src.schemas.camera_schema import CameraDetectionResponse
+from src.detection.camera_service import get_camera_service
+from src.schemas.camera_schema import CameraDetectionResponse
 
 router = APIRouter(prefix="/camera", tags=["Camera"])
 

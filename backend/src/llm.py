@@ -5,8 +5,7 @@ import yaml
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.litellm import LiteLLMProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-
-from backend.src.app_config import app_config
+from src.app_config import app_config
 
 
 class LLM:
