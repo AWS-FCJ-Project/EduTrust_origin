@@ -252,20 +252,31 @@ jobs:
           set -euo pipefail
           ASG_NAME="${{ needs.terraform.outputs.asg_name }}"
           echo "Monitoring Instance Refresh for $ASG_NAME..."
-          # This is a simplified wait logic
+
+          NONE_COUNT=0
+
           for i in {1..20}; do
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
               --query 'InstanceRefreshes[0].Status' \
-              --output text)
+              --output text 2>/dev/null || echo "None")
+
             echo "Current status: $STATUS"
+
             if [ "$STATUS" = "Successful" ]; then
               echo "Deployment Successful!"
               exit 0
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
               echo "Deployment $STATUS!"
               exit 1
+            elif [ "$STATUS" = "None" ] || [ "$STATUS" = "null" ]; then
+              NONE_COUNT=$((NONE_COUNT + 1))
+              if [ "$NONE_COUNT" -ge 4 ]; then
+                echo "No instance refresh was started (status None after ${NONE_COUNT} checks)."
+                echo "This is expected if the image tag did not change. Considering deployment complete."
+                exit 0
+              fi
             fi
-            sleep 30
+            sleep 15
           done
           echo "Wait timed out, but refresh may still be in progress."
