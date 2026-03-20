@@ -102,14 +102,14 @@ function CameraDetection() {
     const startCamera = async () => {
       if (IP_CAMERA_URL) {
         setStatus(`Using IP Cam: ${IP_CAMERA_URL}`);
-        intervalId = window.setInterval(processIPCamera, 500);
+        intervalId = globalThis.setInterval(processIPCamera, 500);
         return;
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) videoRef.current.srcObject = stream;
-        intervalId = window.setInterval(processWebcam, 300);
+        intervalId = globalThis.setInterval(processWebcam, 300);
       } catch (err) {
         console.error("Local camera error", err);
         setStatus("Không tìm thấy Camera. Vui lòng kiểm tra quyền truy cập.");
