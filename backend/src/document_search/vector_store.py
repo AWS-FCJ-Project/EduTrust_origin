@@ -90,7 +90,6 @@ from typing import Any, Dict, List
 
 import boto3
 from rank_bm25 import BM25Okapi
-
 from src.app_config import app_config
 
 
@@ -189,4 +188,3 @@ class BM25Store:
                 results.append(res)
 
         return results
-

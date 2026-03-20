@@ -3,7 +3,6 @@ from typing import Any, Dict, List
 
 import boto3
 from fastapi import UploadFile
-
 from src.app_config import app_config
 from src.document_handler.document_handler import DocumentHandler
 from src.document_search.vector_store import BM25Store
@@ -114,4 +113,3 @@ class DocumentSearchService:
         except Exception as e:
             print(f"Error searching BM25 for query '{query}': {str(e)}")
             return []
-
