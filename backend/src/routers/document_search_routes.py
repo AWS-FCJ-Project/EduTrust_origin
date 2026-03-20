@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -20,7 +20,7 @@ class SearchResult(BaseModel):
 
 
 @router.post("/upload")
-async def upload_documents(files: List[UploadFile] = File(...)):
+async def upload_documents(files: Annotated[List[UploadFile], File(...)]):
     indexed_files = []
     failed_files = []
 
@@ -51,7 +51,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 
 @router.post("/search", response_model=List[SearchResult])
 async def search_documents(request: SearchRequest):
-    results = await search_service.search(request.query, request.top_k)
+    results = search_service.search(request.query, request.top_k)
     return [
         SearchResult(
             filename=res["filename"], content=res["content"], score=res["score"]

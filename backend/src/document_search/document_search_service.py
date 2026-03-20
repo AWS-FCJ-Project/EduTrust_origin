@@ -103,7 +103,7 @@ class DocumentSearchService:
             print(f"Error processing document '{file.filename}': {str(e)}")
             return False
 
-    async def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         try:
             if not query:
                 return []

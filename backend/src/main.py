@@ -46,6 +46,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+# Authorization middleware requires SessionMiddleware
+app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,8 +56,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Authorization middleware requires SessionMiddleware
-app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
 
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
 app.include_router(translate_routes.router, tags=["Translate"])
