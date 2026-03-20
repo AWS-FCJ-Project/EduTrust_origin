@@ -91,6 +91,55 @@ class ObjectDetector:
 
         return x1, y1, x2, y2, label, is_person, is_forbidden
 
+    def _draw_detection(self, frame, x1, y1, x2, y2, label, conf, is_p):
+        """Draws a single detection box and label on the frame"""
+        color = (0, 255, 0) if is_p else (0, 0, 255)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(
+            frame,
+            f"{label} {conf:.2f}",
+            (x1, y1 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+        )
+
+    def _process_single_box(self, box, orig_w, orig_h, new_w, new_h, frame, visualize):
+        """Processes a single YOLO box and returns detection details"""
+        cls, conf = int(box.cls), float(box.conf)
+        if cls not in self.class_map or conf <= self.config["min_confidence"]:
+            return None
+
+        x1, y1, x2, y2, label, is_p, is_f = self._handle_detection(
+            cls, conf, orig_w, orig_h, new_w, new_h, box.xyxy[0]
+        )
+
+        if visualize:
+            self._draw_detection(frame, x1, y1, x2, y2, label, conf, is_p)
+
+        return x1, y1, x2, y2, label, conf, is_p, is_f
+
+    def _process_all_results(
+        self, results, orig_w, orig_h, new_w, new_h, frame, visualize
+    ):
+        """Iterates through YOLO results and aggregates detections"""
+        person_count, forbidden_detected = 0, False
+        self.last_results = []
+
+        for result in results:
+            for box in result.boxes:
+                details = self._process_single_box(
+                    box, orig_w, orig_h, new_w, new_h, frame, visualize
+                )
+                if details:
+                    x1, y1, x2, y2, label, conf, is_p, is_f = details
+                    person_count += 1 if is_p else 0
+                    forbidden_detected = forbidden_detected or is_f
+                    self.last_results.append((x1, y1, x2, y2, label, conf))
+
+        return person_count, forbidden_detected
+
     def detect_objects(self, frame, visualize=False):
         """Object detection with frame skipping and helper methods"""
         current_time = datetime.now()
@@ -108,33 +157,9 @@ class ObjectDetector:
             resized, orig_w, orig_h, new_w, new_h = self._preprocess_frame(frame)
             results = self.model(resized, verbose=False)
 
-            forbidden_detected, person_count = False, 0
-            self.last_results = []
-
-            for result in results:
-                for box in result.boxes:
-                    cls, conf = int(box.cls), float(box.conf)
-                    if cls in self.class_map and conf > self.config["min_confidence"]:
-                        x1, y1, x2, y2, label, is_p, is_f = self._handle_detection(
-                            cls, conf, orig_w, orig_h, new_w, new_h, box.xyxy[0]
-                        )
-
-                        person_count += 1 if is_p else 0
-                        forbidden_detected = forbidden_detected or is_f
-                        self.last_results.append((x1, y1, x2, y2, label, conf))
-
-                        if visualize:
-                            color = (0, 255, 0) if is_p else (0, 0, 255)
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                            cv2.putText(
-                                frame,
-                                f"{label} {conf:.2f}",
-                                (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.5,
-                                color,
-                                1,
-                            )
+            person_count, forbidden_detected = self._process_all_results(
+                results, orig_w, orig_h, new_w, new_h, frame, visualize
+            )
 
             result_dict = {
                 "person_count": person_count,
