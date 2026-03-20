@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from pydantic_ai import RunContext
 from src.crew.agents import (
     general_chat_agent,
@@ -9,13 +7,10 @@ from src.crew.agents import (
     quiz_agent,
     web_search_agent,
 )
-from src.crew.orchestrator import OrchestratorDeps, orchestrator
+from src.crew.orchestrator import orchestrator
 from src.logger import console, log_agent_response, log_delegation
-
-
-def _get_current_datetime() -> str:
-    time_now = datetime.now().astimezone()
-    return f"Current date and time: {time_now.strftime('%Y-%m-%d %H:%M:%S %z')}"
+from src.schemas.orchestrator_schema import OrchestratorDeps
+from src.utils import get_current_datetime
 
 
 @orchestrator.tool
@@ -29,7 +24,7 @@ async def web_search(ctx: RunContext[OrchestratorDeps], instruction: str) -> str
     """
     log_delegation("Orchestrator", "Web Search", instruction)
     result = await web_search_agent.run(
-        f"{_get_current_datetime()}\n\nInstruction: {instruction}", usage=ctx.usage
+        f"{get_current_datetime()}\n\nInstruction: {instruction}", usage=ctx.usage
     )
     log_agent_response("Web Search Agent", result.output)
     return result.output
@@ -47,7 +42,7 @@ async def delegate_math(ctx: RunContext[OrchestratorDeps], question: str) -> str
     """Get math answer. After receiving, call final_math_response with the result."""
     log_delegation("Orchestrator", "Math", question)
     result = await math_agent.run(
-        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+        f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
     )
     log_agent_response("Math Agent", result.output)
     return result.output
@@ -58,7 +53,7 @@ async def delegate_physics(ctx: RunContext[OrchestratorDeps], question: str) -> 
     """Get physics answer. After receiving, call final_physics_response with the result."""
     log_delegation("Orchestrator", "Physics", question)
     result = await physics_agent.run(
-        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+        f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
     )
     log_agent_response("Physics Agent", result.output)
     return result.output
@@ -69,7 +64,7 @@ async def delegate_literature(ctx: RunContext[OrchestratorDeps], question: str) 
     """Get literature answer. After receiving, call final_literature_response with the result."""
     log_delegation("Orchestrator", "Literature", question)
     result = await literature_agent.run(
-        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+        f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
     )
     log_agent_response("Literature Agent", result.output)
     return result.output
@@ -91,7 +86,7 @@ async def delegate_general(ctx: RunContext[OrchestratorDeps], question: str) -> 
     """General Q&A. Use when no specialist tool fits. After receiving, call final_general_response with the result."""
     log_delegation("Orchestrator", "General Chat", question)
     result = await general_chat_agent.run(
-        f"{_get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
+        f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
     )
     log_agent_response("General Chat Agent", result.output)
     return result.output
