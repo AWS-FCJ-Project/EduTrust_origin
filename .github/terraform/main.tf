@@ -374,7 +374,7 @@ resource "aws_autoscaling_group" "backend" {
 
   launch_template {
     id      = aws_launch_template.backend.id
-    version = "$Latest"
+    version = aws_launch_template.backend.latest_version
   }
 
   instance_refresh {
