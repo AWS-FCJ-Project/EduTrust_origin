@@ -1,7 +1,7 @@
 from pydantic_ai import RunContext
 
-from src.app_config import app_config
-from src.search_services.tavily_search import TavilySearch
+from backend.src.app_config import app_config
+from backend.src.search_services.tavily_search import TavilySearch
 
 
 class UnifiedSearch:

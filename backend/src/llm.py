@@ -3,7 +3,8 @@ from typing import Any
 import yaml
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from src.app_config import app_config
+
+from backend.src.app_config import app_config
 
 
 class LLM:
