@@ -1,5 +1,6 @@
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
+from src.auth.dependencies import get_current_user
 from src.schemas.translate_schema import TranslateRequest, TranslateResponse
 from src.translate_service.translate import TranslateService
 
@@ -9,7 +10,9 @@ translate_service = TranslateService()
 
 
 @router.post("/text", response_model=TranslateResponse)
-async def translate(request: TranslateRequest) -> TranslateResponse:
+async def translate(
+    request: TranslateRequest, email: str = Depends(get_current_user)
+) -> TranslateResponse:
     """Translate text to the specified language."""
     if not request.language or not request.text:
         raise HTTPException(
@@ -29,6 +32,7 @@ async def translate(request: TranslateRequest) -> TranslateResponse:
 async def translate_file_endpoint(
     language: str = Query(..., description="Target language"),
     file: UploadFile = File(..., description="File to translate"),
+    email: str = Depends(get_current_user),
 ) -> TranslateResponse:
     """Translate a file (PDF, DOCX, TXT, images) to the specified language."""
     try:

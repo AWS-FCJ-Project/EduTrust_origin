@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from src.auth.auth_utils import hash_password
@@ -21,7 +21,7 @@ async def register(request: Request, user: UserRegister):
         "email": user.email,
         "hashed_password": hashed,
         "is_verified": True,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
     }
     await users_collection.insert_one(user_doc)
 
