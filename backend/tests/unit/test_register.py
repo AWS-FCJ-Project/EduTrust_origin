@@ -23,7 +23,7 @@ def test_multi_register_csv():
     with patch(
         "backend.src.routers.auth.register.users_collection.find"
     ) as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+        "backend.src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[{"email": "testcsv1@example.com"}])
@@ -54,7 +54,7 @@ def test_multi_register_excel():
     with patch(
         "backend.src.routers.auth.register.users_collection.find"
     ) as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+        "backend.src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[])
@@ -95,3 +95,4 @@ def test_multi_register_missing_columns():
     assert (
         "File must contain 'email' and 'password' columns" in response.json()["detail"]
     )
+
