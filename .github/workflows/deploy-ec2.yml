@@ -113,13 +113,18 @@ jobs:
             echo "ECR repo is already managed by Terraform state."
           else
             echo "ECR repo not in state. Attempting to import..."
-            # Try to import. If it fails (e.g., repo doesn't exist), we catch it and continue.
-            # If it fails for another reason, it will be visible in the logs.
-            if aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
-              echo "Repo exists in AWS. Importing..."
-              terraform import aws_ecr_repository.backend "$REPO_NAME"
-            else
-              echo "Repo does not exist in AWS. Terraform will create it."
+            # Capture the output of terraform import
+            IMPORT_OUTPUT=$(terraform import aws_ecr_repository.backend "$REPO_NAME" 2>&1) || IMPORT_EXIT_CODE=$?
+            echo "$IMPORT_OUTPUT"
+            
+            # If import failed, check if it's because the resource doesn't exist
+            if [[ ${IMPORT_EXIT_CODE:-0} -ne 0 ]]; then
+              if echo "$IMPORT_OUTPUT" | grep -qiE "not found|not exist|non-existent"; then
+                echo "Repo does not exist in AWS. Terraform will create it during apply."
+              else
+                echo "Unexpected error during import. Failing the step."
+                exit 1
+              fi
             fi
           fi
 
