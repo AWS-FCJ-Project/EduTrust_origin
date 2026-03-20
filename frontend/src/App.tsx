@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 
 // --- Components ---
 
-function Timer({ durationMinutes = 60 }: { durationMinutes?: number }) {
+interface TimerProps {
+  readonly durationMinutes?: number;
+}
+
+function Timer({ durationMinutes = 60 }: TimerProps) {
   const [timeLeft, setTimeLeft] = useState(durationMinutes * 60);
 
   useEffect(() => {
@@ -59,51 +63,46 @@ function CameraDetection() {
   // Cấu hình Camera: Để trống "" để dùng Webcam local, hoặc điền URL (ví dụ: "http://192.168.1.177")
   const IP_CAMERA_URL = "http://192.168.1.177:8554";
 
+  const captureAndSend = (source: HTMLVideoElement | HTMLImageElement) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN || !canvasRef.current) return;
+
+    const context = canvasRef.current.getContext("2d");
+    if (!context) return;
+
+    if (source instanceof HTMLVideoElement) {
+      canvasRef.current.width = source.videoWidth;
+      canvasRef.current.height = source.videoHeight;
+    } else {
+      canvasRef.current.width = source.width;
+      canvasRef.current.height = source.height;
+    }
+
+    context.drawImage(source, 0, 0);
+    canvasRef.current.toBlob((blob) => {
+      if (blob) wsRef.current?.send(blob);
+    }, "image/jpeg", 0.7);
+  };
+
   useEffect(() => {
     const startCamera = async () => {
-      // Nếu có IP_CAMERA_URL, ta sẽ dùng một luồng giả lập bằng cách refresh ảnh liên tục hoặc dùng thẻ img
       if (IP_CAMERA_URL) {
         setStatus(`Using IP Cam: ${IP_CAMERA_URL}`);
         const interval = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN && canvasRef.current) {
-            const context = canvasRef.current.getContext("2d");
-            const img = new Image();
-            img.crossOrigin = "Anonymous";
-            img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`; // Giả định URL snapshot của cam
-            img.onload = () => {
-              if (canvasRef.current) {
-                canvasRef.current.width = img.width;
-                canvasRef.current.height = img.height;
-                context?.drawImage(img, 0, 0);
-                canvasRef.current.toBlob((blob) => {
-                  if (blob) wsRef.current?.send(blob);
-                }, "image/jpeg", 0.7);
-              }
-            };
-          }
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`;
+          img.onload = () => captureAndSend(img);
         }, 500);
         return () => clearInterval(interval);
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
 
         const interval = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN && videoRef.current && canvasRef.current) {
-            const context = canvasRef.current.getContext("2d");
-            if (context) {
-              canvasRef.current.width = videoRef.current.videoWidth;
-              canvasRef.current.height = videoRef.current.videoHeight;
-              context.drawImage(videoRef.current, 0, 0);
-              canvasRef.current.toBlob((blob) => {
-                if (blob) wsRef.current?.send(blob);
-              }, "image/jpeg", 0.7);
-            }
-          }
-        }, 300); // ~3 FPS for detection
+          if (videoRef.current) captureAndSend(videoRef.current);
+        }, 300);
 
         return () => clearInterval(interval);
       } catch (err) {
@@ -127,17 +126,17 @@ function CameraDetection() {
           </div>
         )}
         <div className="camera-overlay">LIVE</div>
-        <video ref={videoRef} autoPlay playsInline style={{ display: "none" }} />
+        <video ref={videoRef} autoPlay playsInline style={{ display: "none" }}>
+          <track kind="captions" />
+        </video>
         <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
 
       <div className="cheating-status">
-        <div className="cheating-header">
-          Báo Cáo Gian Lận
-        </div>
+        <div className="cheating-header">Báo Cáo Gian Lận</div>
         {violations.length > 0 ? (
-          violations.map((v, i) => (
-            <div key={i} className="cheating-item">{v}</div>
+          violations.map((v) => (
+            <div key={v} className="cheating-item">{v}</div>
           ))
         ) : (
           <div style={{ fontSize: "12px", color: "var(--text-subtle)" }}>Chưa phát hiện vi phạm</div>
