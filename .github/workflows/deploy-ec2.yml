@@ -107,13 +107,17 @@ jobs:
           fi
 
           REPO_NAME="${REPO_NAME:-edutrust-backend}"
-          # Forcefully clean up any corrupted state for the ECR repository
-          echo "Removing any existing broken state for aws_ecr_repository.backend..."
+          echo "Target ECR repo: $REPO_NAME"
+
+          # Remove any stale state entry first (idempotent)
           terraform state rm aws_ecr_repository.backend >/dev/null 2>&1 || true
 
-          echo "Importing ECR repo: $REPO_NAME..."
-          # Import the existing repository. If it fails (e.g. doesn't exist), we ignore it and let apply create it.
-          terraform import aws_ecr_repository.backend "$REPO_NAME" || echo "Import skipped or failed. Terraform apply will handle creation if needed."
+          # Import with the repo name passed explicitly as a variable
+          echo "Importing ECR repo '$REPO_NAME' into Terraform state..."
+          terraform import \
+            -var="ecr_repository_name=${REPO_NAME}" \
+            aws_ecr_repository.backend "$REPO_NAME" \
+            || echo "Import failed (repo may not exist yet). Terraform apply will create it."
 
       #Apply main.tf
       - name: Terraform Apply

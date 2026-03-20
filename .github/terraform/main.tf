@@ -455,6 +455,13 @@ resource "aws_ecr_repository" "backend" {
   image_scanning_configuration {
     scan_on_push = true
   }
+
+  lifecycle {
+    # Prevent Terraform from destroying the ECR repository if it already exists
+    prevent_destroy = true
+    # Ignore changes to the name, as it cannot be changed after creation
+    ignore_changes = [name]
+  }
 }
 
 # Add SSM Parameter to store the .env file content securely
