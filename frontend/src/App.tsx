@@ -8,8 +8,114 @@ type Message = {
   createdAt: number;
 };
 
+type StreamEvent =
+  | { type: "text_delta"; content: string }
+  | { type: "tool_call"; content: unknown }
+  | { type: "tool_result"; content: unknown }
+  | { type: "error"; content: string }
+  | { type: "complete" };
+
+type ToolEvent = {
+  id: string;
+  type: "tool_call" | "tool_result";
+  content: unknown;
+  createdAt: number;
+};
+
 type BackendStatus = "checking" | "online" | "offline";
 type RunPhase = "idle" | "planning" | "tools" | "synthesizing";
+
+const extractSseEvents = (buffer: string) => {
+  const events: string[] = [];
+  let rest = buffer;
+  while (true) {
+    const index = rest.indexOf("\n\n");
+    if (index === -1) break;
+    events.push(rest.slice(0, index));
+    rest = rest.slice(index + 2);
+  }
+  return { events, rest };
+};
+
+const extractSseData = (rawEvent: string) => {
+  const dataLines = rawEvent
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith("data:"));
+  if (dataLines.length === 0) return null;
+  return dataLines.map((line) => line.slice(5).trimStart()).join("\n");
+};
+
+const toErrorMessage = (err: unknown) => {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Streaming stopped.";
+  }
+  return err instanceof Error ? err.message : "Request failed.";
+};
+
+type RunStateProps = Readonly<{
+  runPhase: RunPhase;
+  pending: boolean;
+  slowNotice: boolean;
+}>;
+
+function RunState({ runPhase, pending, slowNotice }: RunStateProps) {
+  return (
+    <section className="run-state">
+      <div className={`run-step ${runPhase === "planning" && pending ? "active" : ""}`}>
+        <span className="run-dot" />
+        <span>Planning</span>
+      </div>
+      <div className={`run-step ${runPhase === "tools" && pending ? "active" : ""}`}>
+        <span className="run-dot" />
+        <span>Tool calls</span>
+      </div>
+      <div
+        className={`run-step ${
+          runPhase === "synthesizing" && pending ? "active" : ""
+        }`}
+      >
+        <span className="run-dot" />
+        <span>Final answer</span>
+      </div>
+      {slowNotice ? <div className="run-note">Waiting longer than usual...</div> : null}
+    </section>
+  );
+}
+
+type ToolEventsPanelProps = Readonly<{
+  toolEvents: ToolEvent[];
+}>;
+
+function ToolEventsPanel({ toolEvents }: ToolEventsPanelProps) {
+  if (toolEvents.length === 0) return null;
+
+  return (
+    <section className="tool-events">
+      <header>
+        <h3>Tool events</h3>
+        <span>{toolEvents.length}</span>
+      </header>
+      <div className="tool-events-list">
+        {toolEvents.map((eventItem) => (
+          <article key={eventItem.id} className={`tool-event ${eventItem.type}`}>
+            <div className="tool-event-head">
+              <strong>{eventItem.type}</strong>
+              <span>
+                {new Date(eventItem.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </span>
+            </div>
+            <pre>{JSON.stringify(eventItem.content, null, 2)}</pre>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 const createId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -20,16 +126,87 @@ const createId = () => {
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
 
-const buildEndpoint = (baseUrl: string) =>
-  `${normalizeBaseUrl(baseUrl)}/unified-agent/ask`;
+const buildEndpoint = (baseUrl: string, path: string) =>
+  `${normalizeBaseUrl(baseUrl)}${path}`;
 
 const DEFAULT_API_URL = "http://localhost:8000";
+
+type StreamEventHandlers = Readonly<{
+  onTextDelta: (delta: string) => void;
+  onToolEvent: (type: ToolEvent["type"], content: unknown) => void;
+  onError: (message: string) => void;
+}>;
+
+const consumeSseStream = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  handleData: (data: string) => boolean,
+) => {
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+
+    buffer += decoder.decode(value, { stream: true });
+    const { events, rest } = extractSseEvents(buffer);
+    buffer = rest;
+
+    for (const rawEvent of events) {
+      const data = extractSseData(rawEvent);
+      if (!data) continue;
+      if (handleData(data)) return;
+    }
+  }
+};
+
+const parseStreamEvent = (data: string): StreamEvent | null => {
+  try {
+    return JSON.parse(data) as StreamEvent;
+  } catch {
+    return null;
+  }
+};
+
+const applyStreamEvent = (
+  streamEvent: StreamEvent,
+  handlers: StreamEventHandlers,
+): boolean => {
+  if (streamEvent.type === "text_delta") {
+    const delta =
+      typeof streamEvent.content === "string" ? streamEvent.content : "";
+    handlers.onTextDelta(delta);
+    return false;
+  }
+
+  if (streamEvent.type === "tool_call" || streamEvent.type === "tool_result") {
+    handlers.onToolEvent(streamEvent.type, streamEvent.content);
+    return false;
+  }
+
+  if (streamEvent.type === "error") {
+    handlers.onError(streamEvent.content || "Streaming error.");
+    return false;
+  }
+
+  return true;
+};
+
+const createStreamDataProcessor = (handlers: StreamEventHandlers) => {
+  return (data: string) => {
+    const parsed = parseStreamEvent(data);
+    if (!parsed) return false;
+    return applyStreamEvent(parsed, handlers);
+  };
+};
 
 function App() {
   const [conversationId, setConversationId] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [pending, setPending] = useState(false);
+  const [useStreaming, setUseStreaming] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] =
     useState<BackendStatus>("checking");
@@ -37,13 +214,21 @@ function App() {
   const [slowNotice, setSlowNotice] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const apiUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_API_URL as string | undefined;
     return envUrl && envUrl.trim().length > 0 ? envUrl : DEFAULT_API_URL;
   }, []);
 
-  const endpoint = useMemo(() => buildEndpoint(apiUrl), [apiUrl]);
+  const askEndpoint = useMemo(
+    () => buildEndpoint(apiUrl, "/unified-agent/ask"),
+    [apiUrl],
+  );
+  const streamEndpoint = useMemo(
+    () => buildEndpoint(apiUrl, "/unified-agent/ask/streaming"),
+    [apiUrl],
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -120,65 +305,157 @@ function App() {
     synthesizing: "Synthesizing answer",
   }[runPhase];
 
-  const handleSend = async () => {
-    if (pending) return;
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  };
 
-    const question = input.trim();
-    if (question.length === 0) return;
+  const appendAssistantDelta = (
+    assistantId: string,
+    delta: string,
+    createdAt: number,
+  ) => {
+    if (!delta) return;
 
-    let activeConversationId = conversationId.trim();
-    if (activeConversationId.length === 0) {
-      activeConversationId = `conv-${Date.now()}`;
-      setConversationId(activeConversationId);
-    }
-
-    const userMessage: Message = {
-      id: createId(),
-      role: "user",
-      content: question,
-      createdAt: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setPending(true);
-    setError(null);
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question,
-          conversation_id: activeConversationId,
-        }),
-      });
-
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed (${response.status}).`);
+    setMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === assistantId);
+      if (index === -1) {
+        return [
+          ...prev,
+          { id: assistantId, role: "assistant", content: delta, createdAt },
+        ];
       }
 
-      const data = (await response.json()) as {
-        answer: string;
-        conversation_id: string;
-      };
+      const next = [...prev];
+      const existing = next[index];
+      next[index] = { ...existing, content: existing.content + delta };
+      return next;
+    });
+  };
 
-      const assistantMessage: Message = {
+  const startNonStreamingRequest = async (
+    question: string,
+    activeConversationId: string,
+  ) => {
+    const response = await fetch(askEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, conversation_id: activeConversationId }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `Request failed (${response.status}).`);
+    }
+
+    const data = (await response.json()) as {
+      answer: string;
+      conversation_id: string;
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      {
         id: createId(),
         role: "assistant",
         content: data.answer,
         createdAt: Date.now(),
-      };
+      },
+    ]);
+  };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+  const startStreamingRequest = async (
+    question: string,
+    activeConversationId: string,
+    assistantId: string,
+    assistantCreatedAt: number,
+  ) => {
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    setToolEvents([]);
+
+    const response = await fetch(streamEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: abortController.signal,
+      body: JSON.stringify({ question, conversation_id: activeConversationId }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `Request failed (${response.status}).`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Streaming is not supported by this browser.");
+    }
+
+    const processor = createStreamDataProcessor({
+      onTextDelta: (delta) =>
+        appendAssistantDelta(assistantId, delta, assistantCreatedAt),
+      onToolEvent: (type, content) =>
+        setToolEvents((prev) => [
+          ...prev,
+          { id: createId(), type, content, createdAt: Date.now() },
+        ]),
+      onError: (message) => setError(message),
+    });
+
+    await consumeSseStream(reader, processor);
+  };
+
+  const handleSend = async () => {
+    if (pending) return;
+
+    const question = input.trim();
+    if (!question) return;
+
+    let activeConversationId = conversationId.trim();
+    if (!activeConversationId) {
+      activeConversationId = `conv-${Date.now()}`;
+      setConversationId(activeConversationId);
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      { id: createId(), role: "user", content: question, createdAt: Date.now() },
+    ]);
+    setInput("");
+    setPending(true);
+    setError(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    try {
+      if (!useStreaming) {
+        await startNonStreamingRequest(question, activeConversationId);
+        return;
+      }
+
+      const assistantId = createId();
+      const assistantCreatedAt = Date.now();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: assistantCreatedAt,
+        },
+      ]);
+
+      await startStreamingRequest(
+        question,
+        activeConversationId,
+        assistantId,
+        assistantCreatedAt,
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Request failed.";
-      setError(message);
+      setError(toErrorMessage(err));
     } finally {
       setPending(false);
+      abortRef.current = null;
     }
   };
 
@@ -192,7 +469,9 @@ function App() {
   };
 
   const handleReset = () => {
+    stopStreaming();
     setMessages([]);
+    setToolEvents([]);
     setInput("");
     setError(null);
     setPending(false);
@@ -228,27 +507,7 @@ function App() {
           </header>
 
           <main className="chat-shell">
-            <section className="run-state">
-              <div className={`run-step ${runPhase === "planning" && pending ? "active" : ""}`}>
-                <span className="run-dot" />
-                <span>Planning</span>
-              </div>
-              <div className={`run-step ${runPhase === "tools" && pending ? "active" : ""}`}>
-                <span className="run-dot" />
-                <span>Tool calls</span>
-              </div>
-              <div
-                className={`run-step ${
-                  runPhase === "synthesizing" && pending ? "active" : ""
-                }`}
-              >
-                <span className="run-dot" />
-                <span>Final answer</span>
-              </div>
-              {slowNotice ? (
-                <div className="run-note">Waiting longer than usual...</div>
-              ) : null}
-            </section>
+            <RunState runPhase={runPhase} pending={pending} slowNotice={slowNotice} />
 
             <section className="control-row">
               <label className="field">
@@ -260,7 +519,25 @@ function App() {
                   placeholder="e.g. demo-convo-001"
                 />
               </label>
+              <label className="field toggle">
+                <span>Mode</span>
+                <div className="toggle-row">
+                  <input
+                    id="streaming"
+                    type="checkbox"
+                    checked={useStreaming}
+                    disabled={pending}
+                    onChange={(event) => setUseStreaming(event.target.checked)}
+                  />
+                  <label htmlFor="streaming">Streaming</label>
+                </div>
+              </label>
               <div className="controls">
+                {pending && useStreaming ? (
+                  <button type="button" className="ghost" onClick={stopStreaming}>
+                    Stop
+                  </button>
+                ) : null}
                 <button type="button" className="ghost" onClick={handleReset}>
                   New chat
                 </button>
@@ -306,6 +583,8 @@ function App() {
               ) : null}
               <div ref={endRef} />
             </section>
+
+            {useStreaming ? <ToolEventsPanel toolEvents={toolEvents} /> : null}
 
             <section className="composer">
               <div className="composer-inner">

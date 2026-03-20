@@ -54,8 +54,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Authorization middleware requires SessionMiddleware
-app.add_middleware(SessionMiddleware, secret_key=app_config.SECRET_KEY)
 
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
 app.include_router(camera_routes.router, tags=["Camera"])
