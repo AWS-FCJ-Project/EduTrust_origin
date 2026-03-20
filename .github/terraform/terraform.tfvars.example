@@ -1,17 +1,33 @@
-//AWS config
-aws_region         = 
-//EC2 config
-ec2_instance_type  = 
-ec2_ami_id         = 
-ec2_instance_name  = 
-ec2_key_name       = 
+// --- AWS Config ---
+aws_region                = ""
 
-//ECR config
-ecr_repository_name =
-ecr_tag_immutable   = 
+// --- Network Config (VPC & Subnets) ---
+vpc_name                  = ""
+vpc_cidr_block            = ""
+igw_name                  = ""
+private_subnet_1a_cidr    = ""
+private_subnet_1c_cidr    = ""
+public_subnet_1a_cidr     = ""
+public_subnet_1c_cidr     = ""
 
-//Security group rules
-ssh_ingress_cidr_blocks   = 
-https_ingress_cidr_blocks = 
-docdb_egress_cidr_blocks  = 
-redis_egress_cidr_blocks  = 
+// --- EC2 & ASG Config ---
+ec2_instance_type         = ""
+ec2_ami_id                = ""
+ec2_instance_name         = ""
+ec2_key_name              = ""
+asg_min_size              = 
+asg_max_size              = 
+asg_desired_capacity      = 
+
+// --- Backend App Config ---
+backend_port              = 
+backend_image_tag         = ""
+ecr_repository_name       = ""
+ecr_tag_immutable         = true
+certificate_arn           = ""
+
+// --- Security Group Rules ---
+ssh_ingress_cidr_blocks   = [""]
+https_ingress_cidr_blocks = [""]
+docdb_egress_cidr_blocks  = [""]
+redis_egress_cidr_blocks  = [""]

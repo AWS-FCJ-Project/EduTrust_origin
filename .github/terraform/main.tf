@@ -188,6 +188,30 @@ resource "aws_iam_role_policy_attachment" "backend_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "backend_ecr" {
+  role       = aws_iam_role.backend.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_role_policy" "backend_ssm_read" {
+  name = "${var.ec2_instance_name}-ssm-read"
+  role = aws_iam_role.backend.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Effect   = "Allow"
+        Resource = [aws_ssm_parameter.backend_env.arn]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "backend" {
   name = "${var.ec2_instance_name}-instance-profile"
   role = aws_iam_role.backend.name
@@ -289,16 +313,73 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "backend_1" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_1.id
-  port             = var.backend_port
+# --- Backend ASG ---
+
+resource "aws_launch_template" "backend" {
+  name_prefix   = "${var.ec2_instance_name}-template-"
+  image_id      = var.ec2_ami_id
+  instance_type = var.ec2_instance_type
+  key_name      = var.ec2_key_name
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.backend.name
+  }
+
+  vpc_security_group_ids = [aws_security_group.backend.id]
+
+  # Metadata options for security (IMDSv2)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  # User data to automatically start the container on launch
+  user_data = base64encode(templatefile("${path.module}/scripts/user_data.sh", {
+    aws_region         = var.aws_region
+    ecr_repository_url = aws_ecr_repository.backend.repository_url
+    ssm_parameter_name = aws_ssm_parameter.backend_env.name
+    image_tag          = var.backend_image_tag
+    backend_port       = var.backend_port
+  }))
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.ec2_instance_name}-asg-node"
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-resource "aws_lb_target_group_attachment" "backend_2" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_2.id
-  port             = var.backend_port
+resource "aws_autoscaling_group" "backend" {
+  name                = "${var.ec2_instance_name}-asg"
+  desired_capacity    = var.asg_desired_capacity
+  min_size            = var.asg_min_size
+  max_size            = var.asg_max_size
+  target_group_arns   = [aws_lb_target_group.backend.arn]
+  vpc_zone_identifier = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+
+  launch_template {
+    id      = aws_launch_template.backend.id
+    version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.ec2_instance_name}-asg"
+    propagate_at_launch = true
+  }
 }
 
 # --- Backend EC2 Security Group ---
@@ -352,45 +433,7 @@ resource "aws_security_group" "backend" {
   }
 }
 
-resource "aws_instance" "backend_1" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
-  vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1a.id
-  ebs_optimized          = true
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  tags = {
-    Name = "${var.ec2_instance_name}-1"
-  }
-}
-
-resource "aws_instance" "backend_2" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
-  vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1c.id
-  ebs_optimized          = true
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  tags = {
-    Name = "${var.ec2_instance_name}-2"
-  }
-}
+# Standalone instances removed in favor of ASG
 
 resource "aws_ecr_repository" "backend" {
   name                 = var.ecr_repository_name
@@ -402,5 +445,17 @@ resource "aws_ecr_repository" "backend" {
 
   image_scanning_configuration {
     scan_on_push = true
+  }
+}
+
+# Add SSM Parameter to store the .env file content securely
+resource "aws_ssm_parameter" "backend_env" {
+  name        = "/${var.ec2_instance_name}/backend/env"
+  description = "Backend environment variables for EduTrust"
+  type        = "SecureString"
+  value       = "PLACEHOLDER=true" # Should be updated via CI/CD
+
+  lifecycle {
+    ignore_changes = [value]
   }
 }
