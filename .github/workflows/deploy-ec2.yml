@@ -107,18 +107,8 @@ jobs:
           fi
 
           REPO_NAME="${REPO_NAME:-edutrust-backend}"
-          echo "ECR repo name: $REPO_NAME"
-
-          if aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
-            if terraform state show aws_ecr_repository.backend >/dev/null 2>&1; then
-              echo "ECR repo already in Terraform state, skipping import."
-            else
-              echo "ECR repo exists in AWS but not in state; importing..."
-              terraform import aws_ecr_repository.backend "$REPO_NAME"
-            fi
-          else
-            echo "ECR repo not found in AWS; Terraform will create it."
-          fi
+          echo "Importing ECR repo: $REPO_NAME (if it exists in AWS but not in state)"
+          terraform import aws_ecr_repository.backend "$REPO_NAME" || true
 
       #Apply main.tf
       - name: Terraform Apply

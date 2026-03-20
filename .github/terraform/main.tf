@@ -459,7 +459,7 @@ resource "aws_ecr_repository" "backend" {
 
 # Add SSM Parameter to store the .env file content securely
 resource "aws_ssm_parameter" "backend_env" {
-  name        = "/${var.ec2_instance_name}/backend/env"
+  name        = "/edutrust/backend/env"
   description = "Backend environment variables for EduTrust"
   type        = "SecureString"
   value       = "PLACEHOLDER=true" # Should be updated via CI/CD
