@@ -18,6 +18,8 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
+
 # --- VPC & Network Configuration ---
 
 resource "aws_vpc" "main" {
@@ -473,6 +475,22 @@ resource "aws_kms_key" "ssm_key" {
   description             = "KMS key for SSM parameter encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "ssm-key-policy"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 
   tags = {
     Name = "${var.ec2_instance_name}-ssm-key"
