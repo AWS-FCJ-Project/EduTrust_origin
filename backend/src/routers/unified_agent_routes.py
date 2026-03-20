@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from src.auth.dependencies import get_current_user
 from src.crew import tools
@@ -12,7 +14,7 @@ router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
 
 @router.post("/ask", response_model=UnifiedAgentResponseSchema)
 async def ask_agent(
-    request: UnifiedAgentRequestSchema, email: str = Depends(get_current_user)
+    request: UnifiedAgentRequestSchema, email: Annotated[str, Depends(get_current_user)]
 ) -> UnifiedAgentResponseSchema:
     answer = await ask(
         question=request.question, conversation_id=request.conversation_id

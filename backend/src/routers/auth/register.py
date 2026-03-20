@@ -9,7 +9,13 @@ from src.schemas.auth_schemas import UserRegister
 router = APIRouter()
 
 
-@router.post("/register")
+@router.post(
+    "/register",
+    responses={
+        400: {"description": "Email already registered"},
+        429: {"description": "Too Many Requests"},
+    },
+)
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserRegister):
     existing = await users_collection.find_one({"email": user.email})

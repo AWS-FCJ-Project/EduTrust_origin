@@ -10,7 +10,12 @@ from src.schemas.auth_schemas import ForgotPassword, ResetPassword
 router = APIRouter()
 
 
-@router.post("/forgot-password")
+@router.post(
+    "/forgot-password",
+    responses={
+        429: {"description": "Too Many Requests"},
+    },
+)
 @limiter.limit("5/minute")
 async def forgot_password(
     request: Request, data: ForgotPassword, background_tasks: BackgroundTasks
@@ -31,7 +36,12 @@ async def forgot_password(
     return {"message": "If email exists, OTP sent."}
 
 
-@router.post("/reset-password")
+@router.post(
+    "/reset-password",
+    responses={
+        400: {"description": "Invalid or expired OTP"},
+    },
+)
 async def reset_password(data: ResetPassword):
     # Verify OTP from MongoDB
     is_valid = await verify_otp(data.email, data.otp, "password_reset")

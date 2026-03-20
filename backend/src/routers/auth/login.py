@@ -10,7 +10,13 @@ from src.schemas.auth_schemas import UserLogin
 router = APIRouter()
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    responses={
+        401: {"description": "Invalid credentials"},
+        429: {"description": "Too Many Requests"},
+    },
+)
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin):
     db_user = await users_collection.find_one({"email": user.email})
