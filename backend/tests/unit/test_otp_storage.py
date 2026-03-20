@@ -93,3 +93,4 @@ async def test_cleanup_expired_otps(mock_otp_collection):
     await cleanup_expired_otps()
 
     mock_otp_collection.delete_many.assert_awaited_once()
+
