@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Python
-        uses: actions/setup-python@f6771096fe839c00b209d72195033166567d165f # v5.4.0
+        uses: actions/setup-python@42375529338f0d8b49231506b12a02410a5666f7 # v5.4.0
         with:
           python-version: "3.11"
 
@@ -52,7 +52,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@f6771096fe839c00b209d72195033166567d165f # v5.4.0
+        uses: actions/setup-python@42375529338f0d8b49231506b12a02410a5666f7 # v5.4.0
         with:
           python-version: "3.11"
 
@@ -73,7 +73,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f62e5133f1720d7ede4739b6e1 # v3.1.2
+        uses: hashicorp/setup-terraform@8205f771746f34e321598f654b0c20f014856096 # v3.1.2
         with:
           terraform_version: "1.10.0"
 
@@ -90,7 +90,7 @@ jobs:
         # -backend=false: skip S3 init (no AWS creds needed on PR)
 
       - name: Run Checkov (security scan)
-        uses: bridgecrewio/checkov-action@097b693e5ec726c9f697cc6e828d1505315f6d7e # v12
+        uses: bridgecrewio/checkov-action@99bb2ca06a88e99e28f3521e1dd74457e5b5c98d # v12
         with:
           directory: .github/terraform
           framework: terraform
