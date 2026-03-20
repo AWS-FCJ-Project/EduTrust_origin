@@ -3,7 +3,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from backend.src.app_config import app_config
+from src.app_config import app_config
 
 
 def send_email(to_email: str, subject: str, body: str):

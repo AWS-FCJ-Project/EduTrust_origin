@@ -4,10 +4,9 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-
-from backend.src.detection.object_detection import ObjectDetector
-from backend.src.detection.screenshot_utils import get_violation_capturer
-from backend.src.detection.violation_logger import get_violation_logger
+from src.detection.object_detection import ObjectDetector
+from src.detection.screenshot_utils import get_violation_capturer
+from src.detection.violation_logger import get_violation_logger
 
 
 class CameraService:

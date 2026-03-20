@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
-
-from backend.src.auth.auth_utils import verify_password
-from backend.src.auth.jwt_handler import create_access_token
-from backend.src.database import users_collection
-from backend.src.extensions import limiter
-from backend.src.schemas.auth_schemas import UserLogin
+from src.auth.auth_utils import verify_password
+from src.auth.jwt_handler import create_access_token
+from src.database import users_collection
+from src.extensions import limiter
+from src.schemas.auth_schemas import UserLogin
 
 router = APIRouter()
 

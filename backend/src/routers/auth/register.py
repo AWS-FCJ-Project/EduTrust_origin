@@ -4,11 +4,10 @@ from typing import Annotated
 
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-
-from backend.src.auth.auth_utils import hash_password
-from backend.src.database import users_collection
-from backend.src.extensions import limiter
-from backend.src.schemas.auth_schemas import UserRegister
+from src.auth.auth_utils import hash_password
+from src.database import users_collection
+from src.extensions import limiter
+from src.schemas.auth_schemas import UserRegister
 
 router = APIRouter()
 

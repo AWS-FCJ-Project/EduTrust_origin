@@ -6,11 +6,11 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def mock_dependencies():
-    with patch("backend.src.main.ConversationHandler"):
+    with patch("src.main.ConversationHandler"):
         yield
 
 
-from backend.src.main import app
+from src.main import app
 
 client = TestClient(app)
 

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-
-from backend.src.auth.session_handler import get_current_user
+from src.auth.session_handler import get_current_user
 
 router = APIRouter()
 
