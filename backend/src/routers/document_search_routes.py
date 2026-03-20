@@ -31,7 +31,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             )
             continue
 
-        success = await search_service.process_document(file.filename)
+        success = await search_service.process_document(file)
 
         if success:
             indexed_files.append(file.filename)

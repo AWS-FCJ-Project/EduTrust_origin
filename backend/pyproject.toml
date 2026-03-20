@@ -42,6 +42,8 @@ dependencies = [
     "faiss-cpu>=1.7.4",
     "numpy>=1.26.0",
     "sentence-transformers",
+    "boto3",
+    "rank-bm25>=0.2.2",
 ]
 
 [dependency-groups]
