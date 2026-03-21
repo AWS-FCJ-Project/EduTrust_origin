@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 
 // --- Components ---
 
@@ -32,188 +33,184 @@ function Timer({ durationMinutes = 60 }: TimerProps) {
 
 function CameraDetection() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Thay vì lưu ảnh Base64, ta sẽ lưu danh sách các Bounding Boxes từ Backend
+
   interface BoundingBox {
-    x: number; // Tỷ lệ % (0-100) tương ứng với chiều rộng gốc (Ví dụ 320px)
-    y: number; // Tỷ lệ % (0-100)
-    w: number; // Width %
-    h: number; // Height %
+    x: number;
+    y: number;
+    w: number;
+    h: number;
     label: string;
   }
+
+  const [faceDetector, setFaceDetector] = useState<FaceDetector | null>(null);
   const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
   const [violations, setViolations] = useState<string[]>([]);
-  const [status, setStatus] = useState("Connecting...");
+  const [status, setStatus] = useState("Loading AI Model (MediaPipe)...");
   const [isWarning, setIsWarning] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
-
-  // States for frame optimization
-  const previousImageDataRef = useRef<ImageData | null>(null);
-  const lastSendTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number>(0);
+  const lastVideoTimeRef = useRef<number>(-1);
+  const lastReportTimeRef = useRef<number>(0);
+  const prevViolationStrRef = useRef<string>("");
 
+  // 1. Tải Model AI MediaPipe khi mount
+  useEffect(() => {
+    let detector: FaceDetector | null = null;
+    const initAI = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        detector = await FaceDetector.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO"
+        });
+        setFaceDetector(detector);
+        setStatus("Connecting Camera...");
+      } catch (err) {
+        console.error("AI Init Error:", err);
+        setStatus("Failed to load AI Model");
+      }
+    };
+    initAI();
+
+    return () => {
+      if (detector) detector.close();
+    };
+  }, []);
+
+  // 2. Kết nối WebSocket (Chỉ để gửi Log chứ không gửi Webcam)
   useEffect(() => {
     const isLocalDev = window.location.port === "5173";
     const defaultWsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     const wsBase = isLocalDev ? (import.meta.env.VITE_WS_URL || "ws://localhost:8000") : defaultWsUrl;
+
+    // Đổi endpoint websocket nếu backend có endpoint riêng hứng log, 
+    // hoặc xài tạm API gốc (Backend nên được sửa lại).
     const wsUrl = `${wsBase}/camera/ws`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
-    socket.onopen = () => setStatus("Connected");
+    socket.onopen = () => {
+      setStatus(prev => prev === "Connecting Camera..." ? "Connected" : prev);
+    };
     socket.onclose = () => setStatus("Disconnected");
+
+    // Yêu cầu từ Server (nếu Server muốn cảnh báo gì ngược lại thì nó gửi xuống)
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-
-      // 👉 BACKEND BÂY GIỜ CHỈ CẦN TRẢ VỀ TOẠ ĐỘ THAY VÌ ẢNH!
-      // Ví dụ Backend trả về field: "boxes": [{ "x": 10, "y": 20, "w": 40, "h": 50, "label": "Nhìn đi nơi khác" }]
-      if (data.boxes) {
-        setBoundingBoxes(data.boxes);
-      } else {
-        // Tự động clear box nếu an toàn
-        setBoundingBoxes([]);
-      }
-
-      if (data.violations) {
+      if (data.violations && data.violations.length > 0) {
         setViolations(data.violations);
-        setIsWarning(data.violations.length > 0 || data.forbidden_detected);
+        setIsWarning(true);
       }
     };
 
     return () => socket.close();
   }, []);
 
-  // Cấu hình Camera: Để trống "" để dùng Webcam local, hoặc điền URL vào .env (VITE_CAMERA_URL)
-  const IP_CAMERA_URL = import.meta.env.VITE_CAMERA_URL || "";
-
-  // 1. Thuật toán so sánh Pixel
-  const checkMotion = (currentImageData: ImageData, previousImageData: ImageData | null) => {
-    if (!previousImageData) return true; // Frame đầu luôn coi là có chuyển động
-
-    let diffPixels = 0;
-    const data1 = currentImageData.data;
-    const data2 = previousImageData.data;
-
-    // Nhảy bước 16 để tăng tốc độ tính toán
-    for (let i = 0; i < data1.length; i += 16) {
-      const diffR = Math.abs(data1[i] - data2[i]);
-      const diffG = Math.abs(data1[i + 1] - data2[i + 1]);
-      const diffB = Math.abs(data1[i + 2] - data2[i + 2]);
-
-      // Nếu tông màu chênh > 30, tính là pixel bị thay đổi
-      if (diffR + diffG + diffB > 30) {
-        diffPixels++;
-      }
-    }
-
-    const checkedPixels = (data1.length / 4) / 4;
-    const diffPercentage = (diffPixels / checkedPixels) * 100;
-    return diffPercentage > 5; // Ngưỡng chuyển động 5%
-  };
-
-  // 2. Vòng lặp tối ưu WebCam
+  // 3. Vòng lặp AI Detection (chạy local trên browser)
   const processFrame = () => {
     animationFrameIdRef.current = requestAnimationFrame(processFrame);
 
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!faceDetector || !videoRef.current) return;
     if (videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) return;
 
-    const currentTime = Date.now();
-    const timeSinceLastSend = currentTime - lastSendTimeRef.current;
+    // Tối ưu để không chạy lại AI nếu video chưa có frame mới
+    const videoTime = videoRef.current.currentTime;
+    if (videoTime === lastVideoTimeRef.current) return;
+    lastVideoTimeRef.current = videoTime;
 
-    // Giới hạn max 2 FPS
-    if (timeSinceLastSend < 500) return;
+    // Chạy AI Detector cực mượt (thường mất < 10ms trên Browser GPU)
+    const startTimeMs = performance.now();
+    const result = faceDetector.detectForVideo(videoRef.current, startTimeMs);
+    const detections = result.detections;
 
-    const context = canvasRef.current.getContext("2d", { willReadFrequently: true });
-    if (!context) return;
+    // Xử lý Bounding Boxes
+    const videoW = videoRef.current.videoWidth;
+    const videoH = videoRef.current.videoHeight;
 
-    // Resize cứng xuống 320x240 để siêu tiết kiệm băng thông
-    canvasRef.current.width = 320;
-    canvasRef.current.height = 240;
+    const newBoxes = detections.map((d: any) => ({
+      x: (d.boundingBox?.originX || 0) / videoW * 100,
+      y: (d.boundingBox?.originY || 0) / videoH * 100,
+      w: (d.boundingBox?.width || 0) / videoW * 100,
+      h: (d.boundingBox?.height || 0) / videoH * 100,
+      label: `Face ${((d.categories[0]?.score || 0) * 100).toFixed(0)}%`
+    }));
+    setBoundingBoxes(newBoxes);
 
-    context.drawImage(videoRef.current, 0, 0, 320, 240);
-    const currentImageData = context.getImageData(0, 0, 320, 240);
+    // Tính toán gian lận
+    let currentViolations: string[] = [];
+    if (detections.length === 0) {
+      currentViolations.push("Không tìm thấy khuôn mặt");
+    } else if (detections.length > 1) {
+      currentViolations.push("Phát hiện nhiều người trong khung hình");
+    }
 
-    const hasMotion = checkMotion(currentImageData, previousImageDataRef.current);
-    let shouldSend = false;
+    setViolations(currentViolations);
+    setIsWarning(currentViolations.length > 0);
 
-    if (hasMotion) {
-      shouldSend = true; // 2 FPS
-    } else {
-      // Nếu muốn "CHỈ" gửi khi có chuyển động, hãy xóa cụm if bên dưới. 
-      // Ở đây giữ lại 1 FPS (1000ms) để giữ kết nối heartbeat.
-      if (timeSinceLastSend >= 1000) {
-        shouldSend = true; // Giữ kết nối heartbeat ở 1 FPS
+    // BÁO CÁO VI PHẠM (Chỉ gửi JSON text qua WebSocket)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const now = Date.now();
+      const violationStr = currentViolations.join(",");
+      const isChanged = violationStr !== prevViolationStrRef.current;
+
+      // Gửi Cảnh báo ngay khi thay trạng thái (VD: Đang bình thường -> Quay mặt ra chỗ khác), HOẶC ping heartbeat 2s 1 lần
+      if (isChanged || now - lastReportTimeRef.current > 2000) {
+        const payload = {
+          type: "DETECTION_LOG",
+          violations: currentViolations,
+          timestamp: now
+        };
+
+        wsRef.current.send(JSON.stringify(payload));
+
+        prevViolationStrRef.current = violationStr;
+        lastReportTimeRef.current = now;
       }
     }
-
-    if (shouldSend) {
-      canvasRef.current.toBlob((blob) => {
-        if (blob) wsRef.current?.send(blob);
-      }, "image/jpeg", 0.6); // Ép nén JPEG
-
-      lastSendTimeRef.current = currentTime;
-      previousImageDataRef.current = currentImageData;
-    }
-  };
-
-  // 3. Xử lý IP Camera (Nếu có)
-  const processIPCamera = () => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN || !canvasRef.current) return;
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`;
-    img.onload = () => {
-      const context = canvasRef.current?.getContext("2d");
-      if (!context || !canvasRef.current) return;
-      canvasRef.current.width = 320;
-      canvasRef.current.height = 240;
-      context.drawImage(img, 0, 0, 320, 240);
-      canvasRef.current.toBlob((blob) => {
-        if (blob) wsRef.current?.send(blob);
-      }, "image/jpeg", 0.6);
-    };
   };
 
   useEffect(() => {
-    let intervalId: number;
+    // Chỉ kích hoạt luồng Local Camera khi AI Load xong
+    if (!faceDetector) return;
 
     const startCamera = async () => {
-      // Trường hợp IP Camera
-      if (IP_CAMERA_URL) {
-        setStatus(`Using IP Cam: ${IP_CAMERA_URL}`);
-        intervalId = globalThis.setInterval(processIPCamera, 1000);
-        return;
-      }
-
-      // Trường hợp Laptop WebCam local
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
 
-        // Thay vì setInterval 300ms, ta dùng requestAnimationFrame kết hợp Pixel Diff
+        setStatus("Connected (Local AI Active)");
         animationFrameIdRef.current = requestAnimationFrame(processFrame);
       } catch (err) {
         console.error("Local camera error", err);
-        setStatus("Không tìm thấy Camera. Vui lòng kiểm tra quyền truy cập.");
+        setStatus("Không tìm thấy Camera. Kiểm tra quyền truy cập.");
       }
     };
 
     startCamera();
+
     return () => {
-      clearInterval(intervalId);
       cancelAnimationFrame(animationFrameIdRef.current);
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(t => t.stop());
+      }
     };
-  }, [IP_CAMERA_URL]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faceDetector]);
 
   return (
     <div className="camera-section">
-      <div className="camera-label">Camera Giám Sát</div>
-      {/* Container camera với position relative để chứa layer chồng */}
-      <div className={`camera-box ${isWarning ? "warning" : ""}`} style={{ position: "relative", overflow: "hidden" }}>
+      <div className="camera-label">Camera Giám Sát (AI Mode)</div>
 
-        {/* Layer 1: Luồng Camera Cực Mượt 60 FPS */}
+      <div className={`camera-box ${isWarning ? "warning" : ""}`} style={{ position: "relative", overflow: "hidden" }}>
         <video
           ref={videoRef}
           autoPlay
@@ -222,57 +219,43 @@ function CameraDetection() {
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            // transform: "scaleX(-1)", // Bật dòng này nếu muốn quay lại hiệu ứng gương
-            display: status === "Connecting..." ? "none" : "block"
+            // transform: "scaleX(-1)", // Bật nếu muốn giao diện gương
+            display: status.includes("Loading") || status.includes("Không") ? "none" : "block"
           }}
         />
 
-        {/* Lớp chờ (Loading) */}
-        {!videoRef.current?.srcObject && status !== "Connected" && (
-          <div className="camera-placeholder" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {(!videoRef.current?.srcObject) && (
+          <div className="camera-placeholder" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "10px" }}>
             {status}
           </div>
         )}
 
-        <div className="camera-overlay">LIVE</div>
+        <div className="camera-overlay">LIVE (0 Delay)</div>
 
-        {/* Layer 2: Vẽ các khung cảnh báo (Bounding Boxes) */}
         {boundingBoxes.map((box, index) => (
           <div
             key={index}
             style={{
               position: "absolute",
-              border: "2px solid #ff4444",
-              background: "rgba(255, 68, 68, 0.15)",
+              border: "2px solid #00ff00", // Xanh lá do chạy AI mượt, hoặc thích thì đổi màu đó
+              background: "rgba(0, 255, 0, 0.1)",
               left: `${box.x}%`,
               top: `${box.y}%`,
               width: `${box.w}%`,
               height: `${box.h}%`,
-              pointerEvents: "none", // Để không chặn nhấp chuột hoặc focus
-              boxShadow: "0 0 10px rgba(255, 0, 0, 0.5)",
-              transition: "all 0.3s ease-out" // Cực kỳ mượt nhờ animation của CSS
+              pointerEvents: "none",
+              boxShadow: "0 0 10px rgba(0, 255, 0, 0.5)",
+              // Rất mượt vì cập nhật ở tốc độ cao
+              transition: "all 0.05s linear"
             }}
           >
-            {box.label && (
-              <span style={{
-                position: "absolute",
-                top: "-20px",
-                left: "-2px",
-                background: "#ff4444",
-                color: "white",
-                padding: "2px 6px",
-                fontSize: "12px",
-                fontWeight: 600,
-                borderRadius: "4px 4px 4px 0"
-              }}>
-                {box.label}
-              </span>
-            )}
+            <span style={{
+              position: "absolute", top: "-20px", left: "-2px", background: "#00ff00", color: "black", padding: "2px 6px", fontSize: "12px", fontWeight: 600, borderRadius: "4px 4px 4px 0"
+            }}>
+              {box.label}
+            </span>
           </div>
         ))}
-
-        {/* Layer 3: Khung Canvas ẩn - Cỗ máy cắt Frame ở dưới ngầm */}
-        <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
 
       <div className="cheating-status">
@@ -282,7 +265,9 @@ function CameraDetection() {
             <div key={v} className="cheating-item">{v}</div>
           ))
         ) : (
-          <div style={{ fontSize: "12px", color: "var(--text-subtle)" }}>Chưa phát hiện vi phạm</div>
+          <div style={{ fontSize: "12px", color: "var(--text-subtle)", marginTop: "10px" }}>
+            {status === "Loading AI Model (MediaPipe)..." ? "Đang tải Core AI..." : "Chưa phát hiện vi phạm"}
+          </div>
         )}
       </div>
     </div>
