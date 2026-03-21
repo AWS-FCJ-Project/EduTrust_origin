@@ -84,29 +84,10 @@ function CameraDetection() {
     };
   }, []);
 
-  // 2. Kết nối WebSocket (Chỉ để gửi Log chứ không gửi Webcam)
+  // 2. Không cần WebSocket nữa (Vite Proxy + HTTP Fetch sẽ gánh)
   useEffect(() => {
-    // Tự động nhận diện đường dẫn (Localhost, LAN IP, hoặc Ngrok HTTPS)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/camera/ws`;
-    const socket = new WebSocket(wsUrl);
-    wsRef.current = socket;
-
-    socket.onopen = () => {
-      setStatus(prev => prev === "Connecting Camera..." ? "Connected" : prev);
-    };
-    socket.onclose = () => setStatus("Disconnected");
-
-    // Yêu cầu từ Server (nếu Server muốn cảnh báo gì ngược lại thì nó gửi xuống)
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.violations && data.violations.length > 0) {
-        setViolations(data.violations);
-        setIsWarning(true);
-      }
-    };
-
-    return () => socket.close();
+    // Sẵn sàng HTTP
+    return () => { };
   }, []);
 
   // 3. Vòng lặp AI Detection (chạy local trên browser)
@@ -153,53 +134,79 @@ function CameraDetection() {
     setViolations(currentViolations);
     setIsWarning(currentViolations.length > 0);
 
-    // BÁO CÁO VI PHẠM (KÈM ẢNH BẰNG CHỨNG GỬI LÊN SERVER)
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const now = Date.now();
-      const violationStr = currentViolations.join(",");
-      const isChanged = violationStr !== prevViolationStrRef.current;
+    // BÁO CÁO VI PHẠM BẰNG HTTP POST (Tránh lỗi chặn WebSocket của Ngrok Edge/Safari)
+    const now = Date.now();
+    const violationStr = currentViolations.join(",");
+    const isChanged = violationStr !== prevViolationStrRef.current;
 
-      // Lúc gửi Log nếu có lỗi (hoặc định kỳ 2s nếu lỗi đang tiếp diễn để lưu thêm nhiều ảnh bằng chứng)
-      if (currentViolations.length > 0 && (isChanged || now - lastReportTimeRef.current > 2000)) {
+    // Lúc gửi Log nếu có lỗi (hoặc định kỳ 2s nếu lỗi đang tiếp diễn để lưu thêm nhiều ảnh bằng chứng)
+    if (currentViolations.length > 0 && (isChanged || now - lastReportTimeRef.current > 2000)) {
 
-        let imageBase64 = null;
-        // Trích xuất khung hình bằng chứng nhờ vào đối tượng Canvas ẩn
-        if (canvasRef.current && videoRef.current) {
-          const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
-          if (ctx) {
-            canvasRef.current.width = 320; // Nén khung hình lại cho siêu nhẹ
-            canvasRef.current.height = 240;
-            ctx.drawImage(videoRef.current, 0, 0, 320, 240);
-            // Cắt chuỗi prefix type của Base64 đi
-            imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.6).split(",")[1];
-          }
+      let imageBase64 = null;
+      // Trích xuất khung hình bằng chứng nhờ vào đối tượng Canvas ẩn
+      if (canvasRef.current && videoRef.current) {
+        const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          canvasRef.current.width = 320; // Nén khung hình lại cho siêu nhẹ
+          canvasRef.current.height = 240;
+          ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+          // Cắt chuỗi prefix type của Base64 đi
+          imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.6).split(",")[1];
         }
+      }
 
-        const payload = {
-          type: "DETECTION_LOG",
-          violations: currentViolations,
-          violation_codes: violationCodes,
-          person_count: detections.length,
-          timestamp: now,
-          image: imageBase64
-        };
+      const payload = {
+        type: "DETECTION_LOG",
+        violations: currentViolations,
+        violation_codes: violationCodes,
+        person_count: detections.length,
+        timestamp: now,
+        image: imageBase64
+      };
 
-        wsRef.current.send(JSON.stringify(payload));
+      alert("Phát hiện vi phạm: " + violationStr);
 
-        prevViolationStrRef.current = violationStr;
-        lastReportTimeRef.current = now;
+      fetch("/camera/log", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420" // Bypass Ngrok Warning Page
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(res => {
+          if (!res.ok) {
+            console.error("Log failed:", res.status);
+            alert("Server trả về lỗi: " + res.status);
+          } else {
+            // console.log("Log success");
+          }
+        })
+        .catch(err => {
+          console.error("Network error:", err);
+          alert("Lỗi mạng khi gửi ảnh: " + err.message);
+        });
 
-      } else if (currentViolations.length === 0 && isChanged) {
-        // Hết vi phạm -> Gửi báo cáo "Tẩy trắng"
-        wsRef.current.send(JSON.stringify({
+      prevViolationStrRef.current = violationStr;
+      lastReportTimeRef.current = now;
+
+    } else if (currentViolations.length === 0 && isChanged) {
+      // Hết vi phạm -> Gửi báo cáo "Tẩy trắng"
+      fetch("/camera/log", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420"
+        },
+        body: JSON.stringify({
           type: "DETECTION_LOG",
           violations: [],
           violation_codes: [],
           person_count: detections.length,
           timestamp: now
-        }));
-        prevViolationStrRef.current = violationStr;
-      }
+        })
+      }).catch(err => console.error("Lỗi xóa log:", err));
+      prevViolationStrRef.current = violationStr;
     }
   };
 
