@@ -33,7 +33,15 @@ function Timer({ durationMinutes = 60 }: TimerProps) {
 function CameraDetection() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [visualizedFrame, setVisualizedFrame] = useState<string | null>(null);
+  // Thay vì lưu ảnh Base64, ta sẽ lưu danh sách các Bounding Boxes từ Backend
+  interface BoundingBox {
+    x: number; // Tỷ lệ % (0-100) tương ứng với chiều rộng gốc (Ví dụ 320px)
+    y: number; // Tỷ lệ % (0-100)
+    w: number; // Width %
+    h: number; // Height %
+    label: string;
+  }
+  const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
   const [violations, setViolations] = useState<string[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [isWarning, setIsWarning] = useState(false);
@@ -56,9 +64,16 @@ function CameraDetection() {
     socket.onclose = () => setStatus("Disconnected");
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.visualized_frame) {
-        setVisualizedFrame(data.visualized_frame);
+
+      // 👉 BACKEND BÂY GIỜ CHỈ CẦN TRẢ VỀ TOẠ ĐỘ THAY VÌ ẢNH!
+      // Ví dụ Backend trả về field: "boxes": [{ "x": 10, "y": 20, "w": 40, "h": 50, "label": "Nhìn đi nơi khác" }]
+      if (data.boxes) {
+        setBoundingBoxes(data.boxes);
+      } else {
+        // Tự động clear box nếu an toàn
+        setBoundingBoxes([]);
       }
+
       if (data.violations) {
         setViolations(data.violations);
         setIsWarning(data.violations.length > 0 || data.forbidden_detected);
@@ -107,13 +122,13 @@ function CameraDetection() {
     const currentTime = Date.now();
     const timeSinceLastSend = currentTime - lastSendTimeRef.current;
 
-    // Chỉ check motion và xử lý khi đạt mốc tối thiểu 500ms (giới hạn 2 FPS)
+    // Giới hạn max 2 FPS
     if (timeSinceLastSend < 500) return;
 
     const context = canvasRef.current.getContext("2d", { willReadFrequently: true });
     if (!context) return;
 
-    // Resize tối ưu
+    // Resize cứng xuống 320x240 để siêu tiết kiệm băng thông
     canvasRef.current.width = 320;
     canvasRef.current.height = 240;
 
@@ -129,14 +144,14 @@ function CameraDetection() {
       // Nếu muốn "CHỈ" gửi khi có chuyển động, hãy xóa cụm if bên dưới. 
       // Ở đây giữ lại 1 FPS (1000ms) để giữ kết nối heartbeat.
       if (timeSinceLastSend >= 1000) {
-        shouldSend = true;
+        shouldSend = true; // Giữ kết nối heartbeat ở 1 FPS
       }
     }
 
     if (shouldSend) {
       canvasRef.current.toBlob((blob) => {
         if (blob) wsRef.current?.send(blob);
-      }, "image/jpeg", 0.6); // Ép nén định dạng thành JPEG thay vì PNG
+      }, "image/jpeg", 0.6); // Ép nén JPEG
 
       lastSendTimeRef.current = currentTime;
       previousImageDataRef.current = currentImageData;
@@ -195,18 +210,68 @@ function CameraDetection() {
   return (
     <div className="camera-section">
       <div className="camera-label">Camera Giám Sát</div>
-      <div className={`camera-box ${isWarning ? "warning" : ""}`}>
-        {visualizedFrame ? (
-          <img src={`data:image/jpeg;base64,${visualizedFrame}`} alt="Detection" />
-        ) : (
-          <div className="camera-placeholder">
-            {status === "Connected" ? "Đang tải luồng camera..." : status}
+      {/* Container camera với position relative để chứa layer chồng */}
+      <div className={`camera-box ${isWarning ? "warning" : ""}`} style={{ position: "relative", overflow: "hidden" }}>
+
+        {/* Layer 1: Luồng Camera Cực Mượt 60 FPS */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            // transform: "scaleX(-1)", // Bật dòng này nếu muốn quay lại hiệu ứng gương
+            display: status === "Connecting..." ? "none" : "block"
+          }}
+        />
+
+        {/* Lớp chờ (Loading) */}
+        {!videoRef.current?.srcObject && status !== "Connected" && (
+          <div className="camera-placeholder" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {status}
           </div>
         )}
+
         <div className="camera-overlay">LIVE</div>
-        <video ref={videoRef} autoPlay playsInline style={{ display: "none" }}>
-          <track kind="captions" />
-        </video>
+
+        {/* Layer 2: Vẽ các khung cảnh báo (Bounding Boxes) */}
+        {boundingBoxes.map((box, index) => (
+          <div
+            key={index}
+            style={{
+              position: "absolute",
+              border: "2px solid #ff4444",
+              background: "rgba(255, 68, 68, 0.15)",
+              left: `${box.x}%`,
+              top: `${box.y}%`,
+              width: `${box.w}%`,
+              height: `${box.h}%`,
+              pointerEvents: "none", // Để không chặn nhấp chuột hoặc focus
+              boxShadow: "0 0 10px rgba(255, 0, 0, 0.5)",
+              transition: "all 0.3s ease-out" // Cực kỳ mượt nhờ animation của CSS
+            }}
+          >
+            {box.label && (
+              <span style={{
+                position: "absolute",
+                top: "-20px",
+                left: "-2px",
+                background: "#ff4444",
+                color: "white",
+                padding: "2px 6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                borderRadius: "4px 4px 4px 0"
+              }}>
+                {box.label}
+              </span>
+            )}
+          </div>
+        ))}
+
+        {/* Layer 3: Khung Canvas ẩn - Cỗ máy cắt Frame ở dưới ngầm */}
         <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
 
