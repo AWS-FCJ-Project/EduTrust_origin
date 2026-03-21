@@ -39,8 +39,16 @@ function CameraDetection() {
   const [isWarning, setIsWarning] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // States for frame optimization
+  const previousImageDataRef = useRef<ImageData | null>(null);
+  const lastSendTimeRef = useRef<number>(0);
+  const animationFrameIdRef = useRef<number>(0);
+
   useEffect(() => {
-    const wsUrl = "ws://localhost:8000/camera/ws";
+    const isLocalDev = window.location.port === "5173";
+    const defaultWsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+    const wsBase = isLocalDev ? (import.meta.env.VITE_WS_URL || "ws://localhost:8000") : defaultWsUrl;
+    const wsUrl = `${wsBase}/camera/ws`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
@@ -63,53 +71,114 @@ function CameraDetection() {
   // Cấu hình Camera: Để trống "" để dùng Webcam local, hoặc điền URL vào .env (VITE_CAMERA_URL)
   const IP_CAMERA_URL = import.meta.env.VITE_CAMERA_URL || "";
 
-  const captureAndSend = (source: HTMLVideoElement | HTMLImageElement) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN || !canvasRef.current) return;
+  // 1. Thuật toán so sánh Pixel
+  const checkMotion = (currentImageData: ImageData, previousImageData: ImageData | null) => {
+    if (!previousImageData) return true; // Frame đầu luôn coi là có chuyển động
 
-    const context = canvasRef.current.getContext("2d");
-    if (!context) return;
+    let diffPixels = 0;
+    const data1 = currentImageData.data;
+    const data2 = previousImageData.data;
 
-    if (source instanceof HTMLVideoElement) {
-      canvasRef.current.width = source.videoWidth;
-      canvasRef.current.height = source.videoHeight;
-    } else {
-      canvasRef.current.width = source.width;
-      canvasRef.current.height = source.height;
+    // Nhảy bước 16 để tăng tốc độ tính toán
+    for (let i = 0; i < data1.length; i += 16) {
+      const diffR = Math.abs(data1[i] - data2[i]);
+      const diffG = Math.abs(data1[i + 1] - data2[i + 1]);
+      const diffB = Math.abs(data1[i + 2] - data2[i + 2]);
+
+      // Nếu tông màu chênh > 30, tính là pixel bị thay đổi
+      if (diffR + diffG + diffB > 30) {
+        diffPixels++;
+      }
     }
 
-    context.drawImage(source, 0, 0);
-    canvasRef.current.toBlob((blob) => {
-      if (blob) wsRef.current?.send(blob);
-    }, "image/jpeg", 0.7);
+    const checkedPixels = (data1.length / 4) / 4;
+    const diffPercentage = (diffPixels / checkedPixels) * 100;
+    return diffPercentage > 5; // Ngưỡng chuyển động 5%
   };
 
+  // 2. Vòng lặp tối ưu WebCam
+  const processFrame = () => {
+    animationFrameIdRef.current = requestAnimationFrame(processFrame);
+
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    if (!videoRef.current || !canvasRef.current) return;
+    if (videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) return;
+
+    const currentTime = Date.now();
+    const timeSinceLastSend = currentTime - lastSendTimeRef.current;
+
+    // Chỉ check motion và xử lý khi đạt mốc tối thiểu 500ms (giới hạn 2 FPS)
+    if (timeSinceLastSend < 500) return;
+
+    const context = canvasRef.current.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+
+    // Resize tối ưu
+    canvasRef.current.width = 320;
+    canvasRef.current.height = 240;
+
+    context.drawImage(videoRef.current, 0, 0, 320, 240);
+    const currentImageData = context.getImageData(0, 0, 320, 240);
+
+    const hasMotion = checkMotion(currentImageData, previousImageDataRef.current);
+    let shouldSend = false;
+
+    if (hasMotion) {
+      shouldSend = true; // 2 FPS
+    } else {
+      // Nếu muốn "CHỈ" gửi khi có chuyển động, hãy xóa cụm if bên dưới. 
+      // Ở đây giữ lại 1 FPS (1000ms) để giữ kết nối heartbeat.
+      if (timeSinceLastSend >= 1000) {
+        shouldSend = true;
+      }
+    }
+
+    if (shouldSend) {
+      canvasRef.current.toBlob((blob) => {
+        if (blob) wsRef.current?.send(blob);
+      }, "image/jpeg", 0.6); // Ép nén định dạng thành JPEG thay vì PNG
+
+      lastSendTimeRef.current = currentTime;
+      previousImageDataRef.current = currentImageData;
+    }
+  };
+
+  // 3. Xử lý IP Camera (Nếu có)
   const processIPCamera = () => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN || !canvasRef.current) return;
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.src = `${IP_CAMERA_URL}/snapshot.jpg?t=${Date.now()}`;
-    img.onload = () => captureAndSend(img);
-  };
-
-  const processWebcam = () => {
-    if (videoRef.current) {
-      captureAndSend(videoRef.current);
-    }
+    img.onload = () => {
+      const context = canvasRef.current?.getContext("2d");
+      if (!context || !canvasRef.current) return;
+      canvasRef.current.width = 320;
+      canvasRef.current.height = 240;
+      context.drawImage(img, 0, 0, 320, 240);
+      canvasRef.current.toBlob((blob) => {
+        if (blob) wsRef.current?.send(blob);
+      }, "image/jpeg", 0.6);
+    };
   };
 
   useEffect(() => {
     let intervalId: number;
 
     const startCamera = async () => {
+      // Trường hợp IP Camera
       if (IP_CAMERA_URL) {
         setStatus(`Using IP Cam: ${IP_CAMERA_URL}`);
-        intervalId = globalThis.setInterval(processIPCamera, 500);
+        intervalId = globalThis.setInterval(processIPCamera, 1000);
         return;
       }
 
+      // Trường hợp Laptop WebCam local
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         if (videoRef.current) videoRef.current.srcObject = stream;
-        intervalId = globalThis.setInterval(processWebcam, 300);
+
+        // Thay vì setInterval 300ms, ta dùng requestAnimationFrame kết hợp Pixel Diff
+        animationFrameIdRef.current = requestAnimationFrame(processFrame);
       } catch (err) {
         console.error("Local camera error", err);
         setStatus("Không tìm thấy Camera. Vui lòng kiểm tra quyền truy cập.");
@@ -117,7 +186,10 @@ function CameraDetection() {
     };
 
     startCamera();
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      cancelAnimationFrame(animationFrameIdRef.current);
+    };
   }, [IP_CAMERA_URL]);
 
   return (
