@@ -54,6 +54,8 @@ async def process_camera_frame(
     return CameraDetectionResponse(**response_data)
 
 
+import json
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -61,31 +63,32 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Receive frame data (bytes)
-            data = await websocket.receive_bytes()
+            # Receive text data (JSON) instead of raw bytes
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                
+                if payload.get("type") == "DETECTION_LOG":
+                    result = service.process_client_log(payload)
+                    
+                    if "error" in result:
+                        await websocket.send_json({"error": result["error"]})
+                        continue
 
-            # Process frame
-            result = service.process_frame(data)
+                    # Prepare response to keep frontend's warning state synced
+                    response = {
+                        "person_count": payload.get("person_count", 0),
+                        "forbidden_detected": False,
+                        "violations": payload.get("violations", []),
+                        "timestamp": payload.get("timestamp", ""),
+                        "visualized_frame": None, # Frontend handles rendering now
+                    }
 
-            if "error" in result:
-                await websocket.send_json({"error": result["error"]})
-                continue
-
-            # Prepare response
-            response = {
-                "person_count": result["person_count"],
-                "forbidden_detected": result["forbidden_detected"],
-                "violations": result["violations"],
-                "timestamp": result.get("timestamp", ""),
-                "visualized_frame": (
-                    base64.b64encode(result["visualized_frame"]).decode("utf-8")
-                    if "visualized_frame" in result
-                    else None
-                ),
-            }
-
-            # Send result back
-            await websocket.send_json(response)
+                    # Send result back
+                    await websocket.send_json(response)
+                    
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid format, expected JSON"})
 
     except WebSocketDisconnect:
         print("Client disconnected")

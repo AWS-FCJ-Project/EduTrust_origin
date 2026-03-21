@@ -49,6 +49,7 @@ function CameraDetection() {
   const [isWarning, setIsWarning] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameIdRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
   const lastReportTimeRef = useRef<number>(0);
@@ -85,13 +86,9 @@ function CameraDetection() {
 
   // 2. Kết nối WebSocket (Chỉ để gửi Log chứ không gửi Webcam)
   useEffect(() => {
-    const isLocalDev = window.location.port === "5173";
-    const defaultWsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const wsBase = isLocalDev ? (import.meta.env.VITE_WS_URL || "ws://localhost:8000") : defaultWsUrl;
-
-    // Đổi endpoint websocket nếu backend có endpoint riêng hứng log, 
-    // hoặc xài tạm API gốc (Backend nên được sửa lại).
-    const wsUrl = `${wsBase}/camera/ws`;
+    // Tự động nhận diện đường dẫn (Localhost, LAN IP, hoặc Ngrok HTTPS)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/camera/ws`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
@@ -142,35 +139,66 @@ function CameraDetection() {
     }));
     setBoundingBoxes(newBoxes);
 
-    // Tính toán gian lận
+    // Tính toán lỗi Gian lận
     let currentViolations: string[] = [];
+    let violationCodes: string[] = [];
     if (detections.length === 0) {
       currentViolations.push("Không tìm thấy khuôn mặt");
+      violationCodes.push("FACE_DISAPPEARED");
     } else if (detections.length > 1) {
       currentViolations.push("Phát hiện nhiều người trong khung hình");
+      violationCodes.push("MULTIPLE_FACES");
     }
 
     setViolations(currentViolations);
     setIsWarning(currentViolations.length > 0);
 
-    // BÁO CÁO VI PHẠM (Chỉ gửi JSON text qua WebSocket)
+    // BÁO CÁO VI PHẠM (KÈM ẢNH BẰNG CHỨNG GỬI LÊN SERVER)
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const now = Date.now();
       const violationStr = currentViolations.join(",");
       const isChanged = violationStr !== prevViolationStrRef.current;
 
-      // Gửi Cảnh báo ngay khi thay trạng thái (VD: Đang bình thường -> Quay mặt ra chỗ khác), HOẶC ping heartbeat 2s 1 lần
-      if (isChanged || now - lastReportTimeRef.current > 2000) {
+      // Lúc gửi Log nếu có lỗi (hoặc định kỳ 2s nếu lỗi đang tiếp diễn để lưu thêm nhiều ảnh bằng chứng)
+      if (currentViolations.length > 0 && (isChanged || now - lastReportTimeRef.current > 2000)) {
+
+        let imageBase64 = null;
+        // Trích xuất khung hình bằng chứng nhờ vào đối tượng Canvas ẩn
+        if (canvasRef.current && videoRef.current) {
+          const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
+          if (ctx) {
+            canvasRef.current.width = 320; // Nén khung hình lại cho siêu nhẹ
+            canvasRef.current.height = 240;
+            ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+            // Cắt chuỗi prefix type của Base64 đi
+            imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.6).split(",")[1];
+          }
+        }
+
         const payload = {
           type: "DETECTION_LOG",
           violations: currentViolations,
-          timestamp: now
+          violation_codes: violationCodes,
+          person_count: detections.length,
+          timestamp: now,
+          image: imageBase64
         };
 
         wsRef.current.send(JSON.stringify(payload));
 
         prevViolationStrRef.current = violationStr;
         lastReportTimeRef.current = now;
+
+      } else if (currentViolations.length === 0 && isChanged) {
+        // Hết vi phạm -> Gửi báo cáo "Tẩy trắng"
+        wsRef.current.send(JSON.stringify({
+          type: "DETECTION_LOG",
+          violations: [],
+          violation_codes: [],
+          person_count: detections.length,
+          timestamp: now
+        }));
+        prevViolationStrRef.current = violationStr;
       }
     }
   };
@@ -256,6 +284,9 @@ function CameraDetection() {
             </span>
           </div>
         ))}
+
+        {/* Layer 3: Khung Canvas ảo để chụp lén ảnh bằng chứng khi có lỗi */}
+        <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
 
       <div className="cheating-status">

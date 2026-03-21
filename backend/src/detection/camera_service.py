@@ -73,10 +73,53 @@ class CameraService:
 
         return violations
 
+    def process_client_log(self, payload: dict):
+        import base64
+        
+        violations = payload.get("violation_codes", [])
+        image_b64 = payload.get("image")
+        
+        print(f"[DEBUG] process_client_log triggered. Violations: {violations}, HasImage: {bool(image_b64)}")
+        
+        if not violations or not image_b64:
+            print("[DEBUG] Missing violations or image_b64")
+            return {"error": "Missing violations or image"}
+
+        try:
+            print(f"[DEBUG] Image B64 length: {len(image_b64)}")
+            import binascii
+            try:
+                # Add padding if necessary
+                image_b64 += "=" * ((4 - len(image_b64) % 4) % 4)
+                frame_bytes = base64.b64decode(image_b64)
+            except binascii.Error as e:
+                print(f"[ERROR] Base64 decode error: {e}")
+                return {"error": "Invalid base64 string"}
+
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if frame is None:
+                print("[ERROR] cv2.imdecode returned None")
+                return {"error": "Invalid image base64"}
+                
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            person_count = payload.get("person_count", 0)
+
+            for v_type in violations:
+                self.logger.log_violation(
+                    v_type, timestamp, {"person_count": person_count}
+                )
+                print(f"[DEBUG] Saving captured frame for {v_type}")
+                self.capturer.capture_violation(frame, v_type, timestamp)
+                
+            return {"status": "logged success"}
+        except Exception as e:
+            print(f"[ERROR] Exception in process_client_log: {e}")
+            return {"error": str(e)}
 
 # Global instance for the service
 camera_service = None
-
 
 def get_camera_service():
     global camera_service
