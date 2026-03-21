@@ -8,6 +8,7 @@ from fastapi import (
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
+    Request
 )
 from src.detection.camera_service import get_camera_service
 from src.schemas.camera_schema import CameraDetectionResponse
@@ -15,44 +16,21 @@ from src.schemas.camera_schema import CameraDetectionResponse
 router = APIRouter(prefix="/camera", tags=["Camera"])
 
 
-@router.post(
-    "/process",
-    response_model=CameraDetectionResponse,
-    responses={
-        400: {"description": "Invalid file type. Must be an image."},
-        500: {"description": "Internal server error during processing."},
-    },
-)
-async def process_camera_frame(
-    file: Annotated[UploadFile, File(...)], visualize: bool = True
-):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400, detail="Invalid file type. Must be an image."
-        )
-
-    contents = await file.read()
-    service = get_camera_service()
-    result = service.process_frame(contents)
-
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-
-    response_data = {
-        "person_count": result["person_count"],
-        "forbidden_detected": result["forbidden_detected"],
-        "violations": result["violations"],
-        "timestamp": result.get("timestamp", ""),
-        "visualized_frame": None,
-    }
-
-    if visualize and "visualized_frame" in result:
-        response_data["visualized_frame"] = base64.b64encode(
-            result["visualized_frame"]
-        ).decode("utf-8")
-
-    return CameraDetectionResponse(**response_data)
-
+@router.post("/log")
+async def receive_client_log(request: Request):
+    print(f"[DEBUG] POST /camera/log hit from {request.client.host}")
+    try:
+        payload = await request.json()
+        print(f"[DEBUG] Received payload: type={payload.get('type')}")
+        service = get_camera_service()
+        result = service.process_client_log(payload)
+        if "error" in result:
+            print(f"[ERROR] Logic error: {result['error']}")
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "success"}
+    except Exception as e:
+        print(f"[ERROR] Request failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 import json
 
