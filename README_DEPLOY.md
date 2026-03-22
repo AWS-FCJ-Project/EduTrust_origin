@@ -67,4 +67,8 @@ ngrok http 8000
 
 *   **Một cổng duy nhất:** Bạn chỉ cần chạy ngrok cho cổng **8000**. Không cần chạy ngrok cho cổng 5173 hay chạy `npm run dev` khi đã build xong.
 *   **Xóa Log:** Nếu muốn xóa dữ liệu cũ để test mới, bạn chỉ cần xóa các file trong `storage/violation_captures` và xóa nội dung trong `violations.json`.
-*   **Tốc độ mạng:** Ảnh chụp vi phạm đã được nén lại (320x240) nên việc gửi qua ngrok rất nhanh, không làm lag máy học sinh.
+### 5. Cách chạy thử mô hình Backend (Tùy chọn)
+Nếu bạn muốn kiểm tra khả năng nhận diện trực tiếp từ phía Backend (không qua AI của học sinh), bạn có thể truy cập:
+- `http://localhost:8000/tests/websocket_test.html` (chạy local)
+- Hoặc mở trực tiếp file `backend/tests/websocket_test.html` trong trình duyệt.
+*Lưu ý: Bạn cần cấu hình FastAPI để phục vụ thư mục tests nếu muốn mở qua URL.*
