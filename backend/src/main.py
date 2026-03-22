@@ -48,9 +48,21 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logfire.instrument_fastapi(app)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    print(f"[ACCESS] {request.method} {request.url.path}")
+    from datetime import datetime
+    path = request.url.path
+    method = request.method
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [ACCESS] {method} {path}")
+    
+    # Special logging for ngrok headers to debug proxy issues
+    if "ngrok-skip-browser-warning" in request.headers:
+        print(f" [DEBUG] ngrok-skip-browser-warning header present: {request.headers['ngrok-skip-browser-warning']}")
+    
     response = await call_next(request)
     return response
+
+@app.get("/camera/test")
+def test_camera_path():
+    return {"message": "Cổng /camera/test hoạt động!"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +71,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# @app.post("/log") discarded - consolidated to /camera/log
 
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
 app.include_router(camera_routes.router, tags=["Camera"])
@@ -79,9 +93,9 @@ if os.path.exists(frontend_dist):
     
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        # Don't intercept API routes (even though they are mounted above, this is a fallback catch-all)
+        # Don't intercept API routes...
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("camera/"):
-            pass
+            raise HTTPException(status_code=404)
             
         file_path = os.path.join(frontend_dist, full_path)
         if os.path.isfile(file_path):
@@ -91,7 +105,7 @@ if os.path.exists(frontend_dist):
         index_path = os.path.join(frontend_dist, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
-        return {"message": "Frontend build not found at " + frontend_dist}
+        raise HTTPException(status_code=404, detail="Resource not found")
 else:
     @app.get("/")
     def root():
