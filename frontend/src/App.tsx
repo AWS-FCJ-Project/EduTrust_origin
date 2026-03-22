@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+// @ts-ignore
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 
 // --- Components ---
@@ -48,7 +49,6 @@ function CameraDetection() {
   const [status, setStatus] = useState("Loading AI Model (MediaPipe)...");
   const [isWarning, setIsWarning] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameIdRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
@@ -164,27 +164,28 @@ function CameraDetection() {
         image: imageBase64
       };
 
-      alert("Phát hiện vi phạm: " + violationStr);
+      console.log(`[DEBUG] Phóng báo cáo vi phạm lên /camera/log:`, violationStr);
 
       fetch("/camera/log", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "69420" // Bypass Ngrok Warning Page
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify(payload)
       })
-        .then(res => {
-          if (!res.ok) {
-            console.error("Log failed:", res.status);
-            alert("Server trả về lỗi: " + res.status);
+        .then(async res => {
+          const text = await res.text();
+          console.log(`[DEBUG] Server phản hồi (${res.status}):`, text);
+
+          if (res.ok && !text.includes("ngrok")) {
+            console.log("✅ Báo cáo vi phạm thành công!");
           } else {
-            // console.log("Log success");
+            console.error("❌ Lỗi gửi báo cáo:", res.status, text);
           }
         })
         .catch(err => {
-          console.error("Network error:", err);
-          alert("Lỗi mạng khi gửi ảnh: " + err.message);
+          console.error("🚨 Lỗi mạng (fetch error):", err);
         });
 
       prevViolationStrRef.current = violationStr;
@@ -323,6 +324,7 @@ export default function App() {
           <Timer durationMinutes={60} />
           <button
             className="submit-btn"
+            style={{ marginTop: "10px" }}
             onClick={() => alert("Bài làm đã được gửi!")}
           >
             Nộp bài

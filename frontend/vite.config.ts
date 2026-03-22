@@ -1,21 +1,26 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import basicSsl from '@vitejs/plugin-basic-ssl';
 
 export default defineConfig({
-  plugins: [react(), basicSsl()],
+  plugins: [react()],
   server: {
     port: 5173,
-    host: "0.0.0.0", // Bắt buộc expose ra mạng LAN
-    https: true, // Bắt buộc chạy HTTPS
-    allowedHosts: true, // Vẫn giữ để phòng trường hợp bạn xài Ngrok
+    host: "0.0.0.0",
+    allowedHosts: true,
     proxy: {
-      // Tự động chuyển hướng toàn bộ request API và WebSocket về FastAPI
       "/camera": {
-        target: "http://localhost:8000",
-        ws: true,
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
-        secure: false // Đảm bảo Proxy từ HTTPS sang HTTP qua localhost không bị lỗi chứng chỉ
+        secure: false,
+        ws: true
+      },
+      "/docs": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true
+      },
+      "/openapi.json": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true
       }
     }
   },

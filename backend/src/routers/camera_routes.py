@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import (
@@ -18,18 +19,31 @@ router = APIRouter(prefix="/camera", tags=["Camera"])
 
 @router.post("/log")
 async def receive_client_log(request: Request):
-    print(f"[DEBUG] POST /camera/log hit from {request.client.host}")
+    client_ip = request.client.host
+    print(f"[ACCESS] POST /camera/log hit from {client_ip}")
+
+    # Check for ngrok-specific headers to verify bypass is active
+    if "ngrok-skip-browser-warning" in request.headers:
+        print(f" [DEBUG] ngrok-skip-browser-warning detected: {request.headers['ngrok-skip-browser-warning']}")
+
     try:
         payload = await request.json()
-        print(f"[DEBUG] Received payload: type={payload.get('type')}")
+        violation_type = payload.get('type', 'UNKNOWN')
+        violation_codes = payload.get('violation_codes', [])
+        
+        print(f" [DEBUG] Payload Type: {violation_type}, Codes: {violation_codes}")
+        
         service = get_camera_service()
         result = service.process_client_log(payload)
+        
         if "error" in result:
-            print(f"[ERROR] Logic error: {result['error']}")
+            print(f" [ERROR] Logic failure: {result['error']}")
             raise HTTPException(status_code=400, detail=result["error"])
-        return {"status": "success"}
+        
+        print(f" [SUCCESS] Violation processed and recorded.")
+        return {"status": "success", "received_at": datetime.now().isoformat()}
     except Exception as e:
-        print(f"[ERROR] Request failed: {e}")
+        print(f" [ERROR] Unexpected Failure: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 import json
