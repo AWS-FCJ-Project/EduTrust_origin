@@ -55,32 +55,46 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Receive text data (JSON) instead of raw bytes
-            data = await websocket.receive_text()
-            try:
-                payload = json.loads(data)
+            # Chấp nhận cả tin nhắn văn bản (JSON) và tin nhắn nhị phân (ảnh trực tiếp)
+            message = await websocket.receive()
+            
+            if "bytes" in message:
+                # TRƯỜNG HỢP 1: Nhận ảnh thô (Dùng cho websocket_test.html để test mô hình Backend)
+                result = service.process_frame(message["bytes"])
                 
-                if payload.get("type") == "DETECTION_LOG":
-                    result = service.process_client_log(payload)
-                    
-                    if "error" in result:
-                        await websocket.send_json({"error": result["error"]})
-                        continue
+                # Trả về kết quả kèm ảnh đã được vẽ (visualized) nếu có
+                response = {
+                    "person_count": result.get("person_count", 0),
+                    "forbidden_detected": result.get("forbidden_detected", False),
+                    "violations": result.get("violations", []),
+                    "timestamp": result.get("timestamp", ""),
+                    "visualized_frame": base64.b64encode(result["visualized_frame"]).decode() if result.get("visualized_frame") else None
+                }
+                await websocket.send_json(response)
 
-                    # Prepare response to keep frontend's warning state synced
-                    response = {
-                        "person_count": payload.get("person_count", 0),
-                        "forbidden_detected": False,
-                        "violations": payload.get("violations", []),
-                        "timestamp": payload.get("timestamp", ""),
-                        "visualized_frame": None, # Frontend handles rendering now
-                    }
-
-                    # Send result back
-                    await websocket.send_json(response)
+            elif "text" in message:
+                # TRƯỜNG HỢP 2: Nhận JSON (Dùng cho App React chính thức - Edge AI)
+                try:
+                    payload = json.loads(message["text"])
                     
-            except json.JSONDecodeError:
-                await websocket.send_json({"error": "Invalid format, expected JSON"})
+                    if payload.get("type") == "DETECTION_LOG":
+                        result = service.process_client_log(payload)
+                        
+                        if "error" in result:
+                            await websocket.send_json({"error": result["error"]})
+                            continue
+
+                        response = {
+                            "person_count": payload.get("person_count", 0),
+                            "forbidden_detected": False,
+                            "violations": payload.get("violations", []),
+                            "timestamp": payload.get("timestamp", ""),
+                            "visualized_frame": None,
+                        }
+                        await websocket.send_json(response)
+                        
+                except json.JSONDecodeError:
+                    await websocket.send_json({"error": "Invalid format, expected JSON"})
 
     except WebSocketDisconnect:
         print("Client disconnected")
