@@ -9,7 +9,7 @@ const TARGET_CLASSES: Record<number, string> = {
   73: "book"
 };
 
-const FORBIDDEN_IDS = [67, 73];
+const FORBIDDEN_IDS = new Set([67, 73]);
 
 // --- Components ---
 const Timer = ({ durationMinutes }: { durationMinutes: number }) => {
@@ -94,49 +94,14 @@ export default function App() {
 
   const decodeOutput = (output: ort.Tensor) => {
     const data = output.data as Float32Array;
-    const dims = output.dims; // [1, 300, 6] hoặc [1, 84, 8400]
-
-    let detections = [];
+    const dims = output.dims;
     const threshold = 0.4;
 
-    // 1. Dạng [1, 300, 6] (Dạng của mô hình bạn đang chạy)
-    // Cấu trúc: [x1, y1, x2, y2, confidence, classId]
+    let detections: any[] = [];
     if (dims.length === 3 && dims[2] === 6) {
-      const count = dims[1]; // 300
-      for (let i = 0; i < count; i++) {
-        const conf = data[i * 6 + 4];
-        const cls = Math.round(data[i * 6 + 5]);
-
-        if (conf > threshold && TARGET_CLASSES[cls]) {
-          const x1 = data[i * 6 + 0];
-          const y1 = data[i * 6 + 1];
-          const x2 = data[i * 6 + 2];
-          const y2 = data[i * 6 + 3];
-
-          detections.push({
-            classId: cls,
-            label: TARGET_CLASSES[cls],
-            conf: conf,
-            rect: [x1, y1, x2, y2]
-          });
-        }
-      }
-    }
-    // 2. Dạng chuẩn YOLOv8 [1, 84, 8400]
-    else if (dims[1] === 84) {
-      const cols = dims[2];
-      for (let j = 0; j < cols; j++) {
-        let maxConf = 0;
-        let classId = -1;
-        for (const id of [0, 67, 73]) {
-          const conf = data[(id + 4) * cols + j];
-          if (conf > maxConf) { maxConf = conf; classId = id; }
-        }
-        if (maxConf > threshold) {
-          const xc = data[0 * cols + j], yc = data[1 * cols + j], w = data[2 * cols + j], h = data[3 * cols + j];
-          detections.push({ classId, label: TARGET_CLASSES[classId], conf: maxConf, rect: [xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2] });
-        }
-      }
+      detections = decodeYoloV8Custom(data, dims[1], threshold);
+    } else if (dims[1] === 84) {
+      detections = decodeYoloV8Standard(data, dims[2], threshold);
     }
 
     if (debugRef.current) {
@@ -244,44 +209,46 @@ export default function App() {
 
   const handleViolations = (detections: any[]) => {
     const now = Date.now();
-    const personCount = detections.filter(d => d.classId === 0).length;
-    const forbidden = detections.filter(d => FORBIDDEN_IDS.includes(d.classId));
+    const personCount = detections.filter((d) => d.classId === 0).length;
+    const forbidden = detections.filter((d) => FORBIDDEN_IDS.has(d.classId));
 
-    const currentViolations: string[] = [];
-    const alertCodes: string[] = [];
-
-    if (personCount === 0) {
-      currentViolations.push("Không thấy học sinh");
-      alertCodes.push("FACE_DISAPPEARED");
-    } else if (personCount > 1) {
-      currentViolations.push("Nghi ngờ có người lạ");
-      alertCodes.push("MULTIPLE_FACES");
-    }
-
-    if (forbidden.length > 0) {
-      currentViolations.push(`Vật cấm: ${forbidden[0].label}`);
-      alertCodes.push("OBJECT_DETECTED");
-    }
+    const { currentViolations, alertCodes } = getViolationDetails(
+      personCount,
+      forbidden
+    );
 
     setViolations(currentViolations);
     setIsWarning(currentViolations.length > 0);
 
-    // Report to and save on host server
     const vStr = alertCodes.join(",");
     const isChanged = vStr !== prevViolationStrRef.current;
 
-    if (currentViolations.length > 0 && (isChanged || now - lastReportTimeRef.current > 4000)) {
+    if (
+      currentViolations.length > 0 &&
+      (isChanged || now - lastReportTimeRef.current > 4000)
+    ) {
       reportViolation(currentViolations, alertCodes, personCount, now);
       prevViolationStrRef.current = vStr;
       lastReportTimeRef.current = now;
     } else if (currentViolations.length === 0 && isChanged) {
-      fetch("/camera/log", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
-        body: JSON.stringify({ type: "DETECTION_LOG", violations: [], timestamp: now })
-      });
+      sendClearLog(now);
       prevViolationStrRef.current = "";
     }
+  };
+
+  const sendClearLog = (ts: number) => {
+    fetch("/camera/log", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "69420",
+      },
+      body: JSON.stringify({
+        type: "DETECTION_LOG",
+        violations: [],
+        timestamp: ts,
+      }),
+    });
   };
 
   const reportViolation = (vList: string[], codes: string[], count: number, ts: number) => {
@@ -346,7 +313,17 @@ export default function App() {
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-subtle)', display: 'flex', justifyContent: 'space-between' }}>
             <span>Detections: {metrics.rawCount}</span>
-            <span onClick={() => debugRef.current = true} style={{ cursor: 'pointer', color: 'var(--accent)' }}>[LOG AI]</span>
+            <span
+              onClick={() => (debugRef.current = true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") debugRef.current = true;
+              }}
+              tabIndex={0}
+              role="button"
+              style={{ cursor: "pointer", color: "var(--accent)" }}
+            >
+              [LOG AI]
+            </span>
           </div>
         </div>
 
@@ -354,7 +331,13 @@ export default function App() {
           <div className="cheating-header">⚠️ DẤU HIỆU VI PHẠM</div>
           <div className="tool-events-list">
             {violations.map((v, i) => (
-              <div key={i} className="cheating-item" style={{ color: '#f87171' }}>{v}</div>
+              <div
+                key={`${v}-${i}`}
+                className="cheating-item"
+                style={{ color: "#f87171" }}
+              >
+                {v}
+              </div>
             ))}
             {violations.length === 0 && <div className="cheating-item" style={{ color: '#4ade80' }}>Chưa phát hiện vi phạm</div>}
           </div>
@@ -393,4 +376,83 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+/** Helper Functions for AI Processing */
+function decodeYoloV8Custom(
+  data: Float32Array,
+  count: number,
+  threshold: number
+) {
+  const detections = [];
+  for (let i = 0; i < count; i++) {
+    const conf = data[i * 6 + 4];
+    const cls = Math.round(data[i * 6 + 5]);
+    if (conf > threshold && TARGET_CLASSES[cls]) {
+      detections.push({
+        classId: cls,
+        label: TARGET_CLASSES[cls],
+        conf: conf,
+        rect: [
+          data[i * 6 + 0],
+          data[i * 6 + 1],
+          data[i * 6 + 2],
+          data[i * 6 + 3],
+        ],
+      });
+    }
+  }
+  return detections;
+}
+
+function decodeYoloV8Standard(
+  data: Float32Array,
+  cols: number,
+  threshold: number
+) {
+  const detections = [];
+  for (let j = 0; j < cols; j++) {
+    let maxConf = 0;
+    let classId = -1;
+    for (const id of [0, 67, 73]) {
+      const conf = data[(id + 4) * cols + j];
+      if (conf > maxConf) {
+        maxConf = conf;
+        classId = id;
+      }
+    }
+    if (maxConf > threshold) {
+      const xc = data[0 * cols + j],
+        yc = data[1 * cols + j],
+        w = data[2 * cols + j],
+        h = data[3 * cols + j];
+      detections.push({
+        classId,
+        label: TARGET_CLASSES[classId],
+        conf: maxConf,
+        rect: [xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2],
+      });
+    }
+  }
+  return detections;
+}
+
+function getViolationDetails(personCount: number, forbidden: any[]) {
+  const currentViolations: string[] = [];
+  const alertCodes: string[] = [];
+
+  if (personCount === 0) {
+    currentViolations.push("Không thấy học sinh");
+    alertCodes.push("FACE_DISAPPEARED");
+  } else if (personCount > 1) {
+    currentViolations.push("Nghi ngờ có người lạ");
+    alertCodes.push("MULTIPLE_FACES");
+  }
+
+  if (forbidden.length > 0) {
+    currentViolations.push(`Vật cấm: ${forbidden[0].label}`);
+    alertCodes.push("OBJECT_DETECTED");
+  }
+
+  return { currentViolations, alertCodes };
 }

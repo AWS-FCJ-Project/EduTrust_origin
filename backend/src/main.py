@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 import logfire
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -116,9 +116,13 @@ if os.path.exists(frontend_dist):
         ):
             raise HTTPException(status_code=404)
 
-        file_path = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
+        # Sanitize path to prevent traversal
+        safe_path = os.path.abspath(os.path.join(frontend_dist, full_path))
+        if not safe_path.startswith(frontend_dist):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        if os.path.isfile(safe_path):
+            return FileResponse(safe_path)
 
         # SPA fallback
         index_path = os.path.join(frontend_dist, "index.html")
@@ -130,9 +134,7 @@ else:
 
     @app.get("/")
     def root():
-        return {
-            "message": "Welcome to the AWS-FCJ-Backend API. (Frontend build not found)"
-        }
+        return {"message": "Welcome to the AWS-FCJ-Backend API"}
 
 
 @app.get("/health")
