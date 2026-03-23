@@ -1,50 +1,53 @@
 # ==========================================
-# GIAI ĐOẠN 1: BUILDER (Chứa toàn bộ compiler)
+# GIAI ĐOẠN 1: BUILDER (Ubuntu 24.04 có glibc 2.39)
 # ==========================================
-# Sử dụng image Python ĐẦY ĐỦ (chứa sẵn gcc, cc, g++, libssl-dev, python3-dev...)
-FROM python:3.11-bookworm AS builder
+FROM ubuntu:24.04 AS builder
 
-# Cài đặt Rust (Cargo/Maturin cần Rust để compile kreuzberg)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-# Copy công cụ uv siêu tốc từ ảnh chính thức
+# Cài đặt các công cụ cần thiết để uv hoạt động và build (nếu cần)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential pkg-config libssl-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Lấy uv bản mới nhất
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
 
-WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# Tạo virtualenv và cài đặt toàn bộ package (Kể cả compile từ source)
+# Bước quan quan trọng:
+# 1. Ubuntu 24.04 có glibc 2.39 -> UV sẽ tải được bản wheel (.whl) đã build sẵn của kreuzberg
+# 2. Không cần phải cài Rust hay chờ compile 10 phút nữa.
 RUN uv venv /opt/venv --python 3.11 && \
     VIRTUAL_ENV=/opt/venv uv pip install --no-cache .
 
 
 # ==========================================
-# GIAI ĐOẠN 2: RUNTIME (Siêu nhẹ, bảo mật)
+# GIAI ĐOẠN 2: RUNTIME (Ubuntu 24.04 đồng bộ)
 # ==========================================
-# Sử dụng bản slim để chạy app (Nhẹ, không chứa gcc/thư viện thừa)
-FROM python:3.11-slim-bookworm
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Cài đặt CÁC THƯ VIỆN RUNTIME cần thiết cho kreuzberg
+# Cài đặt các thư viện runtime mà kreuzberg yêu cầu
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    pandoc tesseract-ocr && \
+    ca-certificates curl pandoc tesseract-ocr libmagic1 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy toàn bộ virtualenv ĐÃ ĐƯỢC COMPILE từ giai đoạn 1 sang
+# Tạo user để pass SonarQube
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
+
+# Copy virtualenv từ builder sang
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Tạm thời tạo user và group chạy app (non-root user)
-RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
-
-# Copy source code của ứng dụng
+# Copy source code (root sở hữu để đảm bảo read-only cho appuser)
 COPY backend /app
 
-# Chuyển xuống user không có quyền ghi để bảo mật
 USER appuser
 
 EXPOSE 8000
