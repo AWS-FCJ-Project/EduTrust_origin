@@ -36,3 +36,9 @@ backend_port              =
 
 // SSL Certificate
 certificate_arn           = 
+
+// VPC Endpoints
+s3_endpoint_service_name      = 
+ecr_dkr_endpoint_service_name  = 
+ecr_api_endpoint_service_name  = 
+ssm_endpoint_service_name      = 

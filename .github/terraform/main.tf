@@ -164,6 +164,69 @@ resource "aws_route_table_association" "private_1c" {
   route_table_id = aws_route_table.private_1c.id
 }
 
+# --- VPC Endpoints ---
+
+# Security Group cho VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.ec2_instance_name}-vpce-sg"
+  description = "Security group for VPC Endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend.id] # Cho phép từ EC2 Backend
+  }
+
+  tags = { Name = "vpc-endpoint-sg" }
+}
+
+# S3 Gateway Endpoint (Miễn phí và cực kỳ quan trọng cho ECR)
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = var.s3_endpoint_service_name
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "s3-endpoint" }
+}
+
+# ECR Endpoints (Cần cả 'dkr' và 'api' để pull image hoàn chỉnh)
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = var.ecr_dkr_endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ecr-dkr-endpoint" }
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = var.ecr_api_endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ecr-api-endpoint" }
+}
+
+# SSM Endpoint (Để lấy Parameter Store nội bộ)
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = var.ssm_endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ssm-endpoint" }
+}
+
 # --- End Network Configuration ---
 
 data "aws_iam_policy_document" "ec2_assume_role" {

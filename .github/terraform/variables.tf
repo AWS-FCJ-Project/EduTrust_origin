@@ -139,3 +139,25 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of the Auto Scaling Group"
   type        = number
 }
+
+# --- VPC Endpoint Variables ---
+
+variable "s3_endpoint_service_name" {
+  description = "Service name for S3 Gateway Endpoint"
+  type        = string
+}
+
+variable "ecr_dkr_endpoint_service_name" {
+  description = "Service name for ECR DKR Interface Endpoint"
+  type        = string
+}
+
+variable "ecr_api_endpoint_service_name" {
+  description = "Service name for ECR API Interface Endpoint"
+  type        = string
+}
+
+variable "ssm_endpoint_service_name" {
+  description = "Service name for SSM Interface Endpoint"
+  type        = string
+}
