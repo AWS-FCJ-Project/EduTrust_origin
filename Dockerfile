@@ -8,8 +8,12 @@ WORKDIR /app
 # the pre-compiled wheel for kreuzberg, avoiding a 10-minute Rust build from source!
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ca-certificates curl pandoc tesseract-ocr && \
+    ca-certificates curl pandoc tesseract-ocr \
+    build-essential pkg-config libssl-dev python3.11-dev && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Create a non-root user and group for security
 RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
