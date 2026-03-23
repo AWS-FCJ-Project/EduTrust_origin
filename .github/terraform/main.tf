@@ -194,10 +194,44 @@ resource "aws_iam_instance_profile" "backend" {
 }
 
 # --- Encryption ---
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_policy_document" "kms_secrets_policy" {
+  # Allow root account full administrative access to prevent key lockout
+  statement {
+    sid    = "AllowRootAdminAccess"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  # Allow the backend EC2 role to use the key for encrypt/decrypt only
+  statement {
+    sid    = "AllowBackendRoleUsage"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.backend.arn]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+    ]
+    resources = ["*"]
+  }
+}
+
 resource "aws_kms_key" "secrets" {
   description             = "KMS key for encrypting SSM parameters and other secrets"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.kms_secrets_policy.json
 
   tags = {
     Name = "${var.ec2_instance_name}-secrets-key"
