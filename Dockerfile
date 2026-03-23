@@ -11,9 +11,13 @@ RUN apt-get update && \
     ca-certificates curl pandoc tesseract-ocr && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user and group for security
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
+
 # Get uv binary
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
 
+# Temporary copy as root to install dependencies
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
 # uv will automatically fetch python 3.11 and install dependencies using pre-built wheels
@@ -22,7 +26,11 @@ RUN uv venv /opt/venv --python 3.11 && \
 
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY backend /app
+# Final copy of source code with ownership assigned to the non-root user
+COPY --chown=appuser:appgroup backend /app
+
+# Switch to the non-root user
+USER appuser
 
 EXPOSE 8000
 
