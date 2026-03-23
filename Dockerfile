@@ -10,10 +10,16 @@ WORKDIR /app
 # Ưu tiên sử dụng Python hệ thống của image để khớp với glibc 2.39
 ENV UV_PYTHON_PREFERENCE=only-system
 
+# Cài Rust toolchain để build các package cần compile (vd: kreuzberg/maturin)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl build-essential && \
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:$PATH"
+
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# Vì image đã có glibc 2.39 và Python 3.11 hệ thống, uv sẽ tải bản WHEEL build sẵn
-# Không còn bước compile Rust loằng ngoằng nữa.
 RUN uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv uv pip install --no-cache .
 
