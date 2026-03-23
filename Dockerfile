@@ -26,10 +26,9 @@ RUN uv venv /opt/venv --python 3.11 && \
 
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Final copy of source code with ownership assigned to the non-root user
-COPY --chown=appuser:appgroup backend /app
+# Final copy of source code (owned by root, read-only for appuser)
+COPY backend /app
 
-# Switch to the non-root user
 USER appuser
 
 EXPOSE 8000
