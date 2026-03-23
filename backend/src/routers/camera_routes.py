@@ -17,7 +17,7 @@ from src.schemas.camera_schema import CameraDetectionResponse
 router = APIRouter(prefix="/camera", tags=["Camera"])
 
 
-@router.post("/log")
+@router.post("/log", responses={400: {"description": "Bad Request"}})
 async def receive_client_log(request: Request):
     client_ip = request.client.host
     print(f"[ACCESS] POST /camera/log hit from {client_ip}")
@@ -42,14 +42,47 @@ async def receive_client_log(request: Request):
             print(f" [ERROR] Logic failure: {result['error']}")
             raise HTTPException(status_code=400, detail=result["error"])
 
-        print(f" [SUCCESS] Violation processed and recorded.")
+        print(" [SUCCESS] Violation processed and recorded.")
         return {"status": "success", "received_at": datetime.now().isoformat()}
     except Exception as e:
         print(f" [ERROR] Unexpected Failure: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
-import json
+async def _process_binary_frame(message, service):
+    """Processes raw binary frame from websocket."""
+    result = service.process_frame(message["bytes"])
+    return {
+        "person_count": result.get("person_count", 0),
+        "forbidden_detected": result.get("forbidden_detected", False),
+        "violations": result.get("violations", []),
+        "timestamp": result.get("timestamp", ""),
+        "visualized_frame": (
+            base64.b64encode(result["visualized_frame"]).decode()
+            if result.get("visualized_frame")
+            else None
+        ),
+    }
+
+
+async def _process_json_payload(message, service):
+    """Processes JSON payload from websocket."""
+    try:
+        payload = json.loads(message["text"])
+        if payload.get("type") == "DETECTION_LOG":
+            result = service.process_client_log(payload)
+            if "error" in result:
+                return {"error": result["error"]}
+            return {
+                "person_count": payload.get("person_count", 0),
+                "forbidden_detected": False,
+                "violations": payload.get("violations", []),
+                "timestamp": payload.get("timestamp", ""),
+                "visualized_frame": None,
+            }
+    except json.JSONDecodeError:
+        return {"error": "Invalid format, expected JSON"}
+    return None
 
 
 @router.websocket("/ws")
@@ -59,52 +92,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Chấp nhận cả tin nhắn văn bản (JSON) và tin nhắn nhị phân (ảnh trực tiếp)
             message = await websocket.receive()
 
             if "bytes" in message:
-                # TRƯỜNG HỢP 1: Nhận ảnh thô (Dùng cho websocket_test.html để test mô hình Backend)
-                result = service.process_frame(message["bytes"])
-
-                # Trả về kết quả kèm ảnh đã được vẽ (visualized) nếu có
-                response = {
-                    "person_count": result.get("person_count", 0),
-                    "forbidden_detected": result.get("forbidden_detected", False),
-                    "violations": result.get("violations", []),
-                    "timestamp": result.get("timestamp", ""),
-                    "visualized_frame": (
-                        base64.b64encode(result["visualized_frame"]).decode()
-                        if result.get("visualized_frame")
-                        else None
-                    ),
-                }
+                response = await _process_binary_frame(message, service)
                 await websocket.send_json(response)
 
             elif "text" in message:
-                # TRƯỜNG HỢP 2: Nhận JSON (Dùng cho App React chính thức - Edge AI)
-                try:
-                    payload = json.loads(message["text"])
-
-                    if payload.get("type") == "DETECTION_LOG":
-                        result = service.process_client_log(payload)
-
-                        if "error" in result:
-                            await websocket.send_json({"error": result["error"]})
-                            continue
-
-                        response = {
-                            "person_count": payload.get("person_count", 0),
-                            "forbidden_detected": False,
-                            "violations": payload.get("violations", []),
-                            "timestamp": payload.get("timestamp", ""),
-                            "visualized_frame": None,
-                        }
-                        await websocket.send_json(response)
-
-                except json.JSONDecodeError:
-                    await websocket.send_json(
-                        {"error": "Invalid format, expected JSON"}
-                    )
+                response = await _process_json_payload(message, service)
+                if response:
+                    await websocket.send_json(response)
 
     except WebSocketDisconnect:
         print("Client disconnected")

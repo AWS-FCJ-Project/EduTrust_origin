@@ -47,8 +47,8 @@
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host || 'localhost:8000';
+        const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = globalThis.location.host || "localhost:8000";
         let ws = new WebSocket(`${protocol}//${host}/camera/ws`);
 
         ws.onopen = () => {
