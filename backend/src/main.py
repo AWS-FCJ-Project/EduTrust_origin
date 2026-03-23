@@ -46,23 +46,30 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     from datetime import datetime
+
     path = request.url.path
     method = request.method
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [ACCESS] {method} {path}")
-    
+
     # Special logging for ngrok headers to debug proxy issues
     if "ngrok-skip-browser-warning" in request.headers:
-        print(f" [DEBUG] ngrok-skip-browser-warning header present: {request.headers['ngrok-skip-browser-warning']}")
-    
+        print(
+            f" [DEBUG] ngrok-skip-browser-warning header present: {request.headers['ngrok-skip-browser-warning']}"
+        )
+
     response = await call_next(request)
     return response
+
 
 @app.get("/camera/test")
 def test_camera_path():
     return {"message": "Cổng /camera/test hoạt động!"}
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,39 +89,56 @@ app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
 
 import os
-from fastapi.staticfiles import StaticFiles
+
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Serve frontend build if exists
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+frontend_dist = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+)
 
 if os.path.exists(frontend_dist):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
-    
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(frontend_dist, "assets")),
+        name="assets",
+    )
+
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         # Don't intercept API routes...
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("camera/"):
+        if (
+            full_path.startswith("api/")
+            or full_path.startswith("docs")
+            or full_path.startswith("redoc")
+            or full_path.startswith("camera/")
+        ):
             raise HTTPException(status_code=404)
-            
+
         file_path = os.path.join(frontend_dist, full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-            
+
         # SPA fallback
         index_path = os.path.join(frontend_dist, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
         raise HTTPException(status_code=404, detail="Resource not found")
+
 else:
+
     @app.get("/")
     def root():
-        return {"message": "Welcome to the AWS-FCJ-Backend API. (Frontend build not found)"}
+        return {
+            "message": "Welcome to the AWS-FCJ-Backend API. (Frontend build not found)"
+        }
 
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

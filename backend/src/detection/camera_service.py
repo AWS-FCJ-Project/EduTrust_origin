@@ -76,17 +76,17 @@ class CameraService:
     def process_client_log(self, payload: dict):
         import base64
         import binascii
-        
+
         violations = payload.get("violation_codes", [])
         image_b64 = payload.get("image")
-        
+
         print(f" [SERVICE] Processing client log. Violation count: {len(violations)}")
-        
+
         if not violations:
             print(" [DEBUG] No violations in payload. (Could be a clear-log request)")
             # If it's a clear-log, we might not need an image.
             # But the user logic currently expects one if violations exist.
-        
+
         if not image_b64:
             if not violations:
                 return {"status": "cleared"}
@@ -105,11 +105,11 @@ class CameraService:
 
             nparr = np.frombuffer(frame_bytes, np.uint8)
             frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+
             if frame is None:
                 print(" [ERROR] cv2.imdecode failed (Image format corrupted?)")
                 return {"error": "Could not decode image"}
-                
+
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             person_count = payload.get("person_count", 0)
 
@@ -119,14 +119,16 @@ class CameraService:
                     v_code, timestamp, {"person_count": person_count}
                 )
                 self.capturer.capture_violation(frame, v_code, timestamp)
-                
+
             return {"status": "logged success", "violations_count": len(violations)}
         except Exception as e:
             print(f" [ERROR] Exception in camera service logic: {e}")
             return {"error": str(e)}
 
+
 # Global instance for the service
 camera_service = None
+
 
 def get_camera_service():
     global camera_service
