@@ -496,37 +496,54 @@ resource "aws_launch_template" "backend" {
   }
 
   user_data = base64encode(<<-EOF
-              #!/bin/bash
-              set -ex
+    #!/bin/bash
+    set -ex
 
-              # Install Docker if not present
-              if ! command -v docker >/dev/null 2>&1; then
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update -y
-                apt-get install -y ca-certificates curl jq awscli
-                curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-                sh /tmp/get-docker.sh
-              fi
+    # 1. Update và cài đặt các công cụ cơ bản (Bỏ awscli khỏi apt)
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y ca-certificates curl jq unzip
 
-              systemctl enable --now docker
+    # 2. Cài đặt Docker (Sử dụng script chính thức để đảm bảo version)
+    if ! command -v docker >/dev/null 2>&1; then
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+    fi
+    systemctl enable --now docker
 
-              # Login to ECR
-              REGION="${var.aws_region}"
-              ECR_URL="${aws_ecr_repository.backend.repository_url}"
-              aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $${ECR_URL%%/*}
+    # 3. Cài đặt AWS CLI v2 (Quan trọng: Không dùng apt install awscli)
+    if ! command -v aws >/dev/null 2>&1; then
+      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      unzip awscliv2.zip
+      sudo ./aws/install
+      rm -rf awscliv2.zip aws/
+    fi
 
-              # Fetch Environment Variables from SSM
-              TARGET_DIR="/home/ubuntu/app"
-              mkdir -p $TARGET_DIR
-              aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+    # 4. Biến môi trường
+    REGION="${var.aws_region}"
+    ECR_URL="${aws_ecr_repository.backend.repository_url}"
+    TARGET_DIR="/home/ubuntu/app"
+    mkdir -p $TARGET_DIR
 
-              # Run Container
-              IMAGE="$ECR_URL:${var.backend_image_tag}"
-              docker pull $IMAGE
-              docker stop aws-fcj-backend || true
-              docker rm aws-fcj-backend || true
-              docker run -d --name aws-fcj-backend --restart unless-stopped -p ${var.backend_port}:${var.backend_port} --env-file $TARGET_DIR/.env $IMAGE
-              EOF
+    # 5. Login ECR & Pull Image
+    # Sử dụng cách tách URL ECR an toàn hơn
+    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+    # 6. Lấy env từ SSM
+    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+
+    # 7. Chạy Container
+    IMAGE="$ECR_URL:${var.backend_image_tag}"
+    docker pull $IMAGE
+    docker stop aws-fcj-backend || true
+    docker rm aws-fcj-backend || true
+    docker run -d --name aws-fcj-backend \
+      --restart unless-stopped \
+      -p ${var.backend_port}:${var.backend_port} \
+      --env-file $TARGET_DIR/.env \
+      $IMAGE
+  EOF
   )
 
   tag_specifications {
