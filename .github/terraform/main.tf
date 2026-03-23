@@ -197,7 +197,10 @@ resource "aws_iam_instance_profile" "backend" {
 data "aws_caller_identity" "current" {}
 
 data "aws_iam_policy_document" "kms_secrets_policy" {
-  # Allow root account full administrative access to prevent key lockout
+  # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+
+  # Allow root account administrative access to prevent key lockout
   statement {
     sid    = "AllowRootAdminAccess"
     effect = "Allow"
@@ -205,7 +208,26 @@ data "aws_iam_policy_document" "kms_secrets_policy" {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
     }
-    actions   = ["kms:*"]
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+    ]
     resources = ["*"]
   }
 
