@@ -88,10 +88,22 @@ app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
 
+
 import os
 
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to the AWS-FCJ-Backend API"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
 
 # Serve frontend build if exists
 frontend_dist = os.path.abspath(
@@ -105,7 +117,13 @@ if os.path.exists(frontend_dist):
         name="assets",
     )
 
-    @app.get("/{full_path:path}")
+    @app.get(
+        "/{full_path:path}",
+        responses={
+            403: {"description": "Forbidden"},
+            404: {"description": "Not Found"},
+        },
+    )
     async def serve_frontend(full_path: str):
         # Don't intercept API routes...
         if (
@@ -130,16 +148,8 @@ if os.path.exists(frontend_dist):
             return FileResponse(index_path)
         raise HTTPException(status_code=404, detail="Resource not found")
 
-else:
-
-    @app.get("/")
-    def root():
-        return {"message": "Welcome to the AWS-FCJ-Backend API"}
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
