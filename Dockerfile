@@ -1,33 +1,28 @@
 # ==========================================
-# GIAI ĐOẠN 1: BUILDER (Ubuntu 24.04 có glibc 2.39)
+# GIAI ĐOẠN 1: BUILDER (Sử dụng Ubuntu 24.04 + Python 3.11 có sẵn)
 # ==========================================
-FROM ubuntu:24.04 AS builder
+# Ảnh này của Astral (hãng làm ra uv) đã cài sẵn Python 3.11 trên Ubuntu 24.04 (glibc 2.39)
+FROM ghcr.io/astral-sh/uv:python3.11-noble AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Cài đặt các công cụ cần thiết để uv hoạt động và build (nếu cần)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ca-certificates curl build-essential pkg-config libssl-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Lấy uv bản mới nhất
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
+# Ưu tiên sử dụng Python hệ thống của image để khớp với glibc 2.39
+ENV UV_PYTHON_PREFERENCE=only-system
 
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# Bước quan quan trọng:
-# 1. Ubuntu 24.04 có glibc 2.39 -> UV sẽ tải được bản wheel (.whl) đã build sẵn của kreuzberg
-# 2. Không cần phải cài Rust hay chờ compile 10 phút nữa.
-RUN uv venv /opt/venv --python 3.11 && \
+# Vì image đã có glibc 2.39 và Python 3.11 hệ thống, uv sẽ tải bản WHEEL build sẵn
+# Không còn bước compile Rust loằng ngoằng nữa.
+RUN uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv uv pip install --no-cache .
 
 
 # ==========================================
-# GIAI ĐOẠN 2: RUNTIME (Ubuntu 24.04 đồng bộ)
+# GIAI ĐOẠN 2: RUNTIME (Đồng bộ bản Noble Slim)
 # ==========================================
-FROM ubuntu:24.04
+# Sử dụng bản slim của cùng hệ điều hành (Ubuntu 24.04) có sẵn Python 3.11
+FROM ghcr.io/astral-sh/uv:python3.11-noble-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
