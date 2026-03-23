@@ -1,39 +1,32 @@
-FROM ubuntu:24.04
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Install runtime dependencies for kreuzberg (pandoc & tesseract)
-# We use Ubuntu 24.04 because it has a new enough glibc (2.39) to download
-# the pre-compiled wheel for kreuzberg, avoiding a 10-minute Rust build from source!
+# Cài gcc/linker TRƯỚC, sau đó Rust
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ca-certificates curl pandoc tesseract-ocr \
-    build-essential pkg-config libssl-dev python3.11-dev && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    gcc g++ \
+    build-essential \
+    curl pkg-config libssl-dev \
+    libmagic1 libmagic-dev \
+    pandoc tesseract-ocr && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \
+    /root/.cargo/bin/rustup target add x86_64-unknown-linux-gnu
 
 ENV PATH="/root/.cargo/bin:${PATH}"
+ENV CARGO_HOME="/root/.cargo"
+ENV RUSTUP_HOME="/root/.rustup"
+# Bắt buộc: báo cho cargo biết dùng gcc nào
+ENV CC=gcc
+ENV CXX=g++
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc
 
-# Create a non-root user and group for security
-RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
-
-# Get uv binary
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
-
-# Temporary copy as root to install dependencies
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# uv will automatically fetch python 3.11 and install dependencies using pre-built wheels
-RUN uv venv /opt/venv --python 3.11 && \
-    VIRTUAL_ENV=/opt/venv uv pip install --no-cache .
+RUN uv pip install --system --no-cache .
 
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Final copy of source code (owned by root, read-only for appuser)
 COPY backend /app
-
-USER appuser
 
 EXPOSE 8000
 
