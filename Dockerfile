@@ -1,33 +1,64 @@
 # ============================================
-# Stage 1: BUILD — full compiler + Rust toolchain
+# Stage 1: BUILD — Ubuntu 24.04 (glibc 2.39)
+# kreuzberg wheel requires glibc >= 2.39
 # ============================================
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm AS builder
+FROM ubuntu:24.04 AS builder
 
-WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Install build tools + Rust (needed for kreuzberg - mixed Python/Rust package)
+# Install Python 3.11 from deadsnakes PPA (Ubuntu 24.04 only has 3.12 by default)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      build-essential \
-      pkg-config \
-      libssl-dev \
-      curl && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+      software-properties-common \
+      gpg-agent && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3.11 \
+      python3.11-venv \
+      python3.11-dev \
+      curl \
+      ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/root/.cargo/bin:${PATH}"
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
 
 # Copy source code
 COPY backend /app
 
-# Install into a virtual env for clean copy to runtime stage
-RUN uv venv /opt/venv && \
+# Install into virtual env (kreuzberg wheel installs directly — no Rust needed!)
+RUN uv venv --python python3.11 /opt/venv && \
     uv pip install --python /opt/venv/bin/python --no-cache .
 
 # ============================================
-# Stage 2: RUNTIME — slim image, no compiler
+# Stage 2: RUNTIME — minimal Ubuntu 24.04
 # ============================================
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}" \
+    VIRTUAL_ENV="/opt/venv"
+
+# Install only Python 3.11 runtime (no dev/build tools)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      software-properties-common \
+      gpg-agent && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3.11 \
+      ca-certificates && \
+    apt-get purge -y software-properties-common gpg-agent && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -36,9 +67,6 @@ COPY --from=builder /opt/venv /opt/venv
 
 # Copy application source
 COPY backend /app
-
-ENV PATH="/opt/venv/bin:${PATH}" \
-    VIRTUAL_ENV="/opt/venv"
 
 # Run as non-root user (security best practice)
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
