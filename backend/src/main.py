@@ -148,5 +148,6 @@ if os.path.exists(frontend_dist):
             return FileResponse(index_path)
         raise HTTPException(status_code=404, detail="Resource not found")
 
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
