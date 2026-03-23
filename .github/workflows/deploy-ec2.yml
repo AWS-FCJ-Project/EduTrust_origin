@@ -20,7 +20,6 @@ env:
   CONTAINER_NAME: aws-fcj-backend
 
 jobs:
-  #Terraform build EC2 and ECR
   terraform:
     name: Provision/Update EC2 (Terraform apply)
     runs-on: ubuntu-latest
@@ -40,12 +39,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
-          terraform_version: "1.10.0"
+          terraform_version: "1.14.6"
 
       - name: Write terraform.tfvars from secret
         working-directory: ${{ env.TF_DIR }}
@@ -56,7 +55,6 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           set -euo pipefail
-
           IMMUTABLE=""
           if [ -f terraform.tfvars ]; then
             IMMUTABLE="$(awk -F= '
@@ -68,33 +66,28 @@ jobs:
                 exit
               }' terraform.tfvars || true)"
           fi
-
           IMMUTABLE="${IMMUTABLE:-true}"
           case "$IMMUTABLE" in
             true|false) ;;
             *) echo "Invalid ecr_tag_immutable value: $IMMUTABLE" >&2; exit 1 ;;
           esac
-
           echo "ecr_tag_immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
 
-      #Terraform Init & AWS credentials config
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
-      #Check ECR's state in Terraform's state file (ecr_repository_name)
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
         run: |
           set -euo pipefail
-
           if [ -f terraform.tfvars ]; then
             REPO_NAME="$(awk -F= '
               $1 ~ /^[[:space:]]*ecr_repository_name[[:space:]]*$/ {
@@ -105,10 +98,8 @@ jobs:
                 exit
               }' terraform.tfvars || true)"
           fi
-
           REPO_NAME="${REPO_NAME:-edutrust-backend}"
           echo "ECR repo name: $REPO_NAME"
-
           if aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
             if terraform state show aws_ecr_repository.backend >/dev/null 2>&1; then
               echo "ECR repo already in Terraform state, skipping import."
@@ -120,7 +111,6 @@ jobs:
             echo "ECR repo not found in AWS; Terraform will create it."
           fi
 
-      #Apply main.tf
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
@@ -135,7 +125,6 @@ jobs:
           echo "backend_port=$(terraform output -raw backend_port)" >> "$GITHUB_OUTPUT"
           echo "secrets_kms_key_arn=$(terraform output -raw secrets_kms_key_arn)" >> "$GITHUB_OUTPUT"
 
-  #Build & Push backend image into ECR
   build:
     name: Build & Push backend image (ECR)
     runs-on: ubuntu-latest
@@ -150,9 +139,10 @@ jobs:
       AWS_REGION: ${{ needs.terraform.outputs.aws_region }}
       AWS_DEFAULT_REGION: ${{ needs.terraform.outputs.aws_region }}
       ECR_REPOSITORY_URL: ${{ needs.terraform.outputs.ecr_repository_url }}
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set image variables
         id: image_vars
@@ -161,7 +151,7 @@ jobs:
           echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -173,16 +163,18 @@ jobs:
 
       - name: Compute Docker tags
         id: docker_tags
+        env:
+          IMAGE: ${{ steps.image_vars.outputs.image }}
+          IMAGE_TAG: ${{ steps.image_vars.outputs.image_tag }}
+          ECR_TAG_IMMUTABLE: ${{ needs.terraform.outputs.ecr_tag_immutable }}
         run: |
           set -euo pipefail
-
-          SHA_TAG="${{ steps.image_vars.outputs.image }}:${{ steps.image_vars.outputs.image_tag }}"
-          if [ "${{ needs.terraform.outputs.ecr_tag_immutable }}" = "true" ]; then
+          SHA_TAG="${IMAGE}:${IMAGE_TAG}"
+          if [ "$ECR_TAG_IMMUTABLE" = "true" ]; then
             TAGS="$SHA_TAG"
           else
-            TAGS="$SHA_TAG\n${{ steps.image_vars.outputs.image }}:latest"
+            TAGS="$SHA_TAG\n${IMAGE}:latest"
           fi
-
           {
             echo "tags<<EOF"
             printf "%b\n" "$TAGS"
@@ -197,7 +189,6 @@ jobs:
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
 
-  # Update ASG with new image and trigger Instance Refresh
   deploy:
     name: Deploy to ASG (Rolling Update)
     runs-on: ubuntu-latest
@@ -210,14 +201,15 @@ jobs:
       ASG_NAME: ${{ needs.terraform.outputs.asg_name }}
       IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
       BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+      SECRETS_KMS_KEY_ARN: ${{ needs.terraform.outputs.secrets_kms_key_arn }}
       TF_DIR: .github/terraform
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -229,13 +221,13 @@ jobs:
             --name "/edutrust/backend/env" \
             --value "$BACKEND_ENV_FILE" \
             --type "SecureString" \
-            --key-id "${{ needs.terraform.outputs.secrets_kms_key_arn }}" \
+            --key-id "$SECRETS_KMS_KEY_ARN" \
             --overwrite
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
-          terraform_version: "1.14.6"  
+          terraform_version: "1.14.6"
 
       - name: Update Launch Template with new tag
         working-directory: ${{ env.TF_DIR }}
@@ -244,63 +236,38 @@ jobs:
         run: |
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
-          terraform apply -auto-approve -var="backend_image_tag=${{ env.IMAGE_TAG }}"
-
-      - name: Update Launch Template with new tag
-        working-directory: ${{ env.TF_DIR }}
-        env:
-          TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
-        run: |
-          # Use Terraform to update the Launch Template with the new image tag
-          # This creates a new version of the LT
-          printf "%s\n" "$TF_VARS" > terraform.tfvars
-          terraform init
-          terraform apply -auto-approve -var="backend_image_tag=${{ env.IMAGE_TAG }}"
+          terraform apply -auto-approve -var="backend_image_tag=$IMAGE_TAG"
 
       - name: Start ASG Instance Refresh
         run: |
           echo "Starting instance refresh for ASG: $ASG_NAME"
-          # Get current time to calculate timeout
           START_TIME=$(date +%s)
-          TIMEOUT=900 # 15 minutes
-          
+          TIMEOUT=900
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
             --auto-scaling-group-name "$ASG_NAME" \
             --preferences '{"MinHealthyPercentage": 50}' \
             --query "InstanceRefreshId" \
             --output text)
-          
           echo "Instance Refresh ID: $REFRESH_ID"
-          
-          # Wait for completion with timeout
           while true; do
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
-            
+            ELAPSED=$(( $(date +%s) - START_TIME ))
             if [ $ELAPSED -gt $TIMEOUT ]; then
               echo "Deployment timed out after ${TIMEOUT}s!"
               exit 1
             fi
-
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
               --instance-refresh-ids "$REFRESH_ID" \
               --query "InstanceRefreshes[0].Status" \
               --output text)
-            
             PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
               --instance-refresh-ids "$REFRESH_ID" \
               --query "InstanceRefreshes[0].PercentageComplete" \
               --output text)
-
             echo "Status: $STATUS ($PERCENTAGE% complete)..."
-            
             case "$STATUS" in
-              Successful)
-                echo "Deployment successful!"
-                break
-                ;;
+              Successful) echo "Deployment successful!"; break ;;
               Failed|Cancelled|TimedOut)
                 echo "Deployment $STATUS!"
                 REASON=$(aws autoscaling describe-instance-refreshes \
@@ -309,10 +276,7 @@ jobs:
                   --query "InstanceRefreshes[0].StatusReason" \
                   --output text)
                 echo "Reason: $REASON"
-                exit 1
-                ;;
-              *)
-                sleep 30
-                ;;
+                exit 1 ;;
+              *) sleep 30 ;;
             esac
           done
