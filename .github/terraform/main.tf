@@ -173,6 +173,7 @@ resource "aws_security_group" "vpc_endpoints" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
+    description     = "HTTPS from Backend EC2"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
