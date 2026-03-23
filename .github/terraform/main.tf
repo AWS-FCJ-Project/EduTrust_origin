@@ -199,6 +199,7 @@ data "aws_caller_identity" "current" {}
 data "aws_iam_policy_document" "kms_secrets_policy" {
   # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
   # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_356:KMS key policy requires resources=["*"] which means "this key" in context. Cannot use specific ARN (circular reference).
 
   # Allow root account administrative access to prevent key lockout
   statement {
