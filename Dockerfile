@@ -38,8 +38,14 @@ RUN apt-get update && \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Tạm thời tạo user và group chạy app (non-root user)
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
+
 # Copy source code của ứng dụng
 COPY backend /app
+
+# Chuyển xuống user không có quyền ghi để bảo mật
+USER appuser
 
 EXPOSE 8000
 
