@@ -209,31 +209,35 @@ resource "aws_ssm_parameter" "backend_env" {
   }
 }
 
-# Update role to allow reading from SSM Parameter Store
-resource "aws_iam_role_policy" "backend_ssm_read" {
-  name = "${var.ec2_instance_name}-ssm-read-policy"
-  role = aws_iam_role.backend.id
+data "aws_iam_policy_document" "backend_ssm_read" {
+  statement {
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter"]
+    resources = [aws_ssm_parameter.backend_env.arn]
+  }
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter"]
-        Resource = [aws_ssm_parameter.backend_env.arn]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
-        ]
-        Resource = ["*"]
-      }
+  statement {
+    # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage"
     ]
-  })
+    resources = [aws_ecr_repository.backend.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "backend_ssm_read" {
+  name   = "${var.ec2_instance_name}-ssm-read-policy"
+  role   = aws_iam_role.backend.id
+  policy = data.aws_iam_policy_document.backend_ssm_read.json
 }
 
 # --- Load Balancer Configuration ---
@@ -408,7 +412,7 @@ resource "aws_launch_template" "backend" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
   }
 
   user_data = base64encode(<<-EOF
