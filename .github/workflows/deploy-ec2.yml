@@ -212,10 +212,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -231,10 +231,12 @@ jobs:
 
       - name: Update Launch Template with new tag
         working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
         run: |
           # Use Terraform to update the Launch Template with the new image tag
           # This creates a new version of the LT
-          printf "%s\n" "${{ secrets.TERRAFORM_VARIABLES }}" > terraform.tfvars
+          printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
           terraform apply -auto-approve -var="backend_image_tag=${{ env.IMAGE_TAG }}"
 

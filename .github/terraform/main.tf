@@ -223,8 +223,8 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
         Resource = [aws_ssm_parameter.backend_env.arn]
       },
       {
-        Effect   = "Allow"
-        Action   = [
+        Effect = "Allow"
+        Action = [
           "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
