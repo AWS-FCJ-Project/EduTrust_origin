@@ -226,6 +226,7 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
+          no-cache: true
 
   #Pull backend container from ECR and deploy on EC2 by SSM Agent
   deploy:
