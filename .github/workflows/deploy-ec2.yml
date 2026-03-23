@@ -240,7 +240,20 @@ jobs:
 
       - name: Start ASG Instance Refresh
         run: |
-          echo "Starting instance refresh for ASG: $ASG_NAME"
+          echo "Checking for in-progress instance refresh for ASG: $ASG_NAME"
+          CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --query "InstanceRefreshes[?Status=='InProgress'].InstanceRefreshId" \
+            --output text)
+
+          if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
+            echo "A refresh ($CURRENT_REFRESH_ID) is already in progress. Cancelling it..."
+            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME"
+            echo "Waiting for cancellation to process..."
+            sleep 30
+          fi
+
+          echo "Starting new instance refresh for ASG: $ASG_NAME"
           START_TIME=$(date +%s)
           TIMEOUT=900
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
