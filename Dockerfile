@@ -1,14 +1,14 @@
 # ============================================
-# Stage 1: BUILD — Ubuntu 24.04 (glibc 2.39)
-# kreuzberg wheel requires glibc >= 2.39
+# Stage 1: BUILD
 # ============================================
 FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PATH="/root/.cargo/bin:${PATH}"
 
-# Install Python 3.11 from deadsnakes PPA (Ubuntu 24.04 only has 3.12 by default)
+# Cài Python 3.11 + build tools + Rust (kreuzberg 4.5.3 LUÔN build từ source)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       software-properties-common \
@@ -20,23 +20,33 @@ RUN apt-get update && \
       python3.11-venv \
       python3.11-dev \
       curl \
-      ca-certificates && \
+      ca-certificates \
+      build-essential \
+      pkg-config \
+      libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install uv
+# Cài Rust (bắt buộc để build kreuzberg)
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Cài uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy source code
-COPY backend /app
+# Copy pyproject.toml trước (layer cache tốt hơn)
+COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# Install into virtual env (kreuzberg wheel installs directly — no Rust needed!)
+# Tạo venv và cài dependencies (bước nặng, cache lại nếu pyproject không đổi)
 RUN uv venv --python python3.11 /opt/venv && \
     uv pip install --python /opt/venv/bin/python --no-cache .
 
+# Copy source sau (thay đổi code không invalidate cache bước install)
+COPY backend /app
+
 # ============================================
-# Stage 2: RUNTIME — minimal Ubuntu 24.04
+# Stage 2: RUNTIME
 # ============================================
 FROM ubuntu:24.04
 
@@ -46,7 +56,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/venv/bin:${PATH}" \
     VIRTUAL_ENV="/opt/venv"
 
-# Install only Python 3.11 runtime (no dev/build tools)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       software-properties-common \
@@ -62,13 +71,9 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy pre-built virtual env from builder
 COPY --from=builder /opt/venv /opt/venv
-
-# Copy application source
 COPY backend /app
 
-# Run as non-root user (security best practice)
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     chown -R appuser:appuser /app /opt/venv
 USER appuser
