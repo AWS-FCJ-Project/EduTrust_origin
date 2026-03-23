@@ -228,6 +228,30 @@ resource "aws_vpc_endpoint" "ssm" {
   tags = { Name = "ssm-endpoint" }
 }
 
+# STS Endpoint (Cực kỳ quan trọng để xác thực trong Private Subnet)
+resource "aws_vpc_endpoint" "sts" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = var.sts_endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "sts-endpoint" }
+}
+
+# CloudWatch Logs Endpoint (Để gửi log về CloudWatch)
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = var.logs_endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "logs-endpoint" }
+}
+
 # --- End Network Configuration ---
 
 data "aws_iam_policy_document" "ec2_assume_role" {

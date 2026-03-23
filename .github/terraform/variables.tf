@@ -161,3 +161,13 @@ variable "ssm_endpoint_service_name" {
   description = "Service name for SSM Interface Endpoint"
   type        = string
 }
+
+variable "sts_endpoint_service_name" {
+  description = "Service name for STS Interface Endpoint"
+  type        = string
+}
+
+variable "logs_endpoint_service_name" {
+  description = "Service name for CloudWatch Logs Interface Endpoint"
+  type        = string
+}
