@@ -9,8 +9,20 @@ echo "=== Starting App Bootstrap ==="
 # Install Docker if not present
 if ! command -v docker >/dev/null 2>&1; then
   echo "Installing Docker..."
-  apt-get update -y
-  apt-get install -y ca-certificates curl unzip
+  export DEBIAN_FRONTEND=noninteractive
+  
+  # Wait for lock (up to 5 mins) before continuing
+  echo "Running apt-get update and install..."
+  for i in {1..30}; do
+    if apt-get update -y && apt-get install -y ca-certificates curl unzip; then
+      echo "Apt packages installed successfully."
+      break
+    else
+      echo "Apt locked, waiting 10s ($i/30)..."
+      sleep 10
+    fi
+  done
+  
   curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
   sh /tmp/get-docker.sh
   systemctl enable --now docker
