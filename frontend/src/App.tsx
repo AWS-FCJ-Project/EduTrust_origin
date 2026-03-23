@@ -313,17 +313,20 @@ export default function App() {
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-subtle)', display: 'flex', justifyContent: 'space-between' }}>
             <span>Detections: {metrics.rawCount}</span>
-            <span
+            <button
+              type="button"
               onClick={() => (debugRef.current = true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") debugRef.current = true;
+              style={{
+                cursor: "pointer",
+                color: "var(--accent)",
+                background: "none",
+                border: "none",
+                padding: 0,
+                font: "inherit",
               }}
-              tabIndex={0}
-              role="button"
-              style={{ cursor: "pointer", color: "var(--accent)" }}
             >
               [LOG AI]
-            </span>
+            </button>
           </div>
         </div>
 

@@ -49,7 +49,7 @@ async def receive_client_log(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-async def _process_binary_frame(message, service):
+def _process_binary_frame(message, service):
     """Processes raw binary frame from websocket."""
     result = service.process_frame(message["bytes"])
     return {
@@ -65,7 +65,7 @@ async def _process_binary_frame(message, service):
     }
 
 
-async def _process_json_payload(message, service):
+def _process_json_payload(message, service):
     """Processes JSON payload from websocket."""
     try:
         payload = json.loads(message["text"])
@@ -95,11 +95,11 @@ async def websocket_endpoint(websocket: WebSocket):
             message = await websocket.receive()
 
             if "bytes" in message:
-                response = await _process_binary_frame(message, service)
+                response = _process_binary_frame(message, service)
                 await websocket.send_json(response)
 
             elif "text" in message:
-                response = await _process_json_payload(message, service)
+                response = _process_json_payload(message, service)
                 if response:
                     await websocket.send_json(response)
 
