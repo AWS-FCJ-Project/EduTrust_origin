@@ -233,7 +233,7 @@ jobs:
             --overwrite
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d
         with:
           terraform_version: "1.14.6"  
 
