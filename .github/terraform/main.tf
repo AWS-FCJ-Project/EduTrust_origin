@@ -193,11 +193,28 @@ resource "aws_iam_instance_profile" "backend" {
   role = aws_iam_role.backend.name
 }
 
+# --- Encryption ---
+resource "aws_kms_key" "secrets" {
+  description             = "KMS key for encrypting SSM parameters and other secrets"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "${var.ec2_instance_name}-secrets-key"
+  }
+}
+
+resource "aws_kms_alias" "secrets" {
+  name          = "alias/${var.ec2_instance_name}-secrets"
+  target_key_id = aws_kms_key.secrets.key_id
+}
+
 # --- Backend Secrets (SSM Parameter) ---
 resource "aws_ssm_parameter" "backend_env" {
   name        = "/edutrust/backend/env"
   description = "Environment variables for the backend application"
   type        = "SecureString"
+  key_id      = aws_kms_key.secrets.arn
   value       = "INITIAL_SETUP=true" # This will be updated by the CI/CD pipeline or manually
 
   lifecycle {
@@ -214,6 +231,12 @@ data "aws_iam_policy_document" "backend_ssm_read" {
     effect    = "Allow"
     actions   = ["ssm:GetParameter"]
     resources = [aws_ssm_parameter.backend_env.arn]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [aws_kms_key.secrets.arn]
   }
 
   statement {

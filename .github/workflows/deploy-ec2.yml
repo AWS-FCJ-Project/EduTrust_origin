@@ -30,6 +30,7 @@ jobs:
       aws_region: ${{ steps.tf_output.outputs.aws_region }}
       ecr_repository_url: ${{ steps.tf_output.outputs.ecr_repository_url }}
       backend_port: ${{ steps.tf_output.outputs.backend_port }}
+      secrets_kms_key_arn: ${{ steps.tf_output.outputs.secrets_kms_key_arn }}
       ecr_tag_immutable: ${{ steps.ecr_vars.outputs.ecr_tag_immutable }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -132,6 +133,7 @@ jobs:
           echo "aws_region=$(terraform output -raw aws_region)" >> "$GITHUB_OUTPUT"
           echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "backend_port=$(terraform output -raw backend_port)" >> "$GITHUB_OUTPUT"
+          echo "secrets_kms_key_arn=$(terraform output -raw secrets_kms_key_arn)" >> "$GITHUB_OUTPUT"
 
   #Build & Push backend image into ECR
   build:
@@ -227,6 +229,7 @@ jobs:
             --name "/edutrust/backend/env" \
             --value "$BACKEND_ENV_FILE" \
             --type "SecureString" \
+            --key-id "${{ needs.terraform.outputs.secrets_kms_key_arn }}" \
             --overwrite
 
       - name: Update Launch Template with new tag

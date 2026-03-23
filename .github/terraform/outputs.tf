@@ -37,3 +37,9 @@ output "ecr_repository_url" {
   description = "ECR repository URL (for docker push/pull)"
   value       = aws_ecr_repository.backend.repository_url
 }
+
+output "secrets_kms_key_arn" {
+  description = "The ARN of the KMS key used for encrypting secrets"
+  value       = aws_kms_key.secrets.arn
+}
+
