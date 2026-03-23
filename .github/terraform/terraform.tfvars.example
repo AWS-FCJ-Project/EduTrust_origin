@@ -15,3 +15,24 @@ ssh_ingress_cidr_blocks   =
 https_ingress_cidr_blocks = 
 docdb_egress_cidr_blocks  = 
 redis_egress_cidr_blocks  = 
+
+// ASG config 
+asg_min_size         = 
+asg_max_size         = 
+asg_desired_capacity = 
+backend_image_tag    = 
+
+// Network config (VPC & Subnets)
+vpc_cidr_block            = 
+private_subnet_1a_cidr    = 
+private_subnet_1c_cidr    = 
+public_subnet_1a_cidr     = 
+public_subnet_1c_cidr     = 
+
+// Project Params
+vpc_name                  = 
+igw_name                  = 
+backend_port              = 
+
+// SSL Certificate
+certificate_arn           = 

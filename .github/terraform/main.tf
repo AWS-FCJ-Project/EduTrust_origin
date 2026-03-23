@@ -193,6 +193,49 @@ resource "aws_iam_instance_profile" "backend" {
   role = aws_iam_role.backend.name
 }
 
+# --- Backend Secrets (SSM Parameter) ---
+resource "aws_ssm_parameter" "backend_env" {
+  name        = "/edutrust/backend/env"
+  description = "Environment variables for the backend application"
+  type        = "SecureString"
+  value       = "INITIAL_SETUP=true" # This will be updated by the CI/CD pipeline or manually
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-env-vars"
+  }
+}
+
+# Update role to allow reading from SSM Parameter Store
+resource "aws_iam_role_policy" "backend_ssm_read" {
+  name = "${var.ec2_instance_name}-ssm-read-policy"
+  role = aws_iam_role.backend.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = [aws_ssm_parameter.backend_env.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = ["*"]
+      }
+    ]
+  })
+}
+
 # --- Load Balancer Configuration ---
 resource "aws_security_group" "alb" {
   name        = "${var.ec2_instance_name}-alb-sg"
@@ -289,18 +332,6 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "backend_1" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_1.id
-  port             = var.backend_port
-}
-
-resource "aws_lb_target_group_attachment" "backend_2" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_2.id
-  port             = var.backend_port
-}
-
 # --- Backend EC2 Security Group ---
 resource "aws_security_group" "backend" {
   name        = "${var.ec2_instance_name}-sg"
@@ -352,14 +383,27 @@ resource "aws_security_group" "backend" {
   }
 }
 
-resource "aws_instance" "backend_1" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
+resource "aws_launch_template" "backend" {
+  name_prefix   = "${var.ec2_instance_name}-lt-"
+  image_id      = var.ec2_ami_id
+  instance_type = var.ec2_instance_type
+  key_name      = var.ec2_key_name
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.backend.name
+  }
+
   vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1a.id
-  ebs_optimized          = true
+
+  ebs_optimized = true
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    ebs {
+      volume_size = 20
+      encrypted   = true
+    }
+  }
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -367,28 +411,79 @@ resource "aws_instance" "backend_1" {
     http_put_response_hop_limit = 2
   }
 
-  tags = {
-    Name = "${var.ec2_instance_name}-1"
+  user_data = base64encode(<<-EOF
+              #!/bin/bash
+              set -ex
+
+              # Install Docker if not present
+              if ! command -v docker >/dev/null 2>&1; then
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -y
+                apt-get install -y ca-certificates curl jq awscli
+                curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+                sh /tmp/get-docker.sh
+              fi
+
+              systemctl enable --now docker
+
+              # Login to ECR
+              REGION="${var.aws_region}"
+              ECR_URL="${aws_ecr_repository.backend.repository_url}"
+              aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $${ECR_URL%%/*}
+
+              # Fetch Environment Variables from SSM
+              TARGET_DIR="/home/ubuntu/app"
+              mkdir -p $TARGET_DIR
+              aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+
+              # Run Container
+              IMAGE="$ECR_URL:${var.backend_image_tag}"
+              docker pull $IMAGE
+              docker stop aws-fcj-backend || true
+              docker rm aws-fcj-backend || true
+              docker run -d --name aws-fcj-backend --restart unless-stopped -p ${var.backend_port}:${var.backend_port} --env-file $TARGET_DIR/.env $IMAGE
+              EOF
+  )
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.ec2_instance_name}-asg-node"
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-resource "aws_instance" "backend_2" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
-  vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1c.id
-  ebs_optimized          = true
+resource "aws_autoscaling_group" "backend" {
+  name                = "${var.ec2_instance_name}-asg"
+  desired_capacity    = var.asg_desired_capacity
+  max_size            = var.asg_max_size
+  min_size            = var.asg_min_size
+  target_group_arns   = [aws_lb_target_group.backend.arn]
+  vpc_zone_identifier = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
 
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+  launch_template {
+    id      = aws_launch_template.backend.id
+    version = "$Latest"
   }
 
-  tags = {
-    Name = "${var.ec2_instance_name}-2"
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.ec2_instance_name}-asg"
+    propagate_at_launch = true
   }
 }
 

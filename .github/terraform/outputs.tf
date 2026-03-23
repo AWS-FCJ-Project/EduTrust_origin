@@ -18,24 +18,14 @@ output "backend_port" {
   value       = var.backend_port
 }
 
-output "backend_1_id" {
-  description = "EC2 instance 1 ID"
-  value       = aws_instance.backend_1.id
+output "backend_asg_name" {
+  description = "The name of the Auto Scaling Group"
+  value       = aws_autoscaling_group.backend.name
 }
 
-output "backend_1_private_ip" {
-  description = "EC2 instance 1 private IP"
-  value       = aws_instance.backend_1.private_ip
-}
-
-output "backend_2_id" {
-  description = "EC2 instance 2 ID"
-  value       = aws_instance.backend_2.id
-}
-
-output "backend_2_private_ip" {
-  description = "EC2 instance 2 private IP"
-  value       = aws_instance.backend_2.private_ip
+output "backend_launch_template_id" {
+  description = "The ID of the Launch Template"
+  value       = aws_launch_template.backend.id
 }
 
 output "alb_dns_name" {
