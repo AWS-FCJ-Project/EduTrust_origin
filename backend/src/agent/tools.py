@@ -1,16 +1,18 @@
 from pydantic_ai import Agent, RunContext
 from src.logger import console, log_agent_response, log_delegation
 from src.schemas.unified_agent_schema import MainAgentDeps
+from src.search_services.unified_search import UnifiedSearch
 from src.utils import get_current_datetime
 
 
 class AgentTools:
-    """
-    Collection of tools for the main agent.
-    """
+    """Collection of tools for the main agent."""
 
-    def __init__(self, sub_agents: dict[str, Agent]) -> None:
+    def __init__(
+        self, sub_agents: dict[str, Agent], search_service: UnifiedSearch
+    ) -> None:
         self._sub_agents = sub_agents
+        self._search_service = search_service
 
     async def web_search(self, ctx: RunContext[MainAgentDeps], instruction: str) -> str:
         """
@@ -21,11 +23,9 @@ class AgentTools:
         Provide clear instructions on what needs to be found, researched, or extracted.
         """
         log_delegation("MainAgent", "Web Search", instruction)
-        result = await self._sub_agents["web_search"].run(
-            f"{get_current_datetime()}\n\nInstruction: {instruction}", usage=ctx.usage
-        )
-        log_agent_response("Web Search Agent", result.output)
-        return result.output
+        result = await self._search_service.search(ctx, query=instruction)
+        log_agent_response("Web Search Agent", result)
+        return result
 
     def planning(self, ctx: RunContext[MainAgentDeps], plan: str) -> str:
         """Create a deeply sequential plan before executing any other tools. Mandatory first step."""

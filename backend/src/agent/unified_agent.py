@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Optional
 
 import yaml
 from pydantic_ai import Agent
@@ -26,8 +25,7 @@ class UnifiedAgent:
         self._agents_config: dict = self._load_agents_config()
         self._llms_config: dict = self._load_llms_config()
 
-        self._main_agent: Optional[Agent[MainAgentDeps]] = None
-        self._sub_agents: dict[str, Agent] = {}
+        self._main_agent: Agent[MainAgentDeps] = self._initialize()
 
     def _load_agents_config(self) -> dict:
         with open(app_config.AGENTS_CONFIG_PATH) as file:
@@ -55,10 +53,7 @@ class UnifiedAgent:
         self._sub_agents = self._create_sub_agents(sub_agent_model_name)
 
         search_service = UnifiedSearch(tavily_api_key=app_config.TAVILY_API_KEY)
-        for tool in search_service.get_search_tools():
-            self._sub_agents["web_search"].tool(tool)
-
-        tools = AgentTools(sub_agents=self._sub_agents)
+        tools = AgentTools(sub_agents=self._sub_agents, search_service=search_service)
         main_agent.tool(tools.delegate_math)
         main_agent.tool(tools.delegate_physics)
         main_agent.tool(tools.delegate_literature)
@@ -67,7 +62,6 @@ class UnifiedAgent:
         main_agent.tool(tools.web_search)
         main_agent.tool(tools.planning)
 
-        self._main_agent = main_agent
         return main_agent
 
     def _create_sub_agents(self, sub_agent_model_name: str) -> dict[str, Agent]:
@@ -109,9 +103,8 @@ class UnifiedAgent:
 
     async def ask(self, question: str, conversation_id: str) -> str:
         """Run the main agent and return the full response."""
-        main_agent = self._initialize()
         deps, prompt = self._build_prompt(question, conversation_id)
-        result = await main_agent.run(prompt, deps=deps)
+        result = await self._main_agent.run(prompt, deps=deps)
         log_agent_response("MainAgent", result.output)
         self._conversation_handler.add_message(
             conversation_id, role="assistant", content=result.output
@@ -122,10 +115,9 @@ class UnifiedAgent:
         self, question: str, conversation_id: str
     ) -> AsyncIterator[MainAgentStreamEvent]:
         """Stream main agent events: text deltas, tool calls/results, and final answer."""
-        main_agent = self._initialize()
         deps, prompt = self._build_prompt(question, conversation_id)
         streaming = Streaming(
-            orchestrator=main_agent,
+            orchestrator=self._main_agent,
             deps=deps,
             prompt=prompt,
             conversation_id=conversation_id,
