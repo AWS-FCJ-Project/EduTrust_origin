@@ -36,7 +36,9 @@ jobs:
           python-version: "3.11"
 
       - name: Run pre-commit
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1886139241a4b6e9d8b5c89 # v3.0.1
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files
 
   test:
     name: Backend Test & Coverage
@@ -85,7 +87,7 @@ jobs:
 
       - name: Setup Terraform
         # Đã sửa lại SHA chính xác cho hashicorp/setup-terraform v3.1.2
-        uses: hashicorp/setup-terraform@a9fd3012d607951065f412c26257367d54032d0c 
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.10.0"
 
