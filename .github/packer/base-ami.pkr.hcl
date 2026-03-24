@@ -18,6 +18,21 @@ source "amazon-ebs" "ubuntu" {
   region        = var.region
   ssh_username  = "ubuntu"
 
+  vpc_filter {
+    filters = {
+      "tag:Name": "my-backend-vpc"
+    }
+  }
+
+  subnet_filter {
+    filters = {
+      "tag:Name": "public-subnet-01"
+    }
+    most_free = true
+    random    = true
+  }
+
+  associate_public_ip_address = true
   source_ami_filter {
     filters = {
       name                = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"
