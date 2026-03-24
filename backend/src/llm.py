@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.litellm import LiteLLMProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from src.app_config import app_config
 
@@ -75,12 +76,11 @@ class LLM:
         )
 
         openai_default_api_base = "https://api.openai.com/v1"
-        using_custom_base = bool(api_base) and api_base != openai_default_api_base
-        if using_custom_base:
+        using_litellm_proxy = bool(api_base) and api_base != openai_default_api_base
+        if using_litellm_proxy:
             if model_name and "/" not in model_name:
                 model_name = f"openai/{model_name}"
-            # Use OpenAIProvider with custom base_url
-            provider = OpenAIProvider(api_key=api_key, base_url=api_base)
+            provider = LiteLLMProvider(api_base=api_base, api_key=api_key)
             return OpenAIChatModel(model_name, provider=provider)
 
         if model_name and "/" in model_name:

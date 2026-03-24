@@ -1,20 +1,21 @@
 from fastapi import UploadFile
-from src.schemas.translate_schema import TranslateResponse
+from langchain_litellm import ChatLiteLLM
+from src.app_config import app_config
 from src.document_handler.document_handler import DocumentHandler
-from src.prompt_template import translate_agent
+from src.prompt_template import translate_output_parser, translate_prompt_template
 
 
 class TranslateService:
     def __init__(self):
-        self.agent = translate_agent
+        self.model = app_config.TRANSLATE_MODEL
+        self.llm = ChatLiteLLM(model=self.model, temperature=0)
+        self.chain = translate_prompt_template | self.llm | translate_output_parser
         self.doc_handler = DocumentHandler()
 
     async def translate_text(self, *, text: str, language: str) -> str:
-        """Translate text using pydantic-ai agent."""
-        result = await self.agent.run(
-            f"Target language: {language}\n\nText to translate:\n{text}"
-        )
-        return result.data.text
+        """Translate text."""
+        result = await self.chain.ainvoke({"language": language, "text": text})
+        return result.text
 
     async def translate_file(self, *, file: UploadFile, language: str) -> str:
         """Translate file content."""
@@ -29,7 +30,5 @@ class TranslateService:
         if not text.strip():
             raise ValueError("Could not extract text from file")
 
-        result = await self.agent.run(
-            f"Target language: {language}\n\nText to translate:\n{text}"
-        )
-        return result.data.text
+        result = await self.chain.ainvoke({"language": language, "text": text})
+        return result.text
