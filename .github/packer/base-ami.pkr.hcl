@@ -11,6 +11,13 @@ variable "region" {
   type    = string
   default = "ap-southeast-1"
 }
+variable "vpc_id" {
+  type    = string
+}
+
+variable "subnet_id" {
+  type    = string
+}
 
 source "amazon-ebs" "ubuntu" {
   ami_name      = "edutrust-base-ami-{{timestamp}}"
@@ -18,19 +25,8 @@ source "amazon-ebs" "ubuntu" {
   region        = var.region
   ssh_username  = "ubuntu"
 
-  vpc_filter {
-    filters = {
-      "tag:Name": "my-backend-vpc"
-    }
-  }
-
-  subnet_filter {
-    filters = {
-      "tag:Name": "public-subnet-01"
-    }
-    most_free = true
-    random    = true
-  }
+  vpc_id        = var.vpc_id
+  subnet_id     = var.subnet_id
 
   associate_public_ip_address = true
   source_ami_filter {

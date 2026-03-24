@@ -49,7 +49,14 @@ jobs:
 
       - name: Run Packer Build
         working-directory: .github/packer
-        run: packer build base-ami.pkr.hcl
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=my-backend-vpc" --query "Vpcs[0].VpcId" --output text)
+          SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=public-subnet-01" --query "Subnets[0].SubnetId" --output text)
+          
+          echo "Found VPC_ID: $VPC_ID"
+          echo "Found SUBNET_ID: $SUBNET_ID"
+          
+          packer build -var "vpc_id=$VPC_ID" -var "subnet_id=$SUBNET_ID" base-ami.pkr.hcl
 
   terraform:
     name: Provision/Update EC2 (Terraform apply)
