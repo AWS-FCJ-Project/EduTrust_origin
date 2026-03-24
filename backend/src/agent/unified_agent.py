@@ -44,7 +44,7 @@ class UnifiedAgent:
             "agent_model"
         )
         main_agent = Agent(
-            self._llm.chat_model(main_agent_model_name),
+            self._llm.init_chat_model(main_agent_model_name),
             name="main_agent",
             deps_type=MainAgentDeps,
             instructions=self._agents_config["orchestrator"]["instructions"],
@@ -66,7 +66,7 @@ class UnifiedAgent:
 
     def _create_sub_agents(self, sub_agent_model_name: str) -> dict[str, Agent]:
         """Create all sub agents from config."""
-        agent_model = self._llm.chat_model(sub_agent_model_name)
+        agent_model = self._llm.init_chat_model(sub_agent_model_name)
         agents_config = self._agents_config
         return {
             "math": Agent(

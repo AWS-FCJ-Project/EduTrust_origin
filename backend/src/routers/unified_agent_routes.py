@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from src.agent.unified_agent import UnifiedAgent
-from src.app_config import app_config
 from src.auth.dependencies import get_current_user
 from src.llm import LLM
 from src.schemas.unified_agent_schema import (
@@ -19,7 +18,7 @@ router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
 @lru_cache
 def get_orchestrator() -> UnifiedAgent:
     return UnifiedAgent(
-        llm=LLM(app_config),
+        llm=LLM(),
         conversation_handler=get_conversation_handler(),
     )
 
