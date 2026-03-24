@@ -68,7 +68,11 @@ build {
       "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\"",
       "unzip awscliv2.zip",
       "sudo ./aws/install",
-      "rm -rf awscliv2.zip aws/"
+      "rm -rf awscliv2.zip aws/",
+      
+      "echo 'Cleaning up cloud-init state so user_data runs on next boot...'",
+      "sudo cloud-init clean --logs --seed",
+      "sudo rm -rf /var/lib/cloud/instances/*"
     ]
   }
 }

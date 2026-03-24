@@ -152,7 +152,7 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -input=false
 
       - name: Get Terraform Outputs
         id: tf_output
@@ -275,7 +275,7 @@ jobs:
         run: |
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
-          terraform apply -auto-approve -var="backend_image_tag=$IMAGE_TAG"
+          terraform apply -auto-approve -input=false -var="backend_image_tag=$IMAGE_TAG"
 
       - name: Start ASG Instance Refresh
         run: |
