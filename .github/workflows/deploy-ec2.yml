@@ -198,7 +198,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login_ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@7ff514f77c667a4217f8810ad9e924d4554b9d36 # v2.0.1
 
       - name: Compute Docker tags
         id: docker_tags
@@ -221,7 +221,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@ca43fd3d1e2da009f448c1825902bc90064e4823 # v6.15.0
         with:
           context: .
           file: Dockerfile

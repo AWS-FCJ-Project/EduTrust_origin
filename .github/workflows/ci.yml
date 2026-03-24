@@ -28,15 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f6742a148399e435ad7a008173ef052844ad2f2c # v5.4.0
         with:
           python-version: "3.11"
 
       - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+        uses: pre-commit/action@646c83f6aa5ef95202f57a95b8041c280540a97c # v3.0.1
 
   test:
     name: Backend Test & Coverage
@@ -47,19 +47,19 @@ jobs:
         working-directory: backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       # Setup Python 3.11
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@f6742a148399e435ad7a008173ef052844ad2f2c # v5.4.0
         with:
           python-version: "3.11"
 
       # Setup uv
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@883737d5710f6ab1987d37cf9f33f6a297924403 # v5.3.1
         with:
           version: "latest"
           enable-cache: true
@@ -84,10 +84,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f62729c728d220ced1f7108839 # v3.1.2
         with:
           terraform_version: "1.10.0"
 
@@ -104,9 +104,9 @@ jobs:
         # -backend=false: skip S3 init (no AWS creds needed on PR)
 
       - name: Run Checkov (security scan)
-        uses: bridgecrewio/checkov-action@v12
+        uses: bridgecrewio/checkov-action@17960fc50e2418e95819717df37119e7a9354e60 # v12.2987.0
         with:
           directory: .github/terraform
           framework: terraform
           soft_fail: false
-          skip_check: CKV_AWS_8,CKV_AWS_126,CKV_AWS_24,CKV_AWS_130,CKV_AWS_260,CKV_AWS_2,CKV2_AWS_20,CKV_AWS_103,CKV_AWS_378,CKV_AWS_382,CKV_AWS_91,CKV_AWS_150,CKV2_AWS_11,CKV2_AWS_12,CKV2_AWS_28
+          skip_check: CKV_AWS_2,CKV_AWS_24,CKV_AWS_91,CKV_AWS_103,CKV_AWS_126,CKV_AWS_130,CKV_AWS_150,CKV_AWS_260,CKV_AWS_378,CKV2_AWS_11,CKV2_AWS_12,CKV2_AWS_20,CKV2_AWS_28
