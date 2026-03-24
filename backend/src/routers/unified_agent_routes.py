@@ -1,23 +1,36 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from src.agent.unified_agent import UnifiedAgent
+from src.app_config import app_config
 from src.auth.dependencies import get_current_user
-from src.crew import tools
-from src.crew.orchestrator import ask, ask_stream_with_tool_calls
+from src.llm import LLM
 from src.schemas.unified_agent_schema import (
     UnifiedAgentRequestSchema,
     UnifiedAgentResponseSchema,
 )
-from src.streaming import sse_json, sse_response
+from src.state import get_conversation_handler
+from src.streaming import Streaming
 
 router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
 
 
+@lru_cache
+def get_orchestrator() -> UnifiedAgent:
+    return UnifiedAgent(
+        llm=LLM(app_config),
+        conversation_handler=get_conversation_handler(),
+    )
+
+
 @router.post("/ask", response_model=UnifiedAgentResponseSchema)
 async def ask_agent(
-    request: UnifiedAgentRequestSchema, email: Annotated[str, Depends(get_current_user)]
+    request: UnifiedAgentRequestSchema,
+    _email: Annotated[str, Depends(get_current_user)],
+    orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ) -> UnifiedAgentResponseSchema:
-    answer = await ask(
+    answer = await orch.ask(
         question=request.question, conversation_id=request.conversation_id
     )
     return UnifiedAgentResponseSchema(
@@ -26,16 +39,19 @@ async def ask_agent(
 
 
 @router.post("/ask/streaming")
-async def ask_agent_streaming(request: UnifiedAgentRequestSchema):
+async def ask_agent_streaming(
+    request: UnifiedAgentRequestSchema,
+    orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
+):
     async def generate():
         try:
-            async for event in ask_stream_with_tool_calls(
+            async for event in orch.ask_stream_with_tool_calls(
                 question=request.question, conversation_id=request.conversation_id
             ):
-                yield sse_json({"type": event.type, "content": event.content})
+                yield Streaming.sse_json({"type": event.type, "content": event.content})
 
-            yield sse_json({"type": "complete"})
+            yield Streaming.sse_json({"type": "complete"})
         except Exception as e:
-            yield sse_json({"type": "error", "content": str(e)})
+            yield Streaming.sse_json({"type": "error", "content": str(e)})
 
-    return sse_response(generate())
+    return Streaming.sse_response(generate())
