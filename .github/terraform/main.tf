@@ -555,9 +555,19 @@ resource "aws_security_group" "backend" {
   }
 }
 
+data "aws_ami" "base_ami" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "tag:Name"
+    values = ["EduTrust-Base-AMI"]
+  }
+}
+
 resource "aws_launch_template" "backend" {
   name_prefix   = "${var.ec2_instance_name}-lt-"
-  image_id      = var.ec2_ami_id
+  image_id      = data.aws_ami.base_ami.id
   instance_type = var.ec2_instance_type
   key_name      = var.ec2_key_name
 
@@ -587,41 +597,21 @@ resource "aws_launch_template" "backend" {
     #!/bin/bash
     set -ex
 
-    # 1. Update và cài đặt các công cụ cơ bản (Bỏ awscli khỏi apt)
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -y
-    apt-get install -y ca-certificates curl jq unzip
-
-    # 2. Cài đặt Docker (Sử dụng script chính thức để đảm bảo version)
-    if ! command -v docker >/dev/null 2>&1; then
-      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-      sh /tmp/get-docker.sh
-    fi
-    systemctl enable --now docker
-
-    # 3. Cài đặt AWS CLI v2 (Quan trọng: Không dùng apt install awscli)
-    if ! command -v aws >/dev/null 2>&1; then
-      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-      unzip awscliv2.zip
-      sudo ./aws/install
-      rm -rf awscliv2.zip aws/
-    fi
-
-    # 4. Biến môi trường
+    # Biến môi trường
     REGION="${var.aws_region}"
     ECR_URL="${aws_ecr_repository.backend.repository_url}"
     TARGET_DIR="/home/ubuntu/app"
     mkdir -p $TARGET_DIR
 
-    # 5. Login ECR & Pull Image
+    # Login ECR & Pull Image
     # Sử dụng cách tách URL ECR an toàn hơn
     ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
     aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-    # 6. Lấy env từ SSM
+    # Lấy env từ SSM
     aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
 
-    # 7. Chạy Container
+    # Chạy Container
     IMAGE="$ECR_URL:${var.backend_image_tag}"
     docker pull $IMAGE
     docker stop aws-fcj-backend || true
@@ -666,6 +656,7 @@ resource "aws_autoscaling_group" "backend" {
     strategy = "Rolling"
     preferences {
       min_healthy_percentage = 50
+      instance_warmup        = 60
     }
   }
 
