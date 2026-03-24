@@ -36,7 +36,7 @@ jobs:
           python-version: "3.11"
 
       - name: Run pre-commit
-        uses: pre-commit/action@646c83f6aa5ef95202f57a95b8041c280540a97c # v3.0.1
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1886139241a4b6e9d8b5c89 # v3.0.1
 
   test:
     name: Backend Test & Coverage
