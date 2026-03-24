@@ -51,22 +51,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Setup Python 3.11
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.11"
-
-      # Setup uv
+      # Loại bỏ setup-python, dùng setup-uv v5 với mã SHA chuẩn
       - name: Setup uv
-        uses: astral-sh/setup-uv@883737d5710f6ab1987d37cf9f33f6a297924403 # v5.3.1
+        uses: astral-sh/setup-uv@f9864239851639ec9b08f43501716949b29e0136 # v5.2.2
         with:
           version: "latest"
           enable-cache: true
 
-      # Install dependencies
-      - name: Install dependencies
-        run: uv sync --dev --no-cache
+      - name: Install Python and Dependencies
+        # uv sẽ tự tải Python 3.11 nếu chưa có. 
+        # Dùng --frozen để cài đặt chính xác theo uv.lock
+        run: |
+          uv python install 3.11
+          uv sync --dev --frozen
 
       - name: Load backend .env 
         env:
@@ -77,7 +74,7 @@ jobs:
           fi
 
       - name: Run tests with coverage
-        run: PYTHONPATH=. uv run pytest tests -v --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
+        run: uv run pytest tests -v --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
 
   terraform-check:
     name: Terraform Validate & Security Scan
@@ -87,21 +84,20 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f62729c728d220ced1f7108839 # v3.1.2
+        # Đã sửa lại SHA chính xác cho hashicorp/setup-terraform v3.1.2
+        uses: hashicorp/setup-terraform@a9fd3012d607951065f412c26257367d54032d0c 
         with:
           terraform_version: "1.10.0"
 
       - name: Terraform Format Check
         working-directory: .github/terraform
         run: terraform fmt -check -recursive
-        # Fails if any .tf file is not properly formatted
 
       - name: Terraform Validate
         working-directory: .github/terraform
         run: |
           terraform init -backend=false
           terraform validate
-        # -backend=false: skip S3 init (no AWS creds needed on PR)
 
       - name: Run Checkov (security scan)
         uses: bridgecrewio/checkov-action@17960fc50e2418e95819717df37119e7a9354e60 # v12.2987.0
