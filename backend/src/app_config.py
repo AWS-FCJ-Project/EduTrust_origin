@@ -1,41 +1,39 @@
-from typing import Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
     # API Key Settings
-    LITELLM_API_KEY: Optional[str] = None
-    LITELLM_BASE_URL: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
-    TAVILY_API_KEY: Optional[str] = None
+    LITELLM_API_KEY: str
+    LITELLM_BASE_URL: str
+    OPENAI_API_KEY: str
+    TAVILY_API_KEY: str
 
     # Config Paths
-    AGENTS_CONFIG_PATH: Optional[str] = None
-    LLMS_CONFIG_PATH: Optional[str] = None
+    AGENTS_CONFIG_PATH: str
+    LLMS_CONFIG_PATH: str
 
     # Model Settings
-    ORCHESTRATOR_MODEL: Optional[str] = None
-    AGENT_MODEL: Optional[str] = None
-    TRANSLATE_MODEL: Optional[str] = None
-    LOGFIRE_TOKEN: Optional[str] = None
+    ORCHESTRATOR_MODEL: str
+    AGENT_MODEL: str
+    TRANSLATE_MODEL: str
+    LOGFIRE_TOKEN: str
 
     # Database Settings
-    MONGO_URI: Optional[str] = None
-    MONGO_USERNAME: Optional[str] = None
-    MONGO_PASSWORD: Optional[str] = None
-    MONGO_PORT: Optional[str] = None
-    MONGO_DB_NAME: Optional[str] = None
+    MONGO_URI: str
+    MONGO_USERNAME: str
+    MONGO_PASSWORD: str
+    MONGO_PORT: str
+    MONGO_DB_NAME: str
 
     # Auth Settings
-    SECRET_KEY: Optional[str] = None
+    SECRET_KEY: str
 
     # Email for OTP
-    EMAIL_SENDER: Optional[str] = None
-    EMAIL_PASSWORD: Optional[str] = None
+    EMAIL_SENDER: str
+    EMAIL_PASSWORD: str
 
     # OTP Settings
-    OTP_EXPIRE_SECONDS: Optional[int] = None
+    OTP_EXPIRE_SECONDS: str
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
