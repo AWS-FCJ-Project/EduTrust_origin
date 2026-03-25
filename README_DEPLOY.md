@@ -7,44 +7,38 @@ Hệ thống hoạt động theo mô hình **Edge AI + Central Storage**. Đây 
 *   **Tính riêng tư:** Video gốc không bao giờ rời khỏi máy học sinh. Chỉ có ảnh bằng chứng vi phạm mới được gửi đi.
 *   **Khả năng mở rộng:** Máy PC của bạn không phải xử lý AI, nên nó có thể nhận log từ 100 học sinh cùng lúc mà không bị treo máy.
 
-### B. Vấn đề "404 Not Found" trước đây và cách giải quyết
-Trong quá trình phát triển, chúng ta đã gặp lỗi `404 Not Found` hoặc `Unexpected token '<'` khi dùng laptop truy cập qua Ngrok.
-
-*   **Nguyên nhân:** Trước đây chúng ta dùng 2 server riêng biệt (Vite cổng 5173 và FastAPI cổng 8000). Vite dùng một cơ chế gọi là "Proxy" để đẩy dữ liệu sang cổng 8000. Tuy nhiên, khi đi qua đường ống Ngrok, cơ chế Proxy này thường xuyên bị lỗi "kẹt" hoặc không nhận diện được đường dẫn, dẫn đến việc request bị chặn lại tại Vite và trả về trang HTML lỗi.
-*   **Giải pháp (Consolidated Serving):** Chúng ta đã dẹp bỏ server Vite khi chạy thực tế. Toàn bộ Frontend được "đóng gói" (build) và đưa trực tiếp vào Backend FastAPI. 
-    *   Bây giờ, mọi thứ chạy trên duy nhất **cổng 8000**.
-    *   Request từ máy học sinh đi thẳng vào Backend, không qua bất kỳ lớp trung gian nào nữa. Đây là cách làm ổn định nhất cho các ứng dụng dùng Tunnel như Ngrok.
-
-### C. Ngrok và Header đặc biệt
-Ngrok thường hiện trang cảnh báo "Abuse Detection" làm gián đoạn việc gửi dữ liệu. Chúng ta đã giải quyết bằng cách:
-*   Yêu cầu `ngrok-skip-browser-warning: true` trong mỗi request từ Frontend để "vượt rào" cảnh báo này một cách tự động.
+### B. Cơ chế Proxy và Phát triển nhanh (Fast Development)
+Để thuận tiện nhất khi đang phát triển (code đến đâu web đổi đến đó), chúng ta sử dụng cơ chế **Vite Proxy**:
+*   **Vite (Cổng 5173):** Chạy giao diện web, tự động nhận diện thay đổi code (HMR).
+*   **FastAPI (Cổng 8000):** Chạy xử lý logic backend, nhận log và lưu trữ dữ liệu.
+*   **Proxy:** Mọi yêu cầu từ web gửi đến `/camera` hoặc `/api` sẽ được Vite tự động chuyển sang Backend (8000) một cách trong suốt.
 
 ---
 
 ## 2. Cách vận hành hệ thống (Step-by-Step)
 
-Để hệ thống hoạt động ổn định nhất, hãy thực hiện theo đúng thứ tự sau trên máy PC của bạn:
+Để hệ thống hoạt động ổn định và dễ sửa code nhất, hãy thực hiện theo đúng thứ tự sau:
 
-### Bước 1: Đóng gói Frontend (Chỉ cần làm 1 lần khi có thay đổi code)
+### Bước 1: Chạy Frontend (Giao diện)
 Mở terminal tại thư mục `frontend`:
 ```bash
-npm run build
+npm run dev
 ```
-*Lệnh này sẽ tạo ra thư mục `dist` chứa giao diện web đã được tối ưu hóa.*
+*Lúc này giao diện web sẽ sẵn sàng tại cổng **5173**.*
 
 ### Bước 2: Chạy Backend (Máy chủ)
 Mở terminal tại thư mục `backend`:
 ```bash
 uv run uvicorn src.main:app --reload
 ```
-*Lúc này server sẽ chạy tại cổng **8000**. Nó sẽ tự động phục vụ cả giao diện web từ thư mục `dist` vừa build.*
+*Backend sẽ chạy tại cổng **8000**. Mọi giao tiếp giữa Frontend và Backend đã được cấu hình tự động qua Proxy.*
 
 ### Bước 3: Mở cổng ra Internet (Ngrok)
-Mở một terminal mới (tại bất kỳ đâu):
+Mở một terminal mới (tại thư mục gốc dự án):
 ```bash
-ngrok http 8000
+ngrok http 5173
 ```
-*Bạn sẽ nhận được một đường link có dạng `https://xxx.ngrok-free.dev`. Đây chính là link bạn sẽ gửi cho học sinh.*
+*Bạn sẽ nhận được một đường link có dạng `https://xxx.ngrok-free.dev`. Bạn chỉ cần gửi link này cho học sinh. Khi học sinh truy cập, Ngrok sẽ vào cổng 5173, và từ 5173 nó sẽ tự "nối" sang backend cổng 8000 cho bạn.*
 
 ---
 
@@ -53,7 +47,7 @@ ngrok http 8000
 1.  **Trên máy Laptop/Điện thoại khác:**
     *   Truy cập vào đường link ngrok bạn vừa nhận được ở Bước 3.
     *   Nếu trình duyệt hiện trang cảnh báo "You are about to visit...", hãy nhấn **"Visit Site"**.
-    *   Cho phép trình duyệt truy cập Camera.
+    *   Cho phép trình duyệt truy cập Camera. (Đảm bảo camera đang hoạt động bình thường).
 2.  **Thực hiện hành vi vi phạm:**
     *   **Trường hợp 1:** Bạn quay mặt đi chỗ khác hoặc che camera để mặt biến mất khỏi khung hình.
     *   **Trường hợp 2:** Có thêm một người nữa ghé mặt vào khung hình cùng bạn.
@@ -65,8 +59,8 @@ ngrok http 8000
 
 ## 4. Các lưu ý quan trọng
 
-*   **Một cổng duy nhất:** Bạn chỉ cần chạy ngrok cho cổng **8000**. Không cần chạy ngrok cho cổng 5173 hay chạy `npm run dev` khi đã build xong.
-*   **Xóa Log:** Nếu muốn xóa dữ liệu cũ để test mới, bạn chỉ cần xóa các file trong `storage/violation_captures` và xóa nội dung trong `violations.json`.
+*   **Chỉ ngrok cổng 5173:** Bạn chỉ cần chạy ngrok cho cổng của Frontend (5173). Không cần chạy cho 8000 vì Vite đã làm nhiệm vụ trung gian rồi.
+*   **Hot Reload:** Bạn có thể vừa sửa code Frontend vừa xem kết quả ngay lập tức trên link Ngrok mà không cần chạy lại lệnh nào.*   **Xóa Log:** Nếu muốn xóa dữ liệu cũ để test mới, bạn chỉ cần xóa các file trong `storage/violation_captures` và xóa nội dung trong `violations.json`.
 ### 5. Cách chạy thử mô hình Backend (Tùy chọn)
 Nếu bạn muốn kiểm tra khả năng nhận diện trực tiếp từ phía Backend (không qua AI của học sinh), bạn có thể truy cập:
 - `http://localhost:8000/tests/websocket_test.html` (chạy local)
