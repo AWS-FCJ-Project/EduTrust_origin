@@ -40,6 +40,7 @@ async def ask_agent(
 @router.post("/ask/streaming")
 async def ask_agent_streaming(
     request: UnifiedAgentRequestSchema,
+    _email: Annotated[str, Depends(get_current_user)],
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ):
     async def generate():
