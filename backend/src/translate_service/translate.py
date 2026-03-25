@@ -3,7 +3,6 @@ from typing import Any
 import yaml
 from fastapi import UploadFile
 from pydantic_ai import Agent
-
 from src.app_config import app_config
 from src.document_handler.document_handler import DocumentHandler
 from src.llm import LLM
