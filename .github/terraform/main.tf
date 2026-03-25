@@ -166,7 +166,8 @@ resource "aws_route_table_association" "private_1c" {
 
 # --- VPC Endpoints ---
 
-  # Security Group for VPC Endpoints
+# Security Group for VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
   name        = "${var.ec2_instance_name}-vpce-sg"
   description = "Security group for VPC Endpoints"
   vpc_id      = aws_vpc.main.id
@@ -180,7 +181,7 @@ resource "aws_route_table_association" "private_1c" {
   }
 
   tags = { Name = "vpc-endpoint-sg" }
-
+}
 
 # S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
