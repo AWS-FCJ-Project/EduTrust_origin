@@ -166,7 +166,10 @@ export default function App() {
       const end = performance.now();
 
       setMetrics({ time: Math.round(end - start), rawCount: detections.length });
-      drawBoxes(detections);
+      
+      // Gọi drawBoxes để đảm bảo canvas luôn được xoá sạch (không hiện khung)
+      drawBoxes(detections); 
+
       handleViolations(detections);
     } catch (e) {
       console.error("Inference Error:", e);
@@ -174,37 +177,13 @@ export default function App() {
     animationFrameIdRef.current = requestAnimationFrame(runModel);
   };
 
-  const drawBoxes = (detections: any[]) => {
+  const drawBoxes = (_detections: any[]) => {
+    // Đã vô hiệu hóa vẽ khung realtime theo yêu cầu của người dùng
     const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
+    if (!canvas) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    detections.forEach(det => {
-      const [x1, y1, x2, y2] = det.rect;
-      // Scale coordinates from 320x320 to actual video size
-      const sx = canvas.width / 320;
-      const sy = canvas.height / 320;
-
-      // Mirror coordinates to match scaleX(-1) video
-      const rx = canvas.width - (x2 * sx);
-      const ry = y1 * sy;
-      const rw = (x2 - x1) * sx;
-      const rh = (y2 - y1) * sy;
-
-      ctx.strokeStyle = det.classId === 0 ? "#4ade80" : "#f87171";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(rx, ry, rw, rh);
-
-      ctx.fillStyle = det.classId === 0 ? "#4ade80" : "#f87171";
-      ctx.font = "bold 16px Sora";
-      ctx.fillText(`${det.label} ${(det.conf * 100).toFixed(0)}%`, rx, ry - 8);
-    });
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
   const handleViolations = (detections: any[]) => {
@@ -227,7 +206,7 @@ export default function App() {
       currentViolations.length > 0 &&
       (isChanged || now - lastReportTimeRef.current > 4000)
     ) {
-      reportViolation(currentViolations, alertCodes, personCount, now);
+      reportViolation(currentViolations, alertCodes, personCount, now, detections);
       prevViolationStrRef.current = vStr;
       lastReportTimeRef.current = now;
     } else if (currentViolations.length === 0 && isChanged) {
@@ -251,7 +230,7 @@ export default function App() {
     });
   };
 
-  const reportViolation = (vList: string[], codes: string[], count: number, ts: number) => {
+  const reportViolation = (vList: string[], codes: string[], count: number, ts: number, detections: any[]) => {
     const video = videoRef.current;
     if (!video) return;
 
@@ -259,7 +238,33 @@ export default function App() {
     const snap = document.createElement("canvas");
     snap.width = 320;
     snap.height = 240;
-    snap.getContext("2d")?.drawImage(video, 0, 0, 320, 240);
+    const ctx = snap.getContext("2d");
+    if (!ctx) return;
+
+    // 1. Vẽ nội dung video (không bị lật ngược)
+    ctx.drawImage(video, 0, 0, 320, 240);
+
+    // 2. Vẽ các khung nhận diện lên trên ảnh log
+    detections.forEach((det: any) => {
+      const [x1, y1, x2, y2] = det.rect;
+      // Detections từ 320x320 vẽ lên 320x240
+      const sx = 320 / 320;
+      const sy = 240 / 320;
+
+      const rx = x1 * sx;
+      const ry = y1 * sy;
+      const rw = (x2 - x1) * sx;
+      const rh = (y2 - y1) * sy;
+
+      ctx.strokeStyle = det.classId === 0 ? "#4ade80" : "#f87171";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rx, ry, rw, rh);
+
+      ctx.fillStyle = det.classId === 0 ? "#4ade80" : "#f87171";
+      ctx.font = "bold 12px Sora";
+      ctx.fillText(`${det.label} ${(det.conf * 100).toFixed(0)}%`, rx, ry > 15 ? ry - 5 : ry + 15);
+    });
+
     const b64 = snap.toDataURL("image/jpeg", 0.6).split(",")[1];
 
     fetch("/camera/log", {
