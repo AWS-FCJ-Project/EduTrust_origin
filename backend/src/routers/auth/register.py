@@ -29,6 +29,7 @@ async def register(request: Request, user: UserRegister):
     user_doc = {
         "email": user.email,
         "hashed_password": hashed,
+        "role": user.role,
         "is_verified": True,
         "created_at": datetime.now(timezone.utc),
     }
@@ -61,7 +62,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
         )
 
     errors = []
-    unique_users: dict[str, tuple[str, int]] = {}
+    unique_users: dict[str, tuple[str, str, int]] = {}
     for index, row in df.iterrows():
         row_number = index + 2
         row_email_raw = row["email"]
@@ -76,8 +77,17 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
         if not row_email or not row_password:
             continue
 
+        row_role_raw = row.get("role", "student")
+        if pd.isna(row_role_raw):
+            row_role_raw = "student"
+        row_role = str(row_role_raw).lower().strip()
+        if not row_role:
+            row_role = "student"
+
         try:
-            valid_user = UserRegister(email=row_email, password=row_password)
+            valid_user = UserRegister(
+                email=row_email, password=row_password, role=row_role
+            )
         except Exception as e:
             err_msg = str(e).split("\n")[0]
             errors.append(f"Row {row_number}: Invalid data - {err_msg}")
@@ -89,7 +99,11 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             )
             continue
 
-        unique_users[valid_user.email] = (valid_user.password, row_number)
+        unique_users[valid_user.email] = (
+            valid_user.password,
+            valid_user.role,
+            row_number,
+        )
 
     existing_emails: set[str] = set()
     if unique_users:
@@ -101,7 +115,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
         existing_emails = {doc["email"] for doc in existing_docs if "email" in doc}
 
     docs_to_insert = []
-    for email, (password, row_number) in unique_users.items():
+    for email, (password, role, row_number) in unique_users.items():
         if email in existing_emails:
             errors.append(f"Row {row_number}: Email {email} already registered")
             continue
@@ -111,6 +125,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             {
                 "email": email,
                 "hashed_password": hashed,
+                "role": role,
                 "is_verified": True,
                 "created_at": datetime.now(timezone.utc),
             }
