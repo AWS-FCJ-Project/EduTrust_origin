@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PATH="/root/.cargo/bin:${PATH}"
 
-# Cài Python 3.11 + build tools + Rust (kreuzberg 4.5.3 LUÔN build từ source)
+# Install Python 3.11 + build tools + Rust (kreuzberg 4.5.3 ALWAYS builds from source)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       software-properties-common \
@@ -26,23 +26,23 @@ RUN apt-get update && \
       libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Cài Rust (bắt buộc để build kreuzberg)
+# Install Rust (required to build kreuzberg)
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Cài uv
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy pyproject.toml trước (layer cache tốt hơn)
+# Copy pyproject.toml first (better layer caching)
 COPY backend/pyproject.toml backend/uv.lock* /app/
 
-# Tạo venv và cài dependencies (bước nặng, cache lại nếu pyproject không đổi)
+# Create venv and install dependencies (heavy step, cached if pyproject remains unchanged)
 RUN uv venv --python python3.11 /opt/venv && \
     uv pip install --python /opt/venv/bin/python --no-cache .
 
-# Copy source sau (thay đổi code không invalidate cache bước install)
+# Copy source last (code changes won't invalidate the install cache step)
 COPY backend /app
 
 # ============================================

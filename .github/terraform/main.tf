@@ -166,8 +166,7 @@ resource "aws_route_table_association" "private_1c" {
 
 # --- VPC Endpoints ---
 
-# Security Group cho VPC Endpoints
-resource "aws_security_group" "vpc_endpoints" {
+  # Security Group for VPC Endpoints
   name        = "${var.ec2_instance_name}-vpce-sg"
   description = "Security group for VPC Endpoints"
   vpc_id      = aws_vpc.main.id
@@ -177,13 +176,13 @@ resource "aws_security_group" "vpc_endpoints" {
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    security_groups = [aws_security_group.backend.id] # Cho phép từ EC2 Backend
+    security_groups = [aws_security_group.backend.id] # Allow from Backend EC2
   }
 
   tags = { Name = "vpc-endpoint-sg" }
 }
 
-# S3 Gateway Endpoint (Miễn phí và cực kỳ quan trọng cho ECR)
+# S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
   service_name      = var.s3_endpoint_service_name
@@ -193,7 +192,7 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "s3-endpoint" }
 }
 
-# ECR Endpoints (Cần cả 'dkr' và 'api' để pull image hoàn chỉnh)
+# ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
   service_name        = var.ecr_dkr_endpoint_service_name
@@ -216,7 +215,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
   tags = { Name = "ecr-api-endpoint" }
 }
 
-# SSM Endpoint (Để lấy Parameter Store nội bộ)
+# SSM Endpoint (To retrieve internal Parameter Store)
 resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = aws_vpc.main.id
   service_name        = var.ssm_endpoint_service_name
@@ -228,7 +227,7 @@ resource "aws_vpc_endpoint" "ssm" {
   tags = { Name = "ssm-endpoint" }
 }
 
-# STS Endpoint (Cực kỳ quan trọng để xác thực trong Private Subnet)
+# STS Endpoint (Critical for authentication in Private Subnets)
 resource "aws_vpc_endpoint" "sts" {
   vpc_id              = aws_vpc.main.id
   service_name        = var.sts_endpoint_service_name
@@ -240,7 +239,7 @@ resource "aws_vpc_endpoint" "sts" {
   tags = { Name = "sts-endpoint" }
 }
 
-# CloudWatch Logs Endpoint (Để gửi log về CloudWatch)
+# CloudWatch Logs Endpoint (To send logs to CloudWatch)
 resource "aws_vpc_endpoint" "logs" {
   vpc_id              = aws_vpc.main.id
   service_name        = var.logs_endpoint_service_name
@@ -597,21 +596,21 @@ resource "aws_launch_template" "backend" {
     #!/bin/bash
     set -ex
 
-    # Biến môi trường
+    # Environment variables
     REGION="${var.aws_region}"
     ECR_URL="${aws_ecr_repository.backend.repository_url}"
     TARGET_DIR="/home/ubuntu/app"
     mkdir -p $TARGET_DIR
 
-    # Login ECR & Pull Image
-    # Sử dụng cách tách URL ECR an toàn hơn
+    # ECR Login & Image Pull
+    # Use a safer way to extract ECR URL fragments
     ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
     aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-    # Lấy env từ SSM
+    # Retrieve env from SSM
     aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
 
-    # Chạy Container
+    # Run Container
     IMAGE="$ECR_URL:${var.backend_image_tag}"
     docker pull $IMAGE
     docker stop aws-fcj-backend || true
