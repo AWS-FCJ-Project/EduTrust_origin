@@ -180,7 +180,7 @@ resource "aws_route_table_association" "private_1c" {
   }
 
   tags = { Name = "vpc-endpoint-sg" }
-}
+
 
 # S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
