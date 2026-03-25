@@ -1,4 +1,5 @@
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.toolsets import FunctionToolset
 from src.logger import console, log_agent_response, log_delegation
 from src.schemas.unified_agent_schema import MainAgentDeps
 from src.search_services.unified_search import UnifiedSearch
@@ -23,9 +24,14 @@ class AgentTools:
         Provide clear instructions on what needs to be found, researched, or extracted.
         """
         log_delegation("MainAgent", "Web Search", instruction)
-        result = await self._search_service.search(ctx, query=instruction)
-        log_agent_response("Web Search Agent", result)
-        return result
+        search_toolset = FunctionToolset(tools=self._search_service.get_search_tools())
+        result = await self._sub_agents["web_search"].run(
+            f"{get_current_datetime()}\n\nSearch: {instruction}",
+            usage=ctx.usage,
+            toolsets=[search_toolset],
+        )
+        log_agent_response("Web Search Agent", result.output)
+        return result.output
 
     def planning(self, ctx: RunContext[MainAgentDeps], plan: str) -> str:
         """Create a deeply sequential plan before executing any other tools. Mandatory first step."""
