@@ -54,10 +54,8 @@ class UnifiedAgent:
 
         search_service = UnifiedSearch(tavily_api_key=app_config.TAVILY_API_KEY)
         tools = AgentTools(sub_agents=self._sub_agents, search_service=search_service)
-        main_agent.tool(tools.delegate_math)
-        main_agent.tool(tools.delegate_physics)
-        main_agent.tool(tools.delegate_literature)
-        main_agent.tool(tools.delegate_quiz)
+        main_agent.tool(tools.delegate_technical)
+        main_agent.tool(tools.delegate_social)
         main_agent.tool(tools.delegate_general)
         main_agent.tool(tools.web_search)
         main_agent.tool(tools.planning)
@@ -69,30 +67,20 @@ class UnifiedAgent:
         agent_model = self._llm.init_chat_model(sub_agent_model_name)
         agents_config = self._agents_config
         return {
-            "math": Agent(
+            "general": Agent(
                 agent_model,
-                name="math_agent",
-                instructions=agents_config["math_agent"]["backstory"],
+                name="general_agent",
+                instructions=agents_config["general_agent"]["backstory"],
             ),
-            "physics": Agent(
+            "technical": Agent(
                 agent_model,
-                name="physics_agent",
-                instructions=agents_config["physics_chemistry_agent"]["backstory"],
+                name="technical_agent",
+                instructions=agents_config["technical_agent"]["backstory"],
             ),
-            "literature": Agent(
+            "social": Agent(
                 agent_model,
-                name="literature_agent",
-                instructions=agents_config["literature_history_agent"]["backstory"],
-            ),
-            "quiz": Agent(
-                agent_model,
-                name="quiz_agent",
-                instructions=agents_config["question_generator_ai"]["backstory"],
-            ),
-            "general_chat": Agent(
-                agent_model,
-                name="general_chat_agent",
-                instructions=agents_config["general_chat_agent"]["backstory"],
+                name="social_agent",
+                instructions=agents_config["social_agent"]["backstory"],
             ),
             "web_search": Agent(
                 agent_model,

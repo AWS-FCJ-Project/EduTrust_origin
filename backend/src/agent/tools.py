@@ -38,44 +38,26 @@ class AgentTools:
         console.print(f"[bold cyan]Plan:[/bold cyan] {plan}")
         return "Plan acknowledged. Now proceed with the delegation tool."
 
-    async def delegate_math(self, ctx: RunContext[MainAgentDeps], question: str) -> str:
-        """Get math answer."""
-        log_delegation("MainAgent", "Math", question)
-        result = await self._sub_agents["math"].run(
-            f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
-        )
-        log_agent_response("Math Agent", result.output)
-        return result.output
-
-    async def delegate_physics(
+    async def delegate_technical(
         self, ctx: RunContext[MainAgentDeps], question: str
     ) -> str:
-        """Get physics answer."""
-        log_delegation("MainAgent", "Physics", question)
-        result = await self._sub_agents["physics"].run(
+        """Math, Physics, Chemistry, Engineering questions."""
+        log_delegation("MainAgent", "Technical", question)
+        result = await self._sub_agents["technical"].run(
             f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
         )
-        log_agent_response("Physics Agent", result.output)
+        log_agent_response("Technical Agent", result.output)
         return result.output
 
-    async def delegate_literature(
+    async def delegate_social(
         self, ctx: RunContext[MainAgentDeps], question: str
     ) -> str:
-        """Get literature answer."""
-        log_delegation("MainAgent", "Literature", question)
-        result = await self._sub_agents["literature"].run(
+        """Literature, History, Social Sciences, Quiz questions."""
+        log_delegation("MainAgent", "Social", question)
+        result = await self._sub_agents["social"].run(
             f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
         )
-        log_agent_response("Literature Agent", result.output)
-        return result.output
-
-    async def delegate_quiz(self, ctx: RunContext[MainAgentDeps], topic: str) -> str:
-        """Get quiz questions."""
-        log_delegation("MainAgent", "Quiz Generator", topic)
-        result = await self._sub_agents["quiz"].run(
-            f"Generate quiz questions about: {topic}", usage=ctx.usage
-        )
-        log_agent_response("Quiz Agent", result.output)
+        log_agent_response("Social Agent", result.output)
         return result.output
 
     async def delegate_general(
@@ -83,8 +65,8 @@ class AgentTools:
     ) -> str:
         """General Q&A. Use when no specialist tool fits."""
         log_delegation("MainAgent", "General Chat", question)
-        result = await self._sub_agents["general_chat"].run(
+        result = await self._sub_agents["general"].run(
             f"{get_current_datetime()}\n\nQuestion: {question}", usage=ctx.usage
         )
-        log_agent_response("General Chat Agent", result.output)
+        log_agent_response("General Agent", result.output)
         return result.output
