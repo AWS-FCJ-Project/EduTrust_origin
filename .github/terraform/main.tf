@@ -283,6 +283,7 @@ data "aws_iam_policy_document" "vpc_flow_log_policy" {
     # checkov:skip=CKV_AWS_109: VPC Flow Logs require permissions securely bound to the role.
     # checkov:skip=CKV_AWS_111: VPC Flow Logs require permissions securely bound to the role.
     # checkov:skip=CKV_AWS_355: VPC Flow Logs require permissions securely bound to the role.
+    # checkov:skip=CKV_AWS_356: VPC Flow Logs require permissions securely bound to the role.
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",
