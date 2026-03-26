@@ -197,6 +197,22 @@ jobs:
           esac
           echo "ecr_tag_immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
 
+      - name: Bootstrap Terraform Backend (S3 Native Locking)
+        run: |
+          chmod +x bootstrap.sh
+          ./bootstrap.sh
+
+      - name: Verify S3 Backend is Accessible
+        run: |
+          echo "🔍 Verifying S3 backend bucket is fully accessible..."
+          aws s3api wait bucket-exists \
+            --bucket "aws-fcj-terraform-641458060045" \
+            --region "ap-southeast-1"
+          aws s3api head-bucket \
+            --bucket "aws-fcj-terraform-641458060045" \
+            --region "ap-southeast-1"
+          echo "✅ S3 bucket confirmed accessible. Proceeding to terraform init."
+
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
