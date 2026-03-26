@@ -50,6 +50,19 @@ jobs:
           chmod +x bootstrap.sh
           ./bootstrap.sh
 
+      - name: Verify S3 Backend is Accessible
+        env:
+          TF_BUCKET: "aws-fcj-terraform-641458060045"
+          TF_REGION: "ap-southeast-1"
+        run: |
+          echo "🔍 Verifying S3 backend bucket is fully accessible..."
+          aws s3api wait bucket-exists \
+            --bucket "$TF_BUCKET" \
+            --region "$TF_REGION"
+          # Extra check: confirm we can actually LIST the bucket (not just that it exists)
+          aws s3api head-bucket --bucket "$TF_BUCKET" --region "$TF_REGION"
+          echo "✅ S3 bucket confirmed accessible. Proceeding to terraform init."
+
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
