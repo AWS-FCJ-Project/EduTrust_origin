@@ -263,6 +263,7 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
 }
 
 resource "aws_cloudwatch_log_group" "container_logs" {
+  # checkov:skip=CKV_AWS_338: 14 days retention is sufficient for this project.
   name              = "/edutrust/container-logs"
   retention_in_days = 14
   kms_key_id        = aws_kms_key.secrets.arn
