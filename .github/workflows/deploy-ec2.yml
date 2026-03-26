@@ -381,8 +381,7 @@ jobs:
           fi
 
           echo "Starting new instance refresh for ASG: $ASG_NAME"
-          START_TIME=$(date +%s)
-          TIMEOUT=900
+          # TIMEOUT removed as requested
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
             --auto-scaling-group-name "$ASG_NAME" \
             --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}' \
@@ -390,11 +389,6 @@ jobs:
             --output text)
           echo "Instance Refresh ID: $REFRESH_ID"
           while true; do
-            ELAPSED=$(( $(date +%s) - START_TIME ))
-            if [ $ELAPSED -gt $TIMEOUT ]; then
-              echo "Deployment timed out after ${TIMEOUT}s!"
-              exit 1
-            fi
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
               --instance-refresh-ids "$REFRESH_ID" \
