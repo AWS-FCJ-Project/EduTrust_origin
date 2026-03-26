@@ -37,6 +37,15 @@ class AppConfig(BaseSettings):
     # OTP Settings
     OTP_EXPIRE_SECONDS: Optional[int] = None
 
+    # Redis Settings
+    REDIS_CLIENT_HOST: Optional[str] = None
+    REDIS_CLIENT_PASSWORD: Optional[str] = None
+    REDIS_PORT: Optional[int] = None
+    REDIS_DB: Optional[int] = None
+    REDIS_TLS: Optional[bool] = False
+    REDIS_KEY_PREFIX: Optional[str] = None
+    REDIS_CHAT_TTL: Optional[int] = None
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
