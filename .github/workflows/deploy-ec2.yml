@@ -50,28 +50,39 @@ jobs:
       - name: Run Packer Build
         working-directory: .github/packer
         run: |
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=my-backend-vpc" --query "Vpcs[0].VpcId" --output text)
-          SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=public-subnet-01" --query "Subnets[0].SubnetId" --output text)
+          # 1. Compute Hash and Check for existing AMI
+          PACKER_HASH=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')
+          echo "Computed Packer Hash: $PACKER_HASH"
+          
+          EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
+          
+          FORCE_BUILD="${{ github.event.inputs.build_ami }}"
+          if [ "$FORCE_BUILD" != "true" ] && [ "$EXISTING_AMI" != "None" ] && [ -n "$EXISTING_AMI" ]; then
+            echo "AMI with exact config match $PACKER_HASH exists ($EXISTING_AMI). Skipping delete and build."
+            exit 0
+          fi
+
+          # 2. Create Temporary Networking for Packer
+          echo "Creating temporary Networking for Packer build..."
+          VPC_ID=$(aws ec2 create-vpc --cidr-block 10.99.0.0/16 --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=PackerTempVPC}]' --query Vpc.VpcId --output text)
+          echo "VPC_ID=$VPC_ID" >> "$GITHUB_ENV"
+          
+          IGW_ID=$(aws ec2 create-internet-gateway --tag-specifications 'ResourceType=internet-gateway,Tags=[{Key=Name,Value=PackerTempIGW}]' --query InternetGateway.InternetGatewayId --output text)
+          echo "IGW_ID=$IGW_ID" >> "$GITHUB_ENV"
+          aws ec2 attach-internet-gateway --vpc-id "$VPC_ID" --internet-gateway-id "$IGW_ID"
+          
+          SUBNET_ID=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.99.1.0/24 --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=PackerTempSubnet}]' --query Subnet.SubnetId --output text)
+          echo "SUBNET_ID=$SUBNET_ID" >> "$GITHUB_ENV"
+          aws ec2 modify-subnet-attribute --subnet-id "$SUBNET_ID" --map-public-ip-on-launch
+          
+          RTB_ID=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query "RouteTables[0].RouteTableId" --output text)
+          aws ec2 create-route --route-table-id "$RTB_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" >/dev/null
           
           echo "Found VPC_ID: $VPC_ID"
           echo "Found SUBNET_ID: $SUBNET_ID"
           
-          # Hash config file
-          PACKER_HASH=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')
-          echo "Computed Packer Hash: $PACKER_HASH"
-          
-          # Check for existing AMI
-          EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
-          
-          FORCE_BUILD="${{ github.event.inputs.build_ami }}"
-          if [ "$FORCE_BUILD" == "true" ]; then
-            echo "Force build requested via workflow input. Bypassing exact match check."
-          elif [ "$EXISTING_AMI" != "None" ] && [ -n "$EXISTING_AMI" ]; then
-            echo "AMI with exact config match $PACKER_HASH exists ($EXISTING_AMI). Skipping delete and build."
-            exit 0
-          fi
-          
-          echo "No matched AMI found. Deregistering old versions of EduTrust-Base-AMI..."
+          # 3. Deregister old versions of EduTrust-Base-AMI (to avoid name collision)
+          echo "Deregistering old versions of EduTrust-Base-AMI..."
           OLD_AMIS_JSON=$(aws ec2 describe-images --owners self --filters "Name=tag:Name,Values=EduTrust-Base-AMI" --query "Images[*].[ImageId,BlockDeviceMappings[*].Ebs.SnapshotId]" --output json || echo "[]")
           
           if [ "$OLD_AMIS_JSON" != "[]" ] && [ -n "$OLD_AMIS_JSON" ]; then
@@ -92,8 +103,21 @@ jobs:
             done
           fi
           
+          # 4. Build new AMI
           echo "Building new AMI with hash: $PACKER_HASH"
           packer build -var "vpc_id=$VPC_ID" -var "subnet_id=$SUBNET_ID" -var "packer_hash=$PACKER_HASH" base-ami.pkr.hcl
+
+      - name: Cleanup Packer Build Network
+        if: always() && env.VPC_ID != ''
+        run: |
+          echo "Cleaning up temporary VPC resources..."
+          # Cleanup in reverse order of creation
+          # Wait a few seconds for Packer-provisioned SG to be fully cleared by AWS
+          sleep 10
+          aws ec2 delete-subnet --subnet-id "$SUBNET_ID" || true
+          aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" || true
+          aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" || true
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" || true
 
 
   terraform:
