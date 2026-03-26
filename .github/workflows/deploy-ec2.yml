@@ -142,6 +142,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-${{ hashFiles('.github/terraform/*.tf') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -150,6 +158,8 @@ jobs:
 
       - name: Write terraform.tfvars from secret
         working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
       - name: Read ECR tag immutability (ecr_tag_immutable)
@@ -283,6 +293,9 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -290,6 +303,8 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: Deploy to ASG (Rolling Update)
@@ -332,10 +347,19 @@ jobs:
           terraform_version: "1.14.6"
           terraform_wrapper: false
 
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-${{ hashFiles('.github/terraform/*.tf') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
       - name: Update Launch Template with new tag
         working-directory: ${{ env.TF_DIR }}
         env:
           TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
+          TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
