@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-deploy-main
+  group: terraform-state-lock
   cancel-in-progress: false
 
 env:
@@ -34,7 +34,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.10.0"
+          terraform_version: "1.14.6"
           terraform_wrapper: false
 
       - name: Terraform Format Check
