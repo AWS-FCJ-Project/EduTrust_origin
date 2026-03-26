@@ -28,7 +28,7 @@ jobs:
   packer:
     name: Build Base AMI (Packer)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_ami == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,7 +63,10 @@ jobs:
           # Check for existing AMI
           EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
           
-          if [ "$EXISTING_AMI" != "None" ] && [ -n "$EXISTING_AMI" ]; then
+          FORCE_BUILD="${{ github.event.inputs.build_ami }}"
+          if [ "$FORCE_BUILD" == "true" ]; then
+            echo "Force build requested via workflow input. Bypassing exact match check."
+          elif [ "$EXISTING_AMI" != "None" ] && [ -n "$EXISTING_AMI" ]; then
             echo "AMI with exact config match $PACKER_HASH exists ($EXISTING_AMI). Skipping delete and build."
             exit 0
           fi
@@ -119,6 +122,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.14.6"
+          terraform_wrapper: false
 
       - name: Write terraform.tfvars from secret
         working-directory: ${{ env.TF_DIR }}
@@ -302,6 +306,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.14.6"
+          terraform_wrapper: false
 
       - name: Update Launch Template with new tag
         working-directory: ${{ env.TF_DIR }}

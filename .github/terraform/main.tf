@@ -186,7 +186,7 @@ resource "aws_security_group" "vpc_endpoints" {
 # S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
-  service_name      = var.s3_endpoint_service_name
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
 
@@ -196,7 +196,7 @@ resource "aws_vpc_endpoint" "s3" {
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
-  service_name        = var.ecr_dkr_endpoint_service_name
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -207,7 +207,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
 resource "aws_vpc_endpoint" "ecr_api" {
   vpc_id              = aws_vpc.main.id
-  service_name        = var.ecr_api_endpoint_service_name
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -219,7 +219,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
 # SSM Endpoint (To retrieve internal Parameter Store)
 resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = aws_vpc.main.id
-  service_name        = var.ssm_endpoint_service_name
+  service_name        = "com.amazonaws.${var.aws_region}.ssm"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -231,7 +231,7 @@ resource "aws_vpc_endpoint" "ssm" {
 # STS Endpoint (Critical for authentication in Private Subnets)
 resource "aws_vpc_endpoint" "sts" {
   vpc_id              = aws_vpc.main.id
-  service_name        = var.sts_endpoint_service_name
+  service_name        = "com.amazonaws.${var.aws_region}.sts"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -243,7 +243,7 @@ resource "aws_vpc_endpoint" "sts" {
 # CloudWatch Logs Endpoint (To send logs to CloudWatch)
 resource "aws_vpc_endpoint" "logs" {
   vpc_id              = aws_vpc.main.id
-  service_name        = var.logs_endpoint_service_name
+  service_name        = "com.amazonaws.${var.aws_region}.logs"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -278,8 +278,8 @@ resource "aws_iam_role" "vpc_flow_log" {
 
 data "aws_iam_policy_document" "vpc_flow_log_policy" {
   statement {
-    effect    = "Allow"
-    actions   = [
+    effect = "Allow"
+    actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
@@ -705,7 +705,7 @@ resource "aws_launch_template" "backend" {
 
   user_data = base64encode(<<-EOF
     #!/bin/bash
-    set -ex
+    set -e
 
     # Environment variables
     REGION="${var.aws_region}"
