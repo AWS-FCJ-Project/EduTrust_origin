@@ -2,6 +2,7 @@ from typing import Any, Optional
 
 import pymongo
 from src.app_config import app_config
+from src.memory.conversation_cache import ConversationCache
 
 
 class ConversationHandler:
@@ -12,6 +13,7 @@ class ConversationHandler:
         password: Optional[str] = None,
         db_name: Optional[str] = None,
         collection_name: Optional[str] = "conversations",
+        conversation_cache: Optional[ConversationCache] = None,
     ):
         self.client: Optional[pymongo.MongoClient] = None
         self.db: Optional[pymongo.database.Database] = None
@@ -22,6 +24,7 @@ class ConversationHandler:
         self.password = password or app_config.MONGO_PASSWORD
         self.db_name = db_name or app_config.MONGO_DB_NAME
         self.collection_name = collection_name
+        self._conversation_cache = conversation_cache
 
     def connect_to_database(self):
         try:
@@ -80,14 +83,35 @@ class ConversationHandler:
             upsert=True,
         )
 
+        if self._conversation_cache:
+            self._conversation_cache.invalidate_conversation(conversation_id)
+
     def get_context(self, conversation_id: str, *, k: int = 10) -> list[dict[str, Any]]:
+        if self._conversation_cache and isinstance(k, int) and k > 0:
+            cached = self._conversation_cache.get_conversation(conversation_id)
+            cached_messages = (
+                cached.get("messages") if isinstance(cached, dict) else None
+            )
+            if isinstance(cached_messages, list):
+                return cached_messages[-k:]
+
         collection = self._require_collection()
-        doc = collection.find_one(
-            {"_id": conversation_id}, {"messages": {"$slice": -k}}
-        )
+        projection: dict[str, Any]
+        if isinstance(k, int) and k > 0:
+            projection = {"messages": {"$slice": -k}}
+        else:
+            projection = {"messages": 1}
+
+        doc = collection.find_one({"_id": conversation_id}, projection)
         if not doc:
             return []
-        return list(doc.get("messages", []))
+
+        messages = list(doc.get("messages", []))
+        if self._conversation_cache and isinstance(k, int) and k > 0 and messages:
+            self._conversation_cache.cache_conversation(
+                {"_id": conversation_id, "messages": messages}
+            )
+        return messages
 
     def close(self) -> None:
         if self.client is not None:
@@ -95,3 +119,6 @@ class ConversationHandler:
         self.client = None
         self.db = None
         self.collection = None
+        if self._conversation_cache:
+            self._conversation_cache.close()
+            self._conversation_cache = None
