@@ -262,6 +262,12 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   retention_in_days = 14
 }
 
+resource "aws_cloudwatch_log_group" "container_logs" {
+  name              = "/edutrust/container-logs"
+  retention_in_days = 14
+  kms_key_id        = aws_kms_key.secrets.arn
+}
+
 data "aws_iam_policy_document" "vpc_flow_log_assume_role" {
   statement {
     effect  = "Allow"
@@ -397,6 +403,28 @@ data "aws_iam_policy_document" "kms_secrets_policy" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid    = "AllowCloudWatchLogs"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.aws_region}.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/edutrust/container-logs"]
+    }
+  }
 }
 
 resource "aws_kms_key" "secrets" {
@@ -460,6 +488,24 @@ data "aws_iam_policy_document" "backend_ssm_read" {
       "ecr:BatchGetImage"
     ]
     resources = [aws_ecr_repository.backend.arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:DescribeKey"
+    ]
+    # Allow decrypt for the ECR repository key. 
+    # Since it might be the AWS-managed 'aws/ecr' key, we use "*" or the specific ARN if known.
+    # To be safe and minimal, we allow it for the ECR repo's encryption context if possible, 
+    # but for AWS managed keys, a resource "*" with the specific actions is common.
+    resources = ["*"]
+    condition {
+      test     = "StringLike"
+      variable = "kms:ViaService"
+      values   = ["ecr.${var.aws_region}.amazonaws.com"]
+    }
   }
 }
 
@@ -713,7 +759,10 @@ resource "aws_launch_template" "backend" {
 
   user_data = base64encode(<<-EOF
     #!/bin/bash
-    set -e
+    exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+    set -x
+
+    echo "--- Starting Deployment Script ---"
 
     # Environment variables
     REGION="${var.aws_region}"
@@ -721,17 +770,48 @@ resource "aws_launch_template" "backend" {
     TARGET_DIR="/home/ubuntu/app"
     mkdir -p $TARGET_DIR
 
-    # ECR Login & Image Pull
-    # Use a safer way to extract ECR URL fragments
+    # ECR Login
+    echo "Logging in to ECR..."
     ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+    MAX_RETRIES=5
+    RETRY_COUNT=0
+    until aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY; do
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "Failed to login to ECR after $MAX_RETRIES attempts."
+        exit 1
+      fi
+      echo "ECR login failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+      sleep 10
+    done
 
     # Retrieve env from SSM
+    echo "Retrieving environment variables from SSM..."
     aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
 
-    # Run Container
+    # Pull Image with Retry
     IMAGE="$ECR_URL:${var.backend_image_tag}"
-    docker pull $IMAGE
+    echo "Pulling image: $IMAGE"
+    RETRY_COUNT=0
+    until docker pull $IMAGE; do
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "Failed to pull image $IMAGE after $MAX_RETRIES attempts."
+        exit 1
+      fi
+      echo "Docker pull failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+      sleep 10
+    done
+
+    # Validate image exists locally
+    if [[ "$(docker images -q $IMAGE 2> /dev/null)" == "" ]]; then
+      echo "Error: Image $IMAGE not found after pull!"
+      exit 1
+    fi
+    echo "Image pulled successfully."
+
+    # Run Container
+    echo "Starting container..."
     docker stop aws-fcj-backend || true
     docker rm aws-fcj-backend || true
     docker run -d --name aws-fcj-backend \
@@ -740,16 +820,37 @@ resource "aws_launch_template" "backend" {
       --env-file $TARGET_DIR/.env \
       $IMAGE
 
+    # Check if container is actually running
+    sleep 5
+    if [ "$(docker ps -q -f name=aws-fcj-backend)" ]; then
+      echo "Success: Container aws-fcj-backend is running."
+    else
+      echo "Error: Container failed to start. Checking logs..."
+      docker logs aws-fcj-backend || true
+      exit 1
+    fi
+
     # CloudWatch Agent Configuration
     mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
     cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
 {
   "metrics": {
-    "namespace": "EduTrust/Container",
+    "namespace": "EduTrust/Core",
     "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_active"],
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent"]
+      },
+      "disk": {
+        "resources": ["/"],
+        "measurement": ["disk_used_percent"]
+      },
       "net": {
         "resources": ["docker*"],
-        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"]
+        "measurement": ["bytes_recv", "bytes_sent"]
       }
     }
   },
@@ -759,7 +860,7 @@ resource "aws_launch_template" "backend" {
         "collect_list": [
           {
             "file_path": "/var/lib/docker/containers/*/*.log",
-            "log_group_name": "/edutrust/container-logs",
+            "log_group_name": "${aws_cloudwatch_log_group.container_logs.name}",
             "log_stream_name": "{instance_id}"
           }
         ]
@@ -822,6 +923,7 @@ resource "aws_ecr_repository" "backend" {
 
   encryption_configuration {
     encryption_type = "KMS"
+    kms_key         = aws_kms_key.secrets.arn
   }
 
   image_scanning_configuration {

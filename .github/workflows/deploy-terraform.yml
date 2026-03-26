@@ -45,6 +45,11 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
 
+      - name: Bootstrap Terraform Backend (S3 Native Locking)
+        run: |
+          chmod +x bootstrap.sh
+          ./bootstrap.sh
+
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
@@ -61,5 +66,3 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve tfplan
-
-      
