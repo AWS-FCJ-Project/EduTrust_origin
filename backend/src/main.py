@@ -8,6 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from src import state
 from src.app_config import app_config
+from src.database import refresh_tokens_collection
 from src.extensions import limiter
 from src.memory.conversation_handler import ConversationHandler
 from src.routers import translate_routes, unified_agent_routes
@@ -26,6 +27,11 @@ logfire.instrument_pydantic_ai()
 async def lifespan(app: FastAPI):
     state.conversation_handler = ConversationHandler()
     state.conversation_handler.connect_to_database()
+
+    await refresh_tokens_collection.create_index("hashed_token", unique=True)
+    await refresh_tokens_collection.create_index("email")
+    await refresh_tokens_collection.create_index("expires_at", expireAfterSeconds=0)
+
     yield
     if state.conversation_handler:
         state.conversation_handler.close()

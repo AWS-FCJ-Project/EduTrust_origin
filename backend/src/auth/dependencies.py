@@ -7,11 +7,12 @@ security = HTTPBearer()
 
 async def get_current_user(auth: HTTPAuthorizationCredentials = Depends(security)):
     token = auth.credentials
-    payload = decode_token(token)
-    if payload is None:
+    try:
+        payload = decode_token(token)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
     email: str = payload.get("sub")
