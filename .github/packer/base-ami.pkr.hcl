@@ -19,6 +19,11 @@ variable "subnet_id" {
   type    = string
 }
 
+variable "packer_hash" {
+  type    = string
+  default = "unknown"
+}
+
 source "amazon-ebs" "ubuntu" {
   ami_name      = "edutrust-base-ami-{{timestamp}}"
   instance_type = "t3.micro"
@@ -40,8 +45,9 @@ source "amazon-ebs" "ubuntu" {
   }
 
   tags = {
-    Name = "EduTrust-Base-AMI"
-    OS   = "Ubuntu 24.04"
+    Name       = "EduTrust-Base-AMI"
+    OS         = "Ubuntu 24.04"
+    PackerHash = var.packer_hash
   }
 }
 
@@ -70,6 +76,11 @@ build {
       "sudo ./aws/install",
       "rm -rf awscliv2.zip aws/",
       
+      "echo 'Installing CloudWatch Agent...'",
+      "wget https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb",
+      "sudo dpkg -i -E ./amazon-cloudwatch-agent.deb",
+      "rm amazon-cloudwatch-agent.deb",
+
       "echo 'Cleaning up cloud-init state so user_data runs on next boot...'",
       "sudo cloud-init clean --logs --seed",
       "sudo rm -rf /var/lib/cloud/instances/*"

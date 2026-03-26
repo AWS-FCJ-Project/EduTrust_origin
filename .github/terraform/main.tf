@@ -254,6 +254,56 @@ resource "aws_vpc_endpoint" "logs" {
 
 # --- End Network Configuration ---
 
+# --- Monitoring: VPC Flow Logs ---
+resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  name              = "/edutrust/vpc-flow-logs"
+  retention_in_days = 14
+}
+
+data "aws_iam_policy_document" "vpc_flow_log_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_log" {
+  name               = "${var.ec2_instance_name}-vpc-flow-log-role"
+  assume_role_policy = data.aws_iam_policy_document.vpc_flow_log_assume_role.json
+}
+
+data "aws_iam_policy_document" "vpc_flow_log_policy" {
+  statement {
+    effect    = "Allow"
+    actions   = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow_log" {
+  name   = "${var.ec2_instance_name}-vpc-flow-log-policy"
+  role   = aws_iam_role.vpc_flow_log.id
+  policy = data.aws_iam_policy_document.vpc_flow_log_policy.json
+}
+
+resource "aws_flow_log" "main" {
+  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.main.id
+  iam_role_arn         = aws_iam_role.vpc_flow_log.arn
+}
+
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
     effect  = "Allow"
@@ -274,6 +324,11 @@ resource "aws_iam_role" "backend" {
 resource "aws_iam_role_policy_attachment" "backend_ssm" {
   role       = aws_iam_role.backend.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "backend_cw_agent" {
+  role       = aws_iam_role.backend.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_iam_instance_profile" "backend" {
@@ -409,6 +464,53 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
 }
 
 # --- Load Balancer Configuration ---
+
+# --- Monitoring: ALB Access Logs ---
+data "aws_elb_service_account" "main" {}
+
+resource "aws_s3_bucket" "alb_logs" {
+  # checkov:skip=CKV_AWS_18: ALB Access logs don't need access logging themselves.
+  # checkov:skip=CKV_AWS_21: Versioning not critical for ALB logs.
+  # checkov:skip=CKV_AWS_144: Cross region replication not required.
+  # checkov:skip=CKV_AWS_145: KMS encryption is not recommended for ALB logs bucket.
+  bucket        = "${var.ec2_instance_name}-alb-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/alb/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = data.aws_iam_policy_document.alb_logs.json
+}
+
 resource "aws_security_group" "alb" {
   name        = "${var.ec2_instance_name}-alb-sg"
   description = "Security group for ALB"
@@ -454,6 +556,14 @@ resource "aws_lb" "main" {
   drop_invalid_header_fields = true
 
   enable_deletion_protection = false
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = "alb"
+    enabled = true
+  }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 
   tags = {
     Name = "${var.ec2_instance_name}-alb"
@@ -621,6 +731,36 @@ resource "aws_launch_template" "backend" {
       -p ${var.backend_port}:${var.backend_port} \
       --env-file $TARGET_DIR/.env \
       $IMAGE
+
+    # CloudWatch Agent Configuration
+    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+{
+  "metrics": {
+    "namespace": "EduTrust/Container",
+    "metrics_collected": {
+      "net": {
+        "resources": ["docker*"],
+        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"]
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/lib/docker/containers/*/*.log",
+            "log_group_name": "/edutrust/container-logs",
+            "log_stream_name": "{instance_id}"
+          }
+        ]
+      }
+    }
+  }
+}
+CW_EOF
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
   EOF
   )
 

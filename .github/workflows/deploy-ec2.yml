@@ -56,7 +56,42 @@ jobs:
           echo "Found VPC_ID: $VPC_ID"
           echo "Found SUBNET_ID: $SUBNET_ID"
           
-          packer build -var "vpc_id=$VPC_ID" -var "subnet_id=$SUBNET_ID" base-ami.pkr.hcl
+          # Hash config file
+          PACKER_HASH=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')
+          echo "Computed Packer Hash: $PACKER_HASH"
+          
+          # Check for existing AMI
+          EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
+          
+          if [ "$EXISTING_AMI" != "None" ] && [ -n "$EXISTING_AMI" ]; then
+            echo "AMI with exact config match $PACKER_HASH exists ($EXISTING_AMI). Skipping delete and build."
+            exit 0
+          fi
+          
+          echo "No matched AMI found. Deregistering old versions of EduTrust-Base-AMI..."
+          OLD_AMIS_JSON=$(aws ec2 describe-images --owners self --filters "Name=tag:Name,Values=EduTrust-Base-AMI" --query "Images[*].[ImageId,BlockDeviceMappings[*].Ebs.SnapshotId]" --output json || echo "[]")
+          
+          if [ "$OLD_AMIS_JSON" != "[]" ] && [ -n "$OLD_AMIS_JSON" ]; then
+            IMAGE_IDS=$(echo "$OLD_AMIS_JSON" | jq -r '.[][0]')
+            for ami_id in $IMAGE_IDS; do
+              if [ -n "$ami_id" ] && [ "$ami_id" != "null" ]; then
+                echo "Deregistering old AMI: $ami_id"
+                aws ec2 deregister-image --image-id "$ami_id" || true
+              fi
+            done
+            
+            SNAPSHOT_IDS=$(echo "$OLD_AMIS_JSON" | jq -r '.[][1][]')
+            for snap_id in $SNAPSHOT_IDS; do
+              if [ -n "$snap_id" ] && [ "$snap_id" != "null" ]; then
+                echo "Deleting old snapshot: $snap_id"
+                aws ec2 delete-snapshot --snapshot-id "$snap_id" || true
+              fi
+            done
+          fi
+          
+          echo "Building new AMI with hash: $PACKER_HASH"
+          packer build -var "vpc_id=$VPC_ID" -var "subnet_id=$SUBNET_ID" -var "packer_hash=$PACKER_HASH" base-ami.pkr.hcl
+
 
   terraform:
     name: Provision/Update EC2 (Terraform apply)
