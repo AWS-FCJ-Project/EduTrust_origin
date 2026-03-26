@@ -164,7 +164,151 @@ resource "aws_route_table_association" "private_1c" {
   route_table_id = aws_route_table.private_1c.id
 }
 
+# --- VPC Endpoints ---
+
+# Security Group for VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.ec2_instance_name}-vpce-sg"
+  description = "Security group for VPC Endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "HTTPS from Backend EC2"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend.id] # Allow from Backend EC2
+  }
+
+  tags = { Name = "vpc-endpoint-sg" }
+}
+
+# S3 Gateway Endpoint (Free and critical for ECR)
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "s3-endpoint" }
+}
+
+# ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ecr-dkr-endpoint" }
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ecr-api-endpoint" }
+}
+
+# SSM Endpoint (To retrieve internal Parameter Store)
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "ssm-endpoint" }
+}
+
+# STS Endpoint (Critical for authentication in Private Subnets)
+resource "aws_vpc_endpoint" "sts" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.sts"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "sts-endpoint" }
+}
+
+# CloudWatch Logs Endpoint (To send logs to CloudWatch)
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = { Name = "logs-endpoint" }
+}
+
 # --- End Network Configuration ---
+
+# --- Monitoring: VPC Flow Logs ---
+resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  # checkov:skip=CKV_AWS_158: KMS encryption is not strictly required for VPC flow logs in this demo/project.
+  # checkov:skip=CKV_AWS_338: 14 days retention is sufficient for this project.
+  name              = "/edutrust/vpc-flow-logs"
+  retention_in_days = 14
+}
+
+data "aws_iam_policy_document" "vpc_flow_log_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_log" {
+  name               = "${var.ec2_instance_name}-vpc-flow-log-role"
+  assume_role_policy = data.aws_iam_policy_document.vpc_flow_log_assume_role.json
+}
+
+data "aws_iam_policy_document" "vpc_flow_log_policy" {
+  statement {
+    # checkov:skip=CKV_AWS_109: VPC Flow Logs require permissions securely bound to the role.
+    # checkov:skip=CKV_AWS_111: VPC Flow Logs require permissions securely bound to the role.
+    # checkov:skip=CKV_AWS_355: VPC Flow Logs require permissions securely bound to the role.
+    # checkov:skip=CKV_AWS_356: VPC Flow Logs require permissions securely bound to the role.
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow_log" {
+  name   = "${var.ec2_instance_name}-vpc-flow-log-policy"
+  role   = aws_iam_role.vpc_flow_log.id
+  policy = data.aws_iam_policy_document.vpc_flow_log_policy.json
+}
+
+resource "aws_flow_log" "main" {
+  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.main.id
+  iam_role_arn         = aws_iam_role.vpc_flow_log.arn
+}
 
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
@@ -188,12 +332,193 @@ resource "aws_iam_role_policy_attachment" "backend_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "backend_cw_agent" {
+  role       = aws_iam_role.backend.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 resource "aws_iam_instance_profile" "backend" {
   name = "${var.ec2_instance_name}-instance-profile"
   role = aws_iam_role.backend.name
 }
 
+# --- Encryption ---
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_policy_document" "kms_secrets_policy" {
+  # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_356:KMS key policy requires resources=["*"] which means "this key" in context. Cannot use specific ARN (circular reference).
+
+  # Allow root account administrative access to prevent key lockout
+  statement {
+    sid    = "AllowRootAdminAccess"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+    ]
+    resources = ["*"]
+  }
+
+  # Allow the backend EC2 role to use the key for encrypt/decrypt only
+  statement {
+    sid    = "AllowBackendRoleUsage"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.backend.arn]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_kms_key" "secrets" {
+  description             = "KMS key for encrypting SSM parameters and other secrets"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.kms_secrets_policy.json
+
+  tags = {
+    Name = "${var.ec2_instance_name}-secrets-key"
+  }
+}
+
+resource "aws_kms_alias" "secrets" {
+  name          = "alias/${var.ec2_instance_name}-secrets"
+  target_key_id = aws_kms_key.secrets.key_id
+}
+
+# --- Backend Secrets (SSM Parameter) ---
+resource "aws_ssm_parameter" "backend_env" {
+  name        = "/edutrust/backend/env"
+  description = "Environment variables for the backend application"
+  type        = "SecureString"
+  key_id      = aws_kms_key.secrets.arn
+  value       = "INITIAL_SETUP=true" # This will be updated by the CI/CD pipeline or manually
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-env-vars"
+  }
+}
+
+data "aws_iam_policy_document" "backend_ssm_read" {
+  statement {
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter"]
+    resources = [aws_ssm_parameter.backend_env.arn]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [aws_kms_key.secrets.arn]
+  }
+
+  statement {
+    # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage"
+    ]
+    resources = [aws_ecr_repository.backend.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "backend_ssm_read" {
+  name   = "${var.ec2_instance_name}-ssm-read-policy"
+  role   = aws_iam_role.backend.id
+  policy = data.aws_iam_policy_document.backend_ssm_read.json
+}
+
 # --- Load Balancer Configuration ---
+
+# --- Monitoring: ALB Access Logs ---
+data "aws_elb_service_account" "main" {}
+
+resource "aws_s3_bucket" "alb_logs" {
+  # checkov:skip=CKV_AWS_18: ALB Access logs don't need access logging themselves.
+  # checkov:skip=CKV_AWS_21: Versioning not critical for ALB logs.
+  # checkov:skip=CKV_AWS_144: Cross region replication not required.
+  # checkov:skip=CKV_AWS_145: KMS encryption is not recommended for ALB logs bucket.
+  # checkov:skip=CKV2_AWS_61: Lifecycle config is not required for this demo application.
+  # checkov:skip=CKV2_AWS_62: Event notifications are not required for this access log bucket.
+  bucket        = "${var.ec2_instance_name}-alb-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/alb/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = data.aws_iam_policy_document.alb_logs.json
+}
+
 resource "aws_security_group" "alb" {
   name        = "${var.ec2_instance_name}-alb-sg"
   description = "Security group for ALB"
@@ -239,6 +564,14 @@ resource "aws_lb" "main" {
   drop_invalid_header_fields = true
 
   enable_deletion_protection = false
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = "alb"
+    enabled = true
+  }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 
   tags = {
     Name = "${var.ec2_instance_name}-alb"
@@ -287,18 +620,6 @@ resource "aws_lb_listener" "https" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
   }
-}
-
-resource "aws_lb_target_group_attachment" "backend_1" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_1.id
-  port             = var.backend_port
-}
-
-resource "aws_lb_target_group_attachment" "backend_2" {
-  target_group_arn = aws_lb_target_group.backend.arn
-  target_id        = aws_instance.backend_2.id
-  port             = var.backend_port
 }
 
 # --- Backend EC2 Security Group ---
@@ -352,43 +673,146 @@ resource "aws_security_group" "backend" {
   }
 }
 
-resource "aws_instance" "backend_1" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
-  vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1a.id
-  ebs_optimized          = true
+data "aws_ami" "base_ami" {
+  most_recent = true
+  owners      = ["self"]
 
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  tags = {
-    Name = "${var.ec2_instance_name}-1"
+  filter {
+    name   = "tag:Name"
+    values = ["EduTrust-Base-AMI"]
   }
 }
 
-resource "aws_instance" "backend_2" {
-  ami                    = var.ec2_ami_id
-  instance_type          = var.ec2_instance_type
-  key_name               = var.ec2_key_name
-  iam_instance_profile   = aws_iam_instance_profile.backend.name
+resource "aws_launch_template" "backend" {
+  name_prefix   = "${var.ec2_instance_name}-lt-"
+  image_id      = data.aws_ami.base_ami.id
+  instance_type = var.ec2_instance_type
+  key_name      = var.ec2_key_name
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.backend.name
+  }
+
   vpc_security_group_ids = [aws_security_group.backend.id]
-  subnet_id              = aws_subnet.private_1c.id
-  ebs_optimized          = true
+
+  ebs_optimized = true
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    ebs {
+      volume_size = 20
+      encrypted   = true
+    }
+  }
 
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
   }
 
-  tags = {
-    Name = "${var.ec2_instance_name}-2"
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    set -e
+
+    # Environment variables
+    REGION="${var.aws_region}"
+    ECR_URL="${aws_ecr_repository.backend.repository_url}"
+    TARGET_DIR="/home/ubuntu/app"
+    mkdir -p $TARGET_DIR
+
+    # ECR Login & Image Pull
+    # Use a safer way to extract ECR URL fragments
+    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+    # Retrieve env from SSM
+    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+
+    # Run Container
+    IMAGE="$ECR_URL:${var.backend_image_tag}"
+    docker pull $IMAGE
+    docker stop aws-fcj-backend || true
+    docker rm aws-fcj-backend || true
+    docker run -d --name aws-fcj-backend \
+      --restart unless-stopped \
+      -p ${var.backend_port}:${var.backend_port} \
+      --env-file $TARGET_DIR/.env \
+      $IMAGE
+
+    # CloudWatch Agent Configuration
+    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+{
+  "metrics": {
+    "namespace": "EduTrust/Container",
+    "metrics_collected": {
+      "net": {
+        "resources": ["docker*"],
+        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"]
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/lib/docker/containers/*/*.log",
+            "log_group_name": "/edutrust/container-logs",
+            "log_stream_name": "{instance_id}"
+          }
+        ]
+      }
+    }
+  }
+}
+CW_EOF
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+  EOF
+  )
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.ec2_instance_name}-asg-node"
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_autoscaling_group" "backend" {
+  name                = "${var.ec2_instance_name}-asg"
+  desired_capacity    = var.asg_desired_capacity
+  max_size            = var.asg_max_size
+  min_size            = var.asg_min_size
+  target_group_arns   = [aws_lb_target_group.backend.arn]
+  vpc_zone_identifier = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+
+  launch_template {
+    id      = aws_launch_template.backend.id
+    version = "$Latest"
+  }
+
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+  wait_for_capacity_timeout = "0"
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+      instance_warmup        = 60
+    }
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.ec2_instance_name}-asg"
+    propagate_at_launch = true
   }
 }
 
