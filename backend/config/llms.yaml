@@ -1,21 +1,22 @@
-orchestrator_model: gpt-4.1-mini
-agent_model: gpt-4.1-mini
+orchestrator_model: gpt-5.4-mini
+agent_model: gpt-5.4-nano
+translate_model: gpt-5.4-nano
 
 model_list:
   - model_name: gpt-4.1-mini
     litellm_params:
       model: openai/gpt-4.1-mini
-      api_base: app_config/LITELLM_BASE_URL
-      api_key: app_config/LITELLM_API_KEY
+      api_base: app_config.LITELLM_BASE_URL
+      api_key: app_config.LITELLM_API_KEY
 
   - model_name: grok-4-fast-reasoning
     litellm_params:
       model: grok-4-fast-reasoning
-      api_base: app_config/LITELLM_BASE_URL
-      api_key: app_config/LITELLM_API_KEY
+      api_base: app_config.LITELLM_BASE_URL
+      api_key: app_config.LITELLM_API_KEY
 
   - model_name: gemini-2.5-flash
     litellm_params:
       model: gemini-2.5-flash
-      api_base: app_config/LITELLM_BASE_URL
-      api_key: app_config/LITELLM_API_KEY
+      api_base: app_config.LITELLM_BASE_URL
+      api_key: app_config.LITELLM_API_KEY

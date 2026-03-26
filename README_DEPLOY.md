@@ -7,6 +7,7 @@ Hệ thống hoạt động theo mô hình **Edge AI + Central Storage**. Đây 
 *   **Tính riêng tư:** Video gốc không bao giờ rời khỏi máy học sinh. Chỉ có ảnh bằng chứng vi phạm mới được gửi đi.
 *   **Khả năng mở rộng:** Máy PC của bạn không phải xử lý AI, nên nó có thể nhận log từ 100 học sinh cùng lúc mà không bị treo máy.
 
+<<<<<<< HEAD
 ### B. Vấn đề "404 Not Found" trước đây và cách giải quyết
 Trong quá trình phát triển, chúng ta đã gặp lỗi `404 Not Found` hoặc `Unexpected token '<'` khi dùng laptop truy cập qua Ngrok.
 
@@ -40,7 +41,7 @@ uv run uvicorn src.main:app --reload
 *Lúc này server sẽ chạy tại cổng **8000**. Nó sẽ tự động phục vụ cả giao diện web từ thư mục `dist` vừa build.*
 
 ### Bước 3: Mở cổng ra Internet (Ngrok)
-Mở một terminal mới (tại bất kỳ đâu):
+Mở một terminal mới (at any directory):
 ```bash
 ngrok http 8000
 ```
