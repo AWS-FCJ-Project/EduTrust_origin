@@ -638,7 +638,7 @@ jobs:
       - name: SSM Verification - Check Container Status (Hard Check)
         run: |
           echo "Fetching instance IDs for ASG: $ASG_NAME"
-          # Get all instance IDs that are currently in the ASG
+          # Get all instance IDs that are currently in the ASG and Healthy
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names "$ASG_NAME" \
             --region "$AWS_REGION" \
@@ -651,18 +651,29 @@ jobs:
           fi
 
           echo "Assessing container health on instances: $INSTANCE_IDS"
-          # We send a command that exits with 1 if the container is not 'Up'
+          
+          # Use a JSON heredoc to avoid quoting hell in the shell/YAML combo
+          cat > ssm_params.json <<EOF
+          {
+            "commands": [
+              "docker ps -f name=aws-fcj-backend --format '{{.Status}}' | grep -q 'Up' || (echo 'CRITICAL: Container not running!' && docker ps -a && echo '--- CLoud Init Logs ---' && tail -n 100 /var/log/cloud-init-output.log && echo '--- User Data Logs ---' && [ -f /var/log/user-data.log ] && tail -n 100 /var/log/user-data.log || true && exit 1)",
+              "echo 'Container is UP and running. Recent app logs:'",
+              "docker logs --tail 50 aws-fcj-backend || true"
+            ]
+          }
+          EOF
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids $INSTANCE_IDS \
             --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["docker ps -f name=aws-fcj-backend --format \"{{.Status}}\" | grep -q \"Up\" || (echo \"CRITICAL: Container aws-fcj-backend is NOT running!\" && docker ps -a && exit 1)", "echo \"Container is UP and running. Recent logs:\", \"docker logs --tail 20 aws-fcj-backend || true\"]' \
+            --parameters file://ssm_params.json \
             --query "Command.CommandId" \
             --output text)
           
           echo "Waiting for SSM command ($COMMAND_ID) to complete across all instances..."
           # Poll for status
-          MAX_RETRIES=12
+          MAX_RETRIES=15
           RETRY_COUNT=0
           FINAL_STATUS="Pending"
           
@@ -680,31 +691,34 @@ jobs:
             fi
             
             RETRY_COUNT=$((RETRY_COUNT + 1))
-            sleep 10
+            sleep 15
           done
 
           # Output detailed results for each instance
           FAIL_DETECTED=0
           for INSTANCE in $INSTANCE_IDS; do
-            echo "--- Result for Instance: $INSTANCE ---"
+            echo "--- Detailed Result for Instance: $INSTANCE ---"
+            # Get the full output (StandardOutputContent and StandardErrorContent)
             RESULTS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE" --region "$AWS_REGION" --query "{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}" --output json)
             STATUS=$(echo "$RESULTS" | jq -r '.Status')
-            echo "Instance Status: $STATUS"
-            echo "Output:"
+            echo "Instance Verification Status: $STATUS"
+            echo "System Output:"
             echo "$RESULTS" | jq -r '.Output'
             
             if [[ "$STATUS" != "Success" ]]; then
-               echo "ERROR: Instance $INSTANCE failed verification! (Error output: $(echo "$RESULTS" | jq -r '.Error'))"
+               echo "ERROR: Instance $INSTANCE failed verification! Error Output Below:"
+               echo "$RESULTS" | jq -r '.Error'
                FAIL_DETECTED=1
             fi
           done
 
           if [ $FAIL_DETECTED -eq 1 ] || [ "$FINAL_STATUS" != "Success" ]; then
-            echo "CRITICAL: SSM Verification failed on one or more instances. Container may not have been pulled or started."
+            echo "CRITICAL: SSM Verification failed on one or more instances. Container is NOT running correctly."
+            echo "Please check the 'System Output' above for errors from cloud-init/dockerd."
             exit 1
           fi
           
-          echo "SSM Verification PASSED: Container is running on all instances."
+          echo "SSM Verification PASSED: Container is running and healthy on all instances."
 
       - name: Smoke Test - Verify Application Health
         working-directory: ${{ env.TF_DIR }}
