@@ -351,6 +351,11 @@ resource "aws_iam_role_policy_attachment" "backend_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "backend_ecr" {
+  role       = aws_iam_role.backend.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_role_policy_attachment" "backend_cw_agent" {
   role       = aws_iam_role.backend.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
@@ -487,37 +492,20 @@ data "aws_iam_policy_document" "backend_ssm_read" {
   }
 
   statement {
-    # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
-    effect    = "Allow"
-    actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage"
-    ]
-    resources = [aws_ecr_repository.backend.arn]
-  }
-
-  statement {
     effect = "Allow"
     actions = [
       "kms:Decrypt",
       "kms:DescribeKey"
     ]
-    # Allow decrypt for the ECR repository key. 
-    # Since it might be the AWS-managed 'aws/ecr' key, we use "*" or the specific ARN if known.
-    # To be safe and minimal, we allow it for the ECR repo's encryption context if possible, 
-    # but for AWS managed keys, a resource "*" with the specific actions is common.
+    # Allow decrypt for the ECR repository key and SSM secrets.
     resources = ["*"]
     condition {
       test     = "StringLike"
       variable = "kms:ViaService"
-      values   = ["ecr.${var.aws_region}.amazonaws.com"]
+      values = [
+        "ecr.${var.aws_region}.amazonaws.com",
+        "ssm.${var.aws_region}.amazonaws.com"
+      ]
     }
   }
 }
