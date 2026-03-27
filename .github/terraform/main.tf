@@ -172,15 +172,31 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC Endpoints"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "HTTPS from Backend EC2"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.backend.id] # Allow from Backend EC2
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = { Name = "vpc-endpoint-sg" }
+}
+
+resource "aws_security_group_rule" "vpce_https_ingress" {
+  description              = "HTTPS from Backend EC2"
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.vpc_endpoints.id
+  source_security_group_id = aws_security_group.backend.id
+}
+
+resource "aws_security_group_rule" "vpce_egress_all" {
+  description       = "Allow all outbound traffic"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  security_group_id = aws_security_group.vpc_endpoints.id
+  cidr_blocks       = ["0.0.0.0/0"]
 }
 
 # S3 Gateway Endpoint (Free and critical for ECR)
