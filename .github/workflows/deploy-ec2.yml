@@ -258,89 +258,88 @@ jobs:
         env:
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
+          # Use a block to simplify logic and handle errors
           set -euo pipefail
           
-          # Extract ec2_instance_name from terraform.tfvars
-          INSTANCE_NAME=""
-          if [ -f terraform.tfvars ]; then
-            INSTANCE_NAME="$(awk -F= '
-              $1 ~ /^[[:space:]]*ec2_instance_name[[:space:]]*$/ {
-                v=$2
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
-                gsub(/\"/, "", v)
-                print v
-                exit
-              }' terraform.tfvars || true)"
-          fi
+          echo "--- Starting dynamic resource import check ---"
+
+          # Use grep/sed for robust variable extraction from terraform.tfvars
+          INSTANCE_NAME=$(grep "^[[:space:]]*ec2_instance_name[[:space:]]*=" terraform.tfvars | sed 's/.*=[[:space:]]*"//;s/".*//' | tr -d '\r' || echo "")
+          
+          # Hardcoded fallback because it matches the user's current environment
           INSTANCE_NAME="${INSTANCE_NAME:-aws-fcj-backend}"
-          echo "Instance name: $INSTANCE_NAME"
+          echo "Using Instance Name for imports: $INSTANCE_NAME"
 
-          # 1. KMS Key and Alias
+          # Get current state to avoid duplicate imports
+          STATE_LIST=$(terraform state list || echo "")
+          
+          # --- 1. KMS Key and Alias ---
           ALIAS_NAME="alias/${INSTANCE_NAME}-secrets"
-          echo "Checking KMS Alias: $ALIAS_NAME"
-          KEY_ID=$(aws kms list-aliases --query "Aliases[?AliasName=='${ALIAS_NAME}'].TargetKeyId" --output text || true)
-          if [ -n "$KEY_ID" ] && [ "$KEY_ID" != "None" ]; then
-            if ! terraform state show aws_kms_key.secrets >/dev/null 2>&1; then
-              echo "Importing KMS Key..."
-              terraform import -var-file=terraform.tfvars -input=false aws_kms_key.secrets "$KEY_ID" || true
+          echo "KMS Alias check for: $ALIAS_NAME"
+          
+          # Check AWS for existence and get KeyId
+          KEY_DATA=$(aws kms describe-key --key-id "$ALIAS_NAME" --region "$AWS_DEFAULT_REGION" --output json || echo "NOT_FOUND")
+          
+          if [ "$KEY_DATA" != "NOT_FOUND" ]; then
+            KEY_ID=$(echo "$KEY_DATA" | jq -r '.KeyMetadata.KeyId')
+            echo "KMS Alias $ALIAS_NAME exists in AWS (Key: $KEY_ID)"
+            
+            # Key Import
+            if ! echo "$STATE_LIST" | grep -q "^aws_kms_key.secrets$"; then
+              echo "Importing KMS Key into Terraform state..."
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_key.secrets "$KEY_ID" || echo "Key import failed (likely already in state or network issue)"
             fi
-            if ! terraform state show aws_kms_alias.secrets >/dev/null 2>&1; then
-              echo "Importing KMS Alias..."
-              terraform import -var-file=terraform.tfvars -input=false aws_kms_alias.secrets "$ALIAS_NAME" || true
+            
+            # Alias Import
+            if ! echo "$STATE_LIST" | grep -q "^aws_kms_alias.secrets$"; then
+              echo "Importing KMS Alias into Terraform state..."
+              # We try to be very explicit here and let it fail if it doesn't work so we can see the error
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_alias.secrets "$ALIAS_NAME"
             fi
+          else
+            echo "KMS Alias $ALIAS_NAME not found in AWS. Skipping import."
           fi
 
-          # 2. SSM Parameter
+          # --- 2. SSM Parameter ---
           SSM_PARAM="/edutrust/backend/env"
-          echo "Checking SSM Parameter: $SSM_PARAM"
-          if aws ssm get-parameter --name "$SSM_PARAM" >/dev/null 2>&1; then
-            if ! terraform state show aws_ssm_parameter.backend_env >/dev/null 2>&1; then
-              echo "Importing SSM Parameter..."
-              terraform import -var-file=terraform.tfvars -input=false aws_ssm_parameter.backend_env "$SSM_PARAM" || true
+          if aws ssm get-parameter --name "$SSM_PARAM" --region "$AWS_DEFAULT_REGION" >/dev/null 2>&1; then
+            if ! echo "$STATE_LIST" | grep -q "^aws_ssm_parameter.backend_env$"; then
+               echo "Importing existing SSM Parameter: $SSM_PARAM"
+               terraform import -var-file=terraform.tfvars -input=false aws_ssm_parameter.backend_env "$SSM_PARAM" || echo "SSM import skipped"
             fi
           fi
 
-          # 3. IAM Roles and Profiles
-          BACKEND_ROLE="${INSTANCE_NAME}-role"
-          echo "Checking IAM Role: $BACKEND_ROLE"
-          if aws iam get-role --role-name "$BACKEND_ROLE" >/dev/null 2>&1; then
-            if ! terraform state show aws_iam_role.backend >/dev/null 2>&1; then
-              echo "Importing Backend IAM Role..."
-              terraform import -var-file=terraform.tfvars -input=false aws_iam_role.backend "$BACKEND_ROLE" || true
+          # --- 3. IAM Roles ---
+          for ROLE_SUFFIX in "role" "vpc-flow-log-role"; do
+            ROLE_NAME="${INSTANCE_NAME}-${ROLE_SUFFIX}"
+            TF_ADDR=$([ "$ROLE_SUFFIX" == "role" ] && echo "aws_iam_role.backend" || echo "aws_iam_role.vpc_flow_log")
+            
+            if aws iam get-role --role-name "$ROLE_NAME" --region "$AWS_DEFAULT_REGION" >/dev/null 2>&1; then
+               if ! echo "$STATE_LIST" | grep -q "^${TF_ADDR}$"; then
+                  echo "Importing IAM Role: $ROLE_NAME"
+                  terraform import -var-file=terraform.tfvars -input=false "$TF_ADDR" "$ROLE_NAME" || true
+               fi
+               
+               # Special handle for instance profile if it's the backend role
+               if [ "$ROLE_SUFFIX" == "role" ] && ! echo "$STATE_LIST" | grep -q "^aws_iam_instance_profile.backend$"; then
+                  echo "Importing Instance Profile..."
+                  terraform import -var-file=terraform.tfvars -input=false aws_iam_instance_profile.backend "${INSTANCE_NAME}-instance-profile" || true
+               fi
             fi
-            if ! terraform state show aws_iam_instance_profile.backend >/dev/null 2>&1; then
-              echo "Importing Backend Instance Profile..."
-              terraform import -var-file=terraform.tfvars -input=false aws_iam_instance_profile.backend "${INSTANCE_NAME}-instance-profile" || true
-            fi
-          fi
+          done
 
-          VPC_FLOW_ROLE="${INSTANCE_NAME}-vpc-flow-log-role"
-          echo "Checking IAM Role: $VPC_FLOW_ROLE"
-          if aws iam get-role --role-name "$VPC_FLOW_ROLE" >/dev/null 2>&1; then
-            if ! terraform state show aws_iam_role.vpc_flow_log >/dev/null 2>&1; then
-              echo "Importing VPC Flow Log IAM Role..."
-              terraform import -var-file=terraform.tfvars -input=false aws_iam_role.vpc_flow_log "$VPC_FLOW_ROLE" || true
-            fi
-          fi
+          # --- 4. Logs ---
+          for LG in "/edutrust/vpc-flow-logs" "/edutrust/container-logs"; do
+             TF_LG=$([ "$LG" == "/edutrust/vpc-flow-logs" ] && echo "aws_cloudwatch_log_group.vpc_flow_logs" || echo "aws_cloudwatch_log_group.container_logs")
+             if aws logs describe-log-groups --log-group-name-prefix "$LG" --region "$AWS_DEFAULT_REGION" --query "logGroups[?logGroupName=='${LG}'].logGroupName" --output text | grep -q "$LG"; then
+                if ! echo "$STATE_LIST" | grep -q "^${TF_LG}$"; then
+                   echo "Importing Log Group: $LG"
+                   terraform import -var-file=terraform.tfvars -input=false "$TF_LG" "$LG" || true
+                fi
+             fi
+          done
 
-          # 4. CloudWatch Log Groups
-          VPC_LOG_GROUP="/edutrust/vpc-flow-logs"
-          echo "Checking Log Group: $VPC_LOG_GROUP"
-          if aws logs describe-log-groups --log-group-name-prefix "$VPC_LOG_GROUP" --query "logGroups[?logGroupName=='${VPC_LOG_GROUP}'].logGroupName" --output text | grep -q "$VPC_LOG_GROUP"; then
-            if ! terraform state show aws_cloudwatch_log_group.vpc_flow_logs >/dev/null 2>&1; then
-              echo "Importing VPC Flow Logs Group..."
-              terraform import -var-file=terraform.tfvars -input=false aws_cloudwatch_log_group.vpc_flow_logs "$VPC_LOG_GROUP" || true
-            fi
-          fi
-
-          CONTAINER_LOG_GROUP="/edutrust/container-logs"
-          echo "Checking Log Group: $CONTAINER_LOG_GROUP"
-          if aws logs describe-log-groups --log-group-name-prefix "$CONTAINER_LOG_GROUP" --query "logGroups[?logGroupName=='${CONTAINER_LOG_GROUP}'].logGroupName" --output text | grep -q "$CONTAINER_LOG_GROUP"; then
-            if ! terraform state show aws_cloudwatch_log_group.container_logs >/dev/null 2>&1; then
-              echo "Importing Container Logs Group..."
-              terraform import -var-file=terraform.tfvars -input=false aws_cloudwatch_log_group.container_logs "$CONTAINER_LOG_GROUP" || true
-            fi
-          fi
+          echo "--- Dynamic resource import check complete ---"
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
