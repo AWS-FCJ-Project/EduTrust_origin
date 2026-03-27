@@ -6,6 +6,8 @@ from src.memory.conversation_cache import ConversationCache
 
 
 class ConversationHandler:
+    """Handler for storing conversations in MongoDB with optional caching."""
+
     def __init__(
         self,
         connection_string: Optional[str] = None,
@@ -15,6 +17,7 @@ class ConversationHandler:
         collection_name: Optional[str] = "conversations",
         conversation_cache: Optional[ConversationCache] = None,
     ):
+        """Initialize with MongoDB config and optional cache."""
         self.client: Optional[pymongo.MongoClient] = None
         self.db: Optional[pymongo.database.Database] = None
         self.collection: Optional[pymongo.collection.Collection] = None
@@ -26,7 +29,8 @@ class ConversationHandler:
         self.collection_name = collection_name
         self._conversation_cache = conversation_cache
 
-    def connect_to_database(self):
+    def connect_to_database(self) -> None:
+        """Connect to MongoDB server."""
         try:
             if self.connection_string.startswith("mongodb://"):
                 self.client = pymongo.MongoClient(
@@ -51,6 +55,7 @@ class ConversationHandler:
             print(f"Error connecting to database: {e}")
 
     def _require_collection(self) -> pymongo.collection.Collection:
+        """Get MongoDB collection, connecting if needed."""
         if self.collection is None:
             self.connect_to_database()
         if self.collection is None:
@@ -66,6 +71,7 @@ class ConversationHandler:
         max_messages: Optional[int] = 200,
         **extra: Any,
     ) -> None:
+        """Append message to conversation, creating it if needed."""
         collection = self._require_collection()
 
         push_value: dict[str, Any] = {
@@ -86,19 +92,22 @@ class ConversationHandler:
         if self._conversation_cache:
             self._conversation_cache.invalidate_conversation(conversation_id)
 
-    def get_context(self, conversation_id: str, *, k: int = 10) -> list[dict[str, Any]]:
-        if self._conversation_cache and isinstance(k, int) and k > 0:
+    def get_context(
+        self, conversation_id: str, *, message_limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Retrieve recent messages from conversation."""
+        if self._conversation_cache and message_limit > 0:
             cached = self._conversation_cache.get_conversation(conversation_id)
             cached_messages = (
                 cached.get("messages") if isinstance(cached, dict) else None
             )
             if isinstance(cached_messages, list):
-                return cached_messages[-k:]
+                return cached_messages[-message_limit:]
 
         collection = self._require_collection()
         projection: dict[str, Any]
-        if isinstance(k, int) and k > 0:
-            projection = {"messages": {"$slice": -k}}
+        if message_limit > 0:
+            projection = {"messages": {"$slice": -message_limit}}
         else:
             projection = {"messages": 1}
 
@@ -107,13 +116,14 @@ class ConversationHandler:
             return []
 
         messages = list(doc.get("messages", []))
-        if self._conversation_cache and isinstance(k, int) and k > 0 and messages:
+        if self._conversation_cache and message_limit > 0 and messages:
             self._conversation_cache.cache_conversation(
                 {"_id": conversation_id, "messages": messages}
             )
         return messages
 
     def close(self) -> None:
+        """Close database and cache connections."""
         if self.client is not None:
             self.client.close()
         self.client = None

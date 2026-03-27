@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class RedisClient:
+    """Client for Redis cache operations."""
+
     def __init__(self):
         self.key_prefix = app_config.REDIS_KEY_PREFIX or "edutrust"
         self.host = app_config.REDIS_CLIENT_HOST or "localhost"
@@ -34,11 +36,13 @@ class RedisClient:
         )
 
     def _ttl_seconds(self) -> Optional[int]:
+        """Get TTL in seconds for cache expiration."""
         if not isinstance(self.chat_ttl, int):
             return None
         return self.chat_ttl if self.chat_ttl > 0 else None
 
     def connect_to_database(self) -> bool:
+        """Connect to Redis server."""
         try:
             ping_result = self.client.ping()
             self._is_connected = True
@@ -51,9 +55,11 @@ class RedisClient:
             return False
 
     def is_healthy(self) -> bool:
+        """Check if Redis is connected."""
         return self._is_connected
 
-    def close_connection(self):
+    def close_connection(self) -> None:
+        """Close Redis connection."""
         try:
             self.client.close()
             self._is_connected = False
@@ -61,6 +67,7 @@ class RedisClient:
             logger.error(f"Error closing Redis: {e}")
 
     def _serialize(self, obj: Any) -> Any:
+        """Recursively serialize objects for JSON storage (handles datetime)."""
         if isinstance(obj, dict):
             return {k: self._serialize(v) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -69,17 +76,19 @@ class RedisClient:
             return obj.isoformat()
         return obj
 
-    def set_json(self, key: str, value: Dict, ex: Optional[int] = None) -> bool:
+    def set_json(self, key: str, value: Dict, expiration: Optional[int] = None) -> bool:
+        """Store dictionary as JSON in Redis."""
         if not self._is_connected:
             return False
         try:
-            self.client.set(key, json.dumps(value, ensure_ascii=False), ex=ex)
+            self.client.set(key, json.dumps(value, ensure_ascii=False), ex=expiration)
             return True
         except Exception as e:
             logger.error(f"Set error: {e}")
             return False
 
     def get_json(self, key: str) -> Optional[Dict]:
+        """Retrieve JSON dictionary from Redis."""
         if not self._is_connected:
             return None
         try:
@@ -90,6 +99,7 @@ class RedisClient:
             return None
 
     def delete(self, key: str) -> bool:
+        """Delete a key from Redis."""
         if not self._is_connected:
             return False
         try:
@@ -99,5 +109,6 @@ class RedisClient:
             return False
 
     def build_key(self, *parts: Any) -> str:
+        """Build namespaced Redis key."""
         normalized_parts = [str(part).strip(":") for part in parts]
         return ":".join([self.key_prefix, *normalized_parts])
