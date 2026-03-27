@@ -1,15 +1,24 @@
 import re
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+class UserRole(str, Enum):
+    student = "student"
+    teacher = "teacher"
+    admin = "admin"
 
 
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
+    name: Optional[str] = None
+    role: UserRole = UserRole.student
 
-    @validator("password")
+    @field_validator("password")
     def validate_password_complexity(cls, v: str) -> str:
         if (
             not re.search(r"[A-Z]", v)
@@ -37,7 +46,7 @@ class ResetPassword(BaseModel):
     otp: str
     new_password: str = Field(..., min_length=8)
 
-    @validator("new_password")
+    @field_validator("new_password")
     def validate_new_password_complexity(cls, v: str) -> str:
         if (
             not re.search(r"[A-Z]", v)
@@ -56,6 +65,8 @@ class UserInDB(BaseModel):
     email: EmailStr
     hashed_password: str
     is_verified: bool = False
+    name: Optional[str] = None
+    role: UserRole = UserRole.student
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
 
@@ -64,11 +75,23 @@ class UserInDB(BaseModel):
         arbitrary_types_allowed = True
 
 
+class UserInfoResponse(BaseModel):
+    id: str
+    email: EmailStr
+    name: Optional[str] = None
+    role: UserRole
+    is_verified: bool = False
+    created_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
+
+
 def user_helper(user) -> dict:
     return {
         "id": str(user["_id"]),
         "email": user["email"],
-        "is_verified": user.get("is_verified"),
+        "name": user.get("name"),
+        "role": user.get("role", UserRole.student.value),
+        "is_verified": bool(user.get("is_verified", False)),
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),
     }
