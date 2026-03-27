@@ -30,6 +30,8 @@ jobs:
     name: Build Base AMI (Packer)
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      packer_hash: ${{ steps.packer_hash.outputs.hash }}
     env:
       VPC_ID: ''
       IGW_ID: ''
@@ -56,17 +58,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Compute Packer Config Hash
+        id: packer_hash
+        working-directory: .github/packer
+        run: echo "hash=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Run Packer Init
         working-directory: .github/packer
         run: packer init .
 
-      - name: Run Packer Build
+      - name: Run Packer Build & Manage Network
         working-directory: .github/packer
         run: |
-          # 1. Compute Hash and Check for existing AMI
-          PACKER_HASH=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')
-          echo "Computed Packer Hash: $PACKER_HASH"
+          set -euo pipefail
+          PACKER_HASH="${{ steps.packer_hash.outputs.hash }}"
           
+          # 1. Check for existing AMI
+          echo "Checking for existing AMI with hash: $PACKER_HASH"
           EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
           
           FORCE_BUILD="${{ github.event.inputs.build_ami }}"
@@ -91,8 +99,7 @@ jobs:
           RTB_ID=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query "RouteTables[0].RouteTableId" --output text)
           aws ec2 create-route --route-table-id "$RTB_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" >/dev/null
           
-          echo "Found VPC_ID: $VPC_ID"
-          echo "Found SUBNET_ID: $SUBNET_ID"
+          echo "Successfully created networking resources."
           
           # 3. Deregister old versions of EduTrust-Base-AMI (to avoid name collision)
           echo "Deregistering old versions of EduTrust-Base-AMI..."
@@ -123,6 +130,7 @@ jobs:
       - name: Cleanup Packer Build Network
         if: always() && env.VPC_ID != ''
         run: |
+          set -euo pipefail
           echo "Cleaning up temporary VPC resources..."
           # Cleanup in reverse order of creation
           # Wait a few seconds for Packer-provisioned SG to be fully cleared by AWS
@@ -199,11 +207,13 @@ jobs:
 
       - name: Bootstrap Terraform Backend (S3 Native Locking)
         run: |
+          set -euo pipefail
           chmod +x bootstrap.sh
           ./bootstrap.sh
 
       - name: Verify S3 Backend is Accessible
         run: |
+          set -euo pipefail
           echo "🔍 Verifying S3 backend bucket is fully accessible..."
           aws s3api wait bucket-exists \
             --bucket "aws-fcj-terraform-641458060045" \
@@ -429,6 +439,7 @@ jobs:
       - name: Compute Build Hash
         id: build_hash
         run: |
+          set -euo pipefail
           # Hash only relevant files (backend/ and Dockerfile)
           HASH=$(find backend Dockerfile -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')
           echo "tag=${HASH}" >> "$GITHUB_OUTPUT"
@@ -497,6 +508,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
           cache-from: type=gha
@@ -540,6 +552,7 @@ jobs:
 
       - name: Update Environment Variables in SSM
         run: |
+          set -euo pipefail
           aws ssm put-parameter \
             --name "/edutrust/backend/env" \
             --value "$BACKEND_ENV_FILE" \
@@ -567,12 +580,14 @@ jobs:
           TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
           TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
+          set -euo pipefail
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
           terraform apply -auto-approve -input=false -var="backend_image_tag=$IMAGE_TAG"
 
       - name: Start ASG Instance Refresh
         run: |
+          set -euo pipefail
           # Use a loop to clear any existing refreshes
           while true; do
             CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
@@ -656,7 +671,18 @@ jobs:
           cat > ssm_params.json <<EOF
           {
             "commands": [
-              "docker ps -f name=aws-fcj-backend --format '{{.Status}}' | grep -q 'Up' || (echo 'CRITICAL: Container not running!' && docker ps -a && echo '--- CLoud Init Logs ---' && tail -n 100 /var/log/cloud-init-output.log && echo '--- User Data Logs ---' && [ -f /var/log/user-data.log ] && tail -n 100 /var/log/user-data.log || true && exit 1)",
+              "set -e",
+              "echo 'Waiting for cloud-init to finish (max 2 mins)...'",
+              "timeout 120 bash -c 'until [ -f /var/lib/cloud/instance/boot-finished ]; do sleep 5; done' || (echo 'WARNING: cloud-init did not finish in time' && exit 1)",
+              "if ! docker ps -f name=aws-fcj-backend --format '{{.Status}}' | grep -q 'Up'; then",
+              "  echo 'CRITICAL: Container not running after boot!'",
+              "  docker ps -a",
+              "  echo '--- Tail cloud-init-output.log ---'",
+              "  tail -n 100 /var/log/cloud-init-output.log || true",
+              "  echo '--- Tail user-data.log ---'",
+              "  if [ -f /var/log/user-data.log ]; then tail -n 100 /var/log/user-data.log; else echo 'user-data.log not found'; fi",
+              "  exit 1",
+              "fi",
               "echo 'Container is UP and running. Recent app logs:'",
               "docker logs --tail 50 aws-fcj-backend || true"
             ]
@@ -715,10 +741,15 @@ jobs:
           if [ $FAIL_DETECTED -eq 1 ] || [ "$FINAL_STATUS" != "Success" ]; then
             echo "CRITICAL: SSM Verification failed on one or more instances. Container is NOT running correctly."
             echo "Please check the 'System Output' above for errors from cloud-init/dockerd."
+            
+            echo "--- SSM VERIFICATION SUMMARY TABLE ---"
+            aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[*].[InstanceId, Status, CommandPlugins[0].Output]" --output table
             exit 1
           fi
           
           echo "SSM Verification PASSED: Container is running and healthy on all instances."
+          echo "--- SSM VERIFICATION SUMMARY TABLE ---"
+          aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[*].[InstanceId, Status, CommandPlugins[0].Output]" --output table
 
       - name: Smoke Test - Verify Application Health
         working-directory: ${{ env.TF_DIR }}
