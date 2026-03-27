@@ -349,27 +349,45 @@ jobs:
           
           if [ "$VPCE_SG_ID" != "None" ] && [ "$BACKEND_SG_ID" != "None" ]; then
              echo "Checking Security Group Rules for SG: $VPCE_SG_ID"
+             RULES_JSON=$(aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VPCE_SG_ID" --region "$AWS_DEFAULT_REGION" --output json)
+             echo "DEBUG: Found $(echo "$RULES_JSON" | jq '.SecurityGroupRules | length') rules for SG $VPCE_SG_ID"
              
              # --- Ingress Rule (HTTPS from Backend) ---
-             INGRESS_RULE_ID=$(aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VPCE_SG_ID" "Name=is-egress,Values=false" --region "$AWS_DEFAULT_REGION" --output json | \
-               jq -r ".SecurityGroupRules[] | select(.FromPort==443 and .ToPort==443 and .IpProtocol==\"tcp\" and .ReferencedGroupInfo.GroupId==\"$BACKEND_SG_ID\") | .SecurityGroupRuleId" | head -n 1 || echo "")
+             # Using case-insensitive map for IpProtocol and checking multiple source fields
+             INGRESS_RULE_ID=$(echo "$RULES_JSON" | jq -r ".SecurityGroupRules[] | 
+               select(.IsEgress == false) | 
+               select(.FromPort == 443 and .ToPort == 443) | 
+               select(.IpProtocol | ascii_downcase == \"tcp\") | 
+               select(.ReferencedGroupInfo.GroupId == \"$BACKEND_SG_ID\" or .SourceSecurityGroupId == \"$BACKEND_SG_ID\") | 
+               .SecurityGroupRuleId" | head -n 1 || echo "")
              
              if [ -n "$INGRESS_RULE_ID" ]; then
+                echo "DEBUG: Found matching Ingress Rule: $INGRESS_RULE_ID"
                 if ! echo "$STATE_LIST" | grep -q "^aws_vpc_security_group_ingress_rule.vpce_https$"; then
                    echo "Importing Ingress Rule: $INGRESS_RULE_ID"
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_ingress_rule.vpce_https "${VPCE_SG_ID}_${INGRESS_RULE_ID}" || \
                    terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_ingress_rule.vpce_https "$INGRESS_RULE_ID" || true
                 fi
+             else
+                echo "DEBUG: No matching Ingress Rule found in AWS."
              fi
              
              # --- Egress Rule (Allow All) ---
-             EGRESS_RULE_ID=$(aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VPCE_SG_ID" "Name=is-egress,Values=true" --region "$AWS_DEFAULT_REGION" --output json | \
-               jq -r ".SecurityGroupRules[] | select(.IpProtocol==\"-1\" and .CidrIpv4==\"0.0.0.0/0\") | .SecurityGroupRuleId" | head -n 1 || echo "")
+             EGRESS_RULE_ID=$(echo "$RULES_JSON" | jq -r ".SecurityGroupRules[] | 
+               select(.IsEgress == true) | 
+               select(.IpProtocol == \"-1\") | 
+               select(.CidrIpv4 == \"0.0.0.0/0\") | 
+               .SecurityGroupRuleId" | head -n 1 || echo "")
              
              if [ -n "$EGRESS_RULE_ID" ]; then
+                echo "DEBUG: Found matching Egress Rule: $EGRESS_RULE_ID"
                 if ! echo "$STATE_LIST" | grep -q "^aws_vpc_security_group_egress_rule.vpce_all$"; then
                    echo "Importing Egress Rule: $EGRESS_RULE_ID"
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_egress_rule.vpce_all "${VPCE_SG_ID}_${EGRESS_RULE_ID}" || \
                    terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_egress_rule.vpce_all "$EGRESS_RULE_ID" || true
                 fi
+             else
+                echo "DEBUG: No matching Egress Rule found in AWS."
              fi
           fi
 
