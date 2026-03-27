@@ -521,18 +521,32 @@ jobs:
 
       - name: Start ASG Instance Refresh
         run: |
-          echo "Checking for in-progress instance refresh for ASG: $ASG_NAME"
-          CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --query "InstanceRefreshes[?Status=='InProgress'].InstanceRefreshId" \
-            --output text)
-
-          if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
-            echo "A refresh ($CURRENT_REFRESH_ID) is already in progress. Cancelling it..."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME"
-            echo "Waiting for cancellation to process..."
-            sleep 30
-          fi
+          # Use a loop to clear any existing refreshes
+          while true; do
+            CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending' || Status=='Cancelling'].InstanceRefreshId" \
+              --output text)
+            
+            if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
+              # If it's not already cancelling, cancel it
+              STATUS=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name "$ASG_NAME" \
+                --query "InstanceRefreshes[?InstanceRefreshId=='$CURRENT_REFRESH_ID'].Status" \
+                --output text)
+              
+              if [ "$STATUS" != "Cancelling" ]; then
+                echo "A refresh ($CURRENT_REFRESH_ID, Status: $STATUS) is already in progress. Cancelling it..."
+                aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME" || true
+              fi
+              
+              echo "Waiting for existing refresh to clear... status: $STATUS"
+              sleep 15
+            else
+              echo "No active refresh found. Proceeding..."
+              break
+            fi
+          done
 
           echo "Starting new instance refresh for ASG: $ASG_NAME"
           # TIMEOUT removed as requested
