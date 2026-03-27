@@ -850,9 +850,9 @@ done
 echo "--- SUCCESS: Container is running and healthy ---"
 curl -i "$HEALTH_CHECK_URL"
 
-    # CloudWatch Agent Configuration
-    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
-    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+# CloudWatch Agent Configuration
+mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
 {
   "metrics": {
     "namespace": "EduTrust/Core",
@@ -889,8 +889,8 @@ curl -i "$HEALTH_CHECK_URL"
   }
 }
 CW_EOF
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-  EOF
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+EOF
   )
 
   tag_specifications {

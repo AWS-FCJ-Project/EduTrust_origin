@@ -673,19 +673,18 @@ jobs:
           cat > ssm_params.json <<EOF
           {
             "commands": [
-              "set -e",
               "echo 'Waiting for cloud-init to finish (max 2 mins)...'",
               "timeout 120 bash -c 'until [ -f /var/lib/cloud/instance/boot-finished ]; do sleep 5; done' || (echo 'WARNING: cloud-init did not finish in time' && exit 1)",
               "if ! docker ps -f name=aws-fcj-backend --format '{{.Status}}' | grep -q 'Up'; then",
               "  echo 'CRITICAL: Container not running after boot!'",
               "  docker ps -a",
-              "  echo '--- Tail cloud-init-output.log ---'",
-              "  tail -n 100 /var/log/cloud-init-output.log || true",
               "  echo '--- Tail user-data.log ---'",
-              "  if [ -f /var/log/user-data.log ]; then tail -n 100 /var/log/user-data.log; else echo 'user-data.log not found'; fi",
+              "  if [ -f /var/log/user-data.log ]; then tail -n 50 /var/log/user-data.log; else echo 'user-data.log not found'; fi",
+              "  echo '--- Tail cloud-init-output.log ---'",
+              "  tail -n 50 /var/log/cloud-init-output.log || true",
               "  exit 1",
               "fi",
-              "echo 'Container is UP and running. Recent app logs:'",
+              "echo 'SUCCESS: Container is UP and running. Recent app logs:'",
               "docker logs --tail 50 aws-fcj-backend || true"
             ]
           }
