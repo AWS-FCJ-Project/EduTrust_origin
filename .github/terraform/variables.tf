@@ -125,13 +125,44 @@ variable "asg_min_size" {
   type        = number
 }
 
+variable "asg_desired_capacity" {
+  description = "Desired capacity of the Auto Scaling Group"
+  type        = number
+}
+
 variable "asg_max_size" {
   description = "Maximum size of the Auto Scaling Group"
   type        = number
 }
 
-variable "asg_desired_capacity" {
-  description = "Desired capacity of the Auto Scaling Group"
-  type        = number
+# --- VPC Endpoint Service Names ---
+variable "s3_endpoint_service_name" {
+  description = "Service name for S3 VPC Endpoint"
+  type        = string
+}
+
+variable "ecr_dkr_endpoint_service_name" {
+  description = "Service name for ECR DKR VPC Endpoint"
+  type        = string
+}
+
+variable "ecr_api_endpoint_service_name" {
+  description = "Service name for ECR API VPC Endpoint"
+  type        = string
+}
+
+variable "ssm_endpoint_service_name" {
+  description = "Service name for SSM VPC Endpoint"
+  type        = string
+}
+
+variable "sts_endpoint_service_name" {
+  description = "Service name for STS VPC Endpoint"
+  type        = string
+}
+
+variable "logs_endpoint_service_name" {
+  description = "Service name for CloudWatch Logs VPC Endpoint"
+  type        = string
 }
 
