@@ -509,6 +509,8 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
           cache-from: type=gha
