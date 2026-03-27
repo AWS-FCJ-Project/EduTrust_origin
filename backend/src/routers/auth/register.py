@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from src.auth.auth_utils import hash_password
 from src.database import users_collection
 from src.extensions import limiter
-from src.schemas.auth_schemas import UserRegister
+from src.schemas.auth_schemas import UserRegister, UserRole
 
 router = APIRouter()
 
@@ -26,10 +26,13 @@ async def register(request: Request, user: UserRegister):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(user.password)
+    default_name = user.email.split("@", 1)[0]
     user_doc = {
         "email": user.email,
         "hashed_password": hashed,
         "is_verified": True,
+        "name": (user.name or "").strip() or default_name,
+        "role": (user.role or UserRole.student).value,
         "created_at": datetime.now(timezone.utc),
     }
     await users_collection.insert_one(user_doc)
@@ -112,6 +115,8 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 "email": email,
                 "hashed_password": hashed,
                 "is_verified": True,
+                "name": email.split("@", 1)[0],
+                "role": UserRole.student.value,
                 "created_at": datetime.now(timezone.utc),
             }
         )
