@@ -635,6 +635,77 @@ jobs:
             esac
           done
 
+      - name: SSM Verification - Check Container Status (Hard Check)
+        run: |
+          echo "Fetching instance IDs for ASG: $ASG_NAME"
+          # Get all instance IDs that are currently in the ASG
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --region "$AWS_REGION" \
+            --query "AutoScalingGroups[0].Instances[?HealthStatus=='Healthy'].InstanceId" \
+            --output text)
+          
+          if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" == "None" ]; then
+            echo "No healthy instances found in ASG. This is unexpected after a Successful Refresh."
+            exit 1
+          fi
+
+          echo "Assessing container health on instances: $INSTANCE_IDS"
+          # We send a command that exits with 1 if the container is not 'Up'
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids $INSTANCE_IDS \
+            --region "$AWS_REGION" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["docker ps -f name=aws-fcj-backend --format \"{{.Status}}\" | grep -q \"Up\" || (echo \"CRITICAL: Container aws-fcj-backend is NOT running!\" && docker ps -a && exit 1)", "echo \"Container is UP and running. Recent logs:\", \"docker logs --tail 20 aws-fcj-backend || true\"]' \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "Waiting for SSM command ($COMMAND_ID) to complete across all instances..."
+          # Poll for status
+          MAX_RETRIES=12
+          RETRY_COUNT=0
+          FINAL_STATUS="Pending"
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # We check the overall command status
+            OVERALL_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --region "$AWS_REGION" --query "Commands[0].Status" --output text)
+            echo "Current Command Status: $OVERALL_STATUS (Check $RETRY_COUNT/$MAX_RETRIES)"
+            
+            if [[ "$OVERALL_STATUS" == "Success" ]]; then
+              FINAL_STATUS="Success"
+              break
+            elif [[ "$OVERALL_STATUS" == "Failed" || "$OVERALL_STATUS" == "TimedOut" || "$OVERALL_STATUS" == "Cancelled" ]]; then
+              FINAL_STATUS="$OVERALL_STATUS"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            sleep 10
+          done
+
+          # Output detailed results for each instance
+          FAIL_DETECTED=0
+          for INSTANCE in $INSTANCE_IDS; do
+            echo "--- Result for Instance: $INSTANCE ---"
+            RESULTS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE" --region "$AWS_REGION" --query "{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}" --output json)
+            STATUS=$(echo "$RESULTS" | jq -r '.Status')
+            echo "Instance Status: $STATUS"
+            echo "Output:"
+            echo "$RESULTS" | jq -r '.Output'
+            
+            if [[ "$STATUS" != "Success" ]]; then
+               echo "ERROR: Instance $INSTANCE failed verification! (Error output: $(echo "$RESULTS" | jq -r '.Error'))"
+               FAIL_DETECTED=1
+            fi
+          done
+
+          if [ $FAIL_DETECTED -eq 1 ] || [ "$FINAL_STATUS" != "Success" ]; then
+            echo "CRITICAL: SSM Verification failed on one or more instances. Container may not have been pulled or started."
+            exit 1
+          fi
+          
+          echo "SSM Verification PASSED: Container is running on all instances."
+
       - name: Smoke Test - Verify Application Health
         working-directory: ${{ env.TF_DIR }}
         run: |
