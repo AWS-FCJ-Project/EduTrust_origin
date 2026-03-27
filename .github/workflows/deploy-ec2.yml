@@ -226,6 +226,8 @@ jobs:
 
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           set -euo pipefail
           if [ -f terraform.tfvars ]; then
@@ -245,7 +247,7 @@ jobs:
               echo "ECR repo already in Terraform state, skipping import."
             else
               echo "ECR repo exists in AWS but not in state; importing..."
-              terraform import aws_ecr_repository.backend "$REPO_NAME"
+              terraform import -var-file=terraform.tfvars -input=false aws_ecr_repository.backend "$REPO_NAME" || true
             fi
           else
             echo "ECR repo not found in AWS; Terraform will create it."
@@ -253,6 +255,8 @@ jobs:
 
       - name: Import existing AWS resources (KMS, SSM, IAM, Logs)
         working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           set -euo pipefail
           
@@ -278,11 +282,11 @@ jobs:
           if [ -n "$KEY_ID" ] && [ "$KEY_ID" != "None" ]; then
             if ! terraform state show aws_kms_key.secrets >/dev/null 2>&1; then
               echo "Importing KMS Key..."
-              terraform import aws_kms_key.secrets "$KEY_ID" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_key.secrets "$KEY_ID" || true
             fi
             if ! terraform state show aws_kms_alias.secrets >/dev/null 2>&1; then
               echo "Importing KMS Alias..."
-              terraform import aws_kms_alias.secrets "$ALIAS_NAME" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_alias.secrets "$ALIAS_NAME" || true
             fi
           fi
 
@@ -292,7 +296,7 @@ jobs:
           if aws ssm get-parameter --name "$SSM_PARAM" >/dev/null 2>&1; then
             if ! terraform state show aws_ssm_parameter.backend_env >/dev/null 2>&1; then
               echo "Importing SSM Parameter..."
-              terraform import aws_ssm_parameter.backend_env "$SSM_PARAM" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_ssm_parameter.backend_env "$SSM_PARAM" || true
             fi
           fi
 
@@ -302,11 +306,11 @@ jobs:
           if aws iam get-role --role-name "$BACKEND_ROLE" >/dev/null 2>&1; then
             if ! terraform state show aws_iam_role.backend >/dev/null 2>&1; then
               echo "Importing Backend IAM Role..."
-              terraform import aws_iam_role.backend "$BACKEND_ROLE" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_iam_role.backend "$BACKEND_ROLE" || true
             fi
             if ! terraform state show aws_iam_instance_profile.backend >/dev/null 2>&1; then
               echo "Importing Backend Instance Profile..."
-              terraform import aws_iam_instance_profile.backend "${INSTANCE_NAME}-instance-profile" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_iam_instance_profile.backend "${INSTANCE_NAME}-instance-profile" || true
             fi
           fi
 
@@ -315,7 +319,7 @@ jobs:
           if aws iam get-role --role-name "$VPC_FLOW_ROLE" >/dev/null 2>&1; then
             if ! terraform state show aws_iam_role.vpc_flow_log >/dev/null 2>&1; then
               echo "Importing VPC Flow Log IAM Role..."
-              terraform import aws_iam_role.vpc_flow_log "$VPC_FLOW_ROLE" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_iam_role.vpc_flow_log "$VPC_FLOW_ROLE" || true
             fi
           fi
 
@@ -325,7 +329,7 @@ jobs:
           if aws logs describe-log-groups --log-group-name-prefix "$VPC_LOG_GROUP" --query "logGroups[?logGroupName=='${VPC_LOG_GROUP}'].logGroupName" --output text | grep -q "$VPC_LOG_GROUP"; then
             if ! terraform state show aws_cloudwatch_log_group.vpc_flow_logs >/dev/null 2>&1; then
               echo "Importing VPC Flow Logs Group..."
-              terraform import aws_cloudwatch_log_group.vpc_flow_logs "$VPC_LOG_GROUP" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_cloudwatch_log_group.vpc_flow_logs "$VPC_LOG_GROUP" || true
             fi
           fi
 
@@ -334,7 +338,7 @@ jobs:
           if aws logs describe-log-groups --log-group-name-prefix "$CONTAINER_LOG_GROUP" --query "logGroups[?logGroupName=='${CONTAINER_LOG_GROUP}'].logGroupName" --output text | grep -q "$CONTAINER_LOG_GROUP"; then
             if ! terraform state show aws_cloudwatch_log_group.container_logs >/dev/null 2>&1; then
               echo "Importing Container Logs Group..."
-              terraform import aws_cloudwatch_log_group.container_logs "$CONTAINER_LOG_GROUP" || true
+              terraform import -var-file=terraform.tfvars -input=false aws_cloudwatch_log_group.container_logs "$CONTAINER_LOG_GROUP" || true
             fi
           fi
 
