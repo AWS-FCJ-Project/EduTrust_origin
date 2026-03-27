@@ -97,7 +97,7 @@ class UnifiedAgent:
         self._conversation_handler.add_message(
             conversation_id, role="assistant", content=result.output
         )
-        self._conversation_handler.get_context(conversation_id, k=10)
+        self._conversation_handler.get_context(conversation_id, message_limit=10)
         return result.output
 
     async def ask_stream_with_tool_calls(
@@ -121,7 +121,9 @@ class UnifiedAgent:
         """Log input, store message, and assemble prompt with conversation context."""
         log_user_input(question, conversation_id)
 
-        context_messages = self._conversation_handler.get_context(conversation_id, k=10)
+        context_messages = self._conversation_handler.get_context(
+            conversation_id, message_limit=10
+        )
         self._conversation_handler.add_message(
             conversation_id, role="user", content=question
         )
