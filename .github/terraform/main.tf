@@ -759,96 +759,96 @@ resource "aws_launch_template" "backend" {
   }
 
   user_data = base64encode(<<-EOF
-    #!/bin/bash
-    exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-    set -x
+#!/bin/bash
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+set -x
 
-    echo "--- Starting Deployment Script ---"
+echo "--- Starting Deployment Script ---"
 
-    # Pre-checks: Verify Docker and AWS CLI
-    if ! command -v docker &> /dev/null; then
-      echo "Error: Docker not installed! Please check the Base AMI."
-      exit 1
-    fi
-    if ! command -v aws &> /dev/null; then
-      echo "Error: AWS CLI not installed! Please check the Base AMI."
-      exit 1
-    fi
+# Pre-checks: Verify Docker and AWS CLI
+if ! command -v docker &> /dev/null; then
+  echo "Error: Docker not installed! Please check the Base AMI."
+  exit 1
+fi
+if ! command -v aws &> /dev/null; then
+  echo "Error: AWS CLI not installed! Please check the Base AMI."
+  exit 1
+fi
 
-    # Environment variables
-    REGION="${var.aws_region}"
-    ECR_URL="${aws_ecr_repository.backend.repository_url}"
-    TARGET_DIR="/home/ubuntu/app"
-    mkdir -p $TARGET_DIR
+# Environment variables
+REGION="${var.aws_region}"
+ECR_URL="${aws_ecr_repository.backend.repository_url}"
+TARGET_DIR="/home/ubuntu/app"
+mkdir -p $TARGET_DIR
 
-    # ECR Login
-    echo "Logging in to ECR..."
-    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    MAX_RETRIES=10
-    RETRY_COUNT=0
-    until aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY; do
-      RETRY_COUNT=$((RETRY_COUNT + 1))
-      if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-        echo "Failed to login to ECR after $MAX_RETRIES attempts."
-        exit 1
-      fi
-      echo "ECR login failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
-      sleep 10
-    done
+# ECR Login
+echo "Logging in to ECR..."
+ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+MAX_RETRIES=10
+RETRY_COUNT=0
+until aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "Failed to login to ECR after $MAX_RETRIES attempts."
+    exit 1
+  fi
+  echo "ECR login failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep 10
+done
 
-    # Retrieve env from SSM
-    echo "Retrieving environment variables from SSM..."
-    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+# Retrieve env from SSM
+echo "Retrieving environment variables from SSM..."
+aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
 
-    # Pull Image with Retry
-    IMAGE="$ECR_URL:${var.backend_image_tag}"
-    echo "Pulling image: $IMAGE"
-    RETRY_COUNT=0
-    until docker pull $IMAGE; do
-      RETRY_COUNT=$((RETRY_COUNT + 1))
-      if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-        echo "Failed to pull image $IMAGE after $MAX_RETRIES attempts."
-        exit 1
-      fi
-      echo "Docker pull failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
-      sleep 10
-    done
+# Pull Image with Retry
+IMAGE="$ECR_URL:${var.backend_image_tag}"
+echo "Pulling image: $IMAGE"
+RETRY_COUNT=0
+until docker pull $IMAGE; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "Failed to pull image $IMAGE after $MAX_RETRIES attempts."
+    exit 1
+  fi
+  echo "Docker pull failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep 10
+done
 
-    # Validate image exists locally
-    if [[ "$(docker images -q $IMAGE 2> /dev/null)" == "" ]]; then
-      echo "Error: Image $IMAGE not found after pull!"
-      exit 1
-    fi
-    echo "Image pulled successfully."
+# Validate image exists locally
+if [[ "$(docker images -q $IMAGE 2> /dev/null)" == "" ]]; then
+  echo "Error: Image $IMAGE not found after pull!"
+  exit 1
+fi
+echo "Image pulled successfully."
 
-    # Run Container
-    echo "Starting container..."
-    docker stop aws-fcj-backend || true
-    docker rm aws-fcj-backend || true
-    docker run -d --name aws-fcj-backend \
-      --restart unless-stopped \
-      -p ${var.backend_port}:${var.backend_port} \
-      --env-file $TARGET_DIR/.env \
-      $IMAGE
+# Run Container
+echo "Starting container..."
+docker stop aws-fcj-backend || true
+docker rm aws-fcj-backend || true
+docker run -d --name aws-fcj-backend \
+  --restart unless-stopped \
+  -p ${var.backend_port}:${var.backend_port} \
+  --env-file $TARGET_DIR/.env \
+  $IMAGE
 
-    # Post-checks: Health check loop
-    echo "Waiting for application to be healthy..."
-    HEALTH_CHECK_URL="http://localhost:${var.backend_port}/docs"
-    MAX_HEALTH_RETRIES=15
-    HEALTH_RETRY=0
-    until curl -sf "$HEALTH_CHECK_URL" > /dev/null; do
-      HEALTH_RETRY=$((HEALTH_RETRY + 1))
-      if [ $HEALTH_RETRY -ge $MAX_HEALTH_RETRIES ]; then
-        echo "Error: Application failed to start after $(($MAX_HEALTH_RETRIES * 10))s."
-        docker logs aws-fcj-backend
-        exit 1
-      fi
-      echo "Waiting for app at $HEALTH_CHECK_URL... ($HEALTH_RETRY/$MAX_HEALTH_RETRIES)"
-      sleep 10
-    done
+# Post-checks: Health check loop
+echo "Waiting for application to be healthy..."
+HEALTH_CHECK_URL="http://localhost:${var.backend_port}/docs"
+MAX_HEALTH_RETRIES=15
+HEALTH_RETRY=0
+until curl -sf "$HEALTH_CHECK_URL" > /dev/null; do
+  HEALTH_RETRY=$((HEALTH_RETRY + 1))
+  if [ $HEALTH_RETRY -ge $MAX_HEALTH_RETRIES ]; then
+    echo "Error: Application failed to start after $(($MAX_HEALTH_RETRIES * 10))s."
+    docker logs aws-fcj-backend
+    exit 1
+  fi
+  echo "Waiting for app at $HEALTH_CHECK_URL... ($HEALTH_RETRY/$MAX_HEALTH_RETRIES)"
+  sleep 10
+done
 
-    echo "--- SUCCESS: Container is running and healthy ---"
-    curl -i "$HEALTH_CHECK_URL"
+echo "--- SUCCESS: Container is running and healthy ---"
+curl -i "$HEALTH_CHECK_URL"
 
     # CloudWatch Agent Configuration
     mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
