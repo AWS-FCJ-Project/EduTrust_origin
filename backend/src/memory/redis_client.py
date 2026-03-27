@@ -13,25 +13,35 @@ class RedisClient:
 
     def __init__(self):
         self.key_prefix = app_config.REDIS_KEY_PREFIX
+        self.redis_url = app_config.REDIS_URL
         self.host = app_config.REDIS_CLIENT_HOST
         self.port = app_config.REDIS_PORT
-        self.db = app_config.REDIS_DB
+        self.db = app_config.REDIS_DB or 0
         self.password = app_config.REDIS_CLIENT_PASSWORD
         self.use_tls = app_config.REDIS_TLS
         self.chat_ttl = app_config.REDIS_CHAT_TTL
 
         self._is_connected = False
-        self.client = redis.Redis(
-            host=self.host,
-            port=self.port,
-            db=self.db,
-            password=self.password,
-            decode_responses=True,
-            ssl=self.use_tls,
-            ssl_cert_reqs="none" if self.use_tls else None,
-            socket_timeout=5,
-            socket_connect_timeout=5,
-        )
+        
+        if self.redis_url:
+            self.client = redis.Redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
+        else:
+            self.client = redis.Redis(
+                host=self.host,
+                port=self.port,
+                db=self.db,
+                password=self.password,
+                decode_responses=True,
+                ssl=self.use_tls,
+                ssl_cert_reqs="none" if self.use_tls else None,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
 
     def _ttl_seconds(self) -> Optional[int]:
         """Get TTL in seconds for cache expiration."""

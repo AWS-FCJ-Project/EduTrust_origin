@@ -38,6 +38,7 @@ class AppConfig(BaseSettings):
     OTP_EXPIRE_SECONDS: Optional[int] = None
 
     # Redis Settings
+    REDIS_URL: Optional[str] = None
     REDIS_CLIENT_HOST: Optional[str] = None
     REDIS_CLIENT_PASSWORD: Optional[str] = None
     REDIS_PORT: Optional[int] = None
