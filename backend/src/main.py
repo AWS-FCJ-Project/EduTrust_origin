@@ -9,7 +9,9 @@ from slowapi.errors import RateLimitExceeded
 from src import state
 from src.app_config import app_config
 from src.extensions import limiter
+from src.memory.conversation_cache import ConversationCache
 from src.memory.conversation_handler import ConversationHandler
+from src.memory.redis_client import RedisClient
 from src.routers import translate_routes, unified_agent_routes
 from src.routers.auth import login, password, register
 
@@ -24,7 +26,13 @@ logfire.instrument_pydantic_ai()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state.conversation_handler = ConversationHandler()
+    redis_client = RedisClient()
+    redis_client.connect_to_database()
+    conversation_cache = ConversationCache(redis_client=redis_client)
+
+    state.conversation_handler = ConversationHandler(
+        conversation_cache=conversation_cache
+    )
     state.conversation_handler.connect_to_database()
     yield
     if state.conversation_handler:

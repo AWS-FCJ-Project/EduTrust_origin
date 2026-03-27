@@ -65,6 +65,7 @@ class Streaming:
         self._conversation_handler.add_message(
             self._conversation_id, role="assistant", content=reply
         )
+        self._conversation_handler.get_context(self._conversation_id, message_limit=10)
 
     def _process_event(
         self, event: Any, text_parts: list[str]
