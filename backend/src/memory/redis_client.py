@@ -109,4 +109,7 @@ class RedisClient:
     def build_key(self, *parts: Any) -> str:
         """Build namespaced Redis key."""
         normalized_parts = [str(part).strip(":") for part in parts]
-        return ":".join([self.key_prefix, *normalized_parts])
+        prefix = (self.key_prefix or "").strip(":")
+        if prefix:
+            return ":".join([prefix, *normalized_parts])
+        return ":".join(normalized_parts)
