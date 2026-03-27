@@ -12,15 +12,13 @@ class RedisClient:
     """Client for Redis cache operations."""
 
     def __init__(self):
-        self.key_prefix = app_config.REDIS_KEY_PREFIX or "edutrust"
-        self.host = app_config.REDIS_CLIENT_HOST or "localhost"
-        self.port = int(app_config.REDIS_PORT or 6379)
-        self.db = int(app_config.REDIS_DB or 0)
+        self.key_prefix = app_config.REDIS_KEY_PREFIX
+        self.host = app_config.REDIS_CLIENT_HOST
+        self.port = app_config.REDIS_PORT
+        self.db = app_config.REDIS_DB
         self.password = app_config.REDIS_CLIENT_PASSWORD
-        self.use_tls = (
-            bool(app_config.REDIS_TLS) if app_config.REDIS_TLS is not None else False
-        )
-        self.chat_ttl = int(app_config.REDIS_CHAT_TTL or 86400)
+        self.use_tls = app_config.REDIS_TLS
+        self.chat_ttl = app_config.REDIS_CHAT_TTL
 
         self._is_connected = False
         self.client = redis.Redis(
