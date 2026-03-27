@@ -63,6 +63,11 @@ variable "redis_egress_cidr_blocks" {
   type        = list(string)
 }
 
+variable "dns_egress_cidr_blocks" {
+  description = "Allowed IPv4 CIDR blocks for outbound DNS (port 53 UDP/TCP)"
+  type        = list(string)
+}
+
 # --- VPC & Subnet Network Variables ---
 
 variable "vpc_cidr_block" {

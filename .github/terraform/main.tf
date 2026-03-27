@@ -492,6 +492,12 @@ data "aws_iam_policy_document" "backend_ssm_read" {
   }
 
   statement {
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket/*"]
+  }
+
+  statement {
     effect = "Allow"
     actions = [
       "kms:Decrypt",
@@ -697,6 +703,22 @@ resource "aws_security_group" "backend" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "DNS outbound (UDP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = var.dns_egress_cidr_blocks
+  }
+
+  egress {
+    description = "DNS outbound (TCP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = var.dns_egress_cidr_blocks
   }
 
   egress {
