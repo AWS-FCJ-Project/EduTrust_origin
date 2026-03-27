@@ -781,6 +781,16 @@ resource "aws_launch_template" "backend" {
 
     echo "--- Starting Deployment Script ---"
 
+    # Pre-checks: Verify Docker and AWS CLI
+    if ! command -v docker &> /dev/null; then
+      echo "Error: Docker not installed! Please check the Base AMI."
+      exit 1
+    fi
+    if ! command -v aws &> /dev/null; then
+      echo "Error: AWS CLI not installed! Please check the Base AMI."
+      exit 1
+    fi
+
     # Environment variables
     REGION="${var.aws_region}"
     ECR_URL="${aws_ecr_repository.backend.repository_url}"
@@ -790,7 +800,7 @@ resource "aws_launch_template" "backend" {
     # ECR Login
     echo "Logging in to ECR..."
     ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    MAX_RETRIES=5
+    MAX_RETRIES=10
     RETRY_COUNT=0
     until aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY; do
       RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -837,15 +847,24 @@ resource "aws_launch_template" "backend" {
       --env-file $TARGET_DIR/.env \
       $IMAGE
 
-    # Check if container is actually running
-    sleep 5
-    if [ "$(docker ps -q -f name=aws-fcj-backend)" ]; then
-      echo "Success: Container aws-fcj-backend is running."
-    else
-      echo "Error: Container failed to start. Checking logs..."
-      docker logs aws-fcj-backend || true
-      exit 1
-    fi
+    # Post-checks: Health check loop
+    echo "Waiting for application to be healthy..."
+    HEALTH_CHECK_URL="http://localhost:${var.backend_port}/docs"
+    MAX_HEALTH_RETRIES=15
+    HEALTH_RETRY=0
+    until curl -sf "$HEALTH_CHECK_URL" > /dev/null; do
+      HEALTH_RETRY=$((HEALTH_RETRY + 1))
+      if [ $HEALTH_RETRY -ge $MAX_HEALTH_RETRIES ]; then
+        echo "Error: Application failed to start after $(($MAX_HEALTH_RETRIES * 10))s."
+        docker logs aws-fcj-backend
+        exit 1
+      fi
+      echo "Waiting for app at $HEALTH_CHECK_URL... ($HEALTH_RETRY/$MAX_HEALTH_RETRIES)"
+      sleep 10
+    done
+
+    echo "--- SUCCESS: Container is running and healthy ---"
+    curl -i "$HEALTH_CHECK_URL"
 
     # CloudWatch Agent Configuration
     mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
