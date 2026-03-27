@@ -568,3 +568,26 @@ jobs:
               *) sleep 30 ;;
             esac
           done
+
+      - name: Smoke Test - Verify Application Health
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          ALB_URL=$(terraform output -raw alb_dns_name)
+          # We check both the raw ALB URL and the custom domain if available
+          CHECK_URL="http://$ALB_URL/docs"
+          echo "Performing smoke test on $CHECK_URL..."
+          
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          until curl -sf -o /dev/null "$CHECK_URL"; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+              echo "Smoke test FAILED: Application is not reachable at $CHECK_URL"
+              exit 1
+            fi
+            echo "Waiting for app at $CHECK_URL... ($RETRY_COUNT/$MAX_RETRIES)"
+            sleep 30
+          done
+          
+          echo "Deployment verified! Application is healthy at $CHECK_URL"
+          curl -i "$CHECK_URL" | head -n 20

@@ -648,11 +648,11 @@ resource "aws_lb_target_group" "backend" {
   vpc_id   = aws_vpc.main.id
 
   health_check {
-    path                = "/health"
+    path                = "/docs"
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 3
-    interval            = 5
+    interval            = 10
     matcher             = "200"
   }
 }
