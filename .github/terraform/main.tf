@@ -979,26 +979,26 @@ resource "aws_ecr_repository" "backend" {
 
 resource "aws_cloudwatch_log_metric_filter" "http_4xx" {
   name           = "HTTP4xxCount"
-  pattern        = "[level, client, dash, request, status_code=4*, ...]"
+  pattern        = "[level, client, dash, request, status_code=4*]"
   log_group_name = aws_cloudwatch_log_group.container_logs.name
 
   metric_transformation {
-    name      = "HTTP_4xx_Count"
-    namespace = "EduTrust/App"
-    value     = "1"
+    name          = "HTTP_4xx_Count"
+    namespace     = "EduTrust/App"
+    value         = "1"
     default_value = "0"
   }
 }
 
 resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
   name           = "HTTP5xxCount"
-  pattern        = "[level, client, dash, request, status_code=5*, ...]"
+  pattern        = "[level, client, dash, request, status_code=5*]"
   log_group_name = aws_cloudwatch_log_group.container_logs.name
 
   metric_transformation {
-    name      = "HTTP_5xx_Count"
-    namespace = "EduTrust/App"
-    value     = "1"
+    name          = "HTTP_5xx_Count"
+    namespace     = "EduTrust/App"
+    value         = "1"
     default_value = "0"
   }
 }
@@ -1125,9 +1125,9 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6,
         properties = {
           metrics = [
-             ["EduTrust/App", "HTTP_4xx_Count", { id = "m4", visible = false }],
-             ["EduTrust/App", "HTTP_5xx_Count", { id = "m5", visible = false }],
-             [{ expression = "m4 + m5", label = "Total Errors", color = "#ff0000" }]
+            ["EduTrust/App", "HTTP_4xx_Count", { id = "m4", visible = false }],
+            ["EduTrust/App", "HTTP_5xx_Count", { id = "m5", visible = false }],
+            [{ expression = "m4 + m5", label = "Total Errors", color = "#ff0000" }]
           ],
           view   = "singleValue",
           region = var.aws_region,
