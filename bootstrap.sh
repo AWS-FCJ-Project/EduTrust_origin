@@ -4,15 +4,15 @@ set -euo pipefail
 BUCKET_NAME="aws-fcj-terraform-641458060045"
 REGION="ap-southeast-1"
 
-echo "🚀 Bắt đầu bootstrap Terraform backend..."
+echo "Bootstrap Terraform backend..."
 
 # Create s3 bucket
-echo "📦 Checking S3: $BUCKET_NAME"
+echo "Checking S3: $BUCKET_NAME"
 
 if aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$REGION" 2>/dev/null; then
-  echo "  ✅ Bucket existed. Skipped"
+  echo "Bucket existed. Skipped"
 else
-  echo "  🔧 Creating bucket..."
+  echo "Creating bucket..."
   aws s3api create-bucket \
     --bucket "$BUCKET_NAME" \
     --region "$REGION" \
@@ -40,15 +40,15 @@ else
       }]
     }'
 
-  echo "  ✅ Bucket created and configured"
+  echo "Bucket created and configured"
 fi
 
 # Wait for bucket to be fully accessible before terraform init (prevents race condition)
-echo "⏳ Waiting for bucket to be accessible..."
+echo "Waiting for bucket to be accessible..."
 aws s3api wait bucket-exists \
   --bucket "$BUCKET_NAME" \
   --region "$REGION"
-echo "  ✅ Bucket is accessible and ready"
+echo "Bucket is accessible and ready"
 
 echo ""
-echo "🎉 Bootstrap completed! Now you can run terraform init."
+echo "Bootstrap completed! Now you can run terraform init."

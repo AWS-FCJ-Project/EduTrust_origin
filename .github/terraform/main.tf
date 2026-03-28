@@ -972,3 +972,228 @@ resource "aws_ecr_repository" "backend" {
     scan_on_push = true
   }
 }
+
+# --- CloudWatch Monitoring Dashboard ---
+
+# --- CloudWatch Monitoring: Cost-Optimized Error Tracking ---
+
+resource "aws_cloudwatch_log_metric_filter" "http_4xx" {
+  name           = "HTTP4xxCount"
+  pattern        = "[level, client, dash, request, status_code=4*, ...]"
+  log_group_name = aws_cloudwatch_log_group.container_logs.name
+
+  metric_transformation {
+    name      = "HTTP_4xx_Count"
+    namespace = "EduTrust/App"
+    value     = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
+  name           = "HTTP5xxCount"
+  pattern        = "[level, client, dash, request, status_code=5*, ...]"
+  log_group_name = aws_cloudwatch_log_group.container_logs.name
+
+  metric_transformation {
+    name      = "HTTP_5xx_Count"
+    namespace = "EduTrust/App"
+    value     = "1"
+    default_value = "0"
+  }
+}
+
+# --- CloudWatch Monitoring Dashboard ---
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "${var.ec2_instance_name}-dashboard"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "text",
+        x      = 0,
+        y      = 0,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Infrastructure Health Metrics"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,cpu} MetricName=\"cpu_usage_active\" cpu=\"cpu-total\"', 'Average', 60)", id = "e1", label = "CPU Utilization" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "CPU Utilization (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 6,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId} MetricName=\"mem_used_percent\"', 'Average', 60)", id = "e2", label = "Memory Utilization" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Memory Utilization (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,device,fstype,path} MetricName=\"disk_used_percent\" path=\"/\"', 'Average', 60)", id = "e3", label = "Disk Usage" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Disk Usage (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 18,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,interface} MetricName=\"net_bytes_recv\"', 'Average', 60)", id = "e4", label = "Network RX" }],
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,interface} MetricName=\"net_bytes_sent\"', 'Average', 60)", id = "e5", label = "Network TX" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Network Traffic (Bytes)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "text",
+        x      = 0,
+        y      = 7,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Application & API Health"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 8,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["EduTrust/App", "HTTP_4xx_Count", { label = "4xx Client Errors", color = "#ff9900" }],
+            ["EduTrust/App", "HTTP_5xx_Count", { label = "5xx Server Errors", color = "#d13212" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "API Error Rates (Sum)",
+          period = 60,
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 8,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+             ["EduTrust/App", "HTTP_4xx_Count", { id = "m4", visible = false }],
+             ["EduTrust/App", "HTTP_5xx_Count", { id = "m5", visible = false }],
+             [{ expression = "m4 + m5", label = "Total Errors", color = "#ff0000" }]
+          ],
+          view   = "singleValue",
+          region = var.aws_region,
+          title  = "Total Errors (Last 1h)",
+          period = 3600,
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "text",
+        x      = 0,
+        y      = 14,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Load Balancer Health"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 15,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.main.arn_suffix, { label = "Total Requests", stat = "Sum" }],
+            [".", "HTTPCode_Target_5XX_Count", ".", ".", { label = "Target 5xx", color = "#d13212", stat = "Sum" }],
+            [".", "HTTPCode_ELB_5XX_Count", ".", ".", { label = "ELB 5xx", color = "#ff0000", stat = "Sum" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "ALB Throughput & Errors",
+          period = 60
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 15,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix, { label = "Avg Latency", stat = "Average" }],
+            [".", ".", ".", ".", { label = "P90 Latency", stat = "p90" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Target Response Time (Latency)",
+          period = 60
+        }
+      },
+      {
+        type   = "log",
+        x      = 0,
+        y      = 21,
+        width  = 24,
+        height = 12,
+        properties = {
+          query  = "SOURCE '${aws_cloudwatch_log_group.container_logs.name}' | fields @timestamp, @message | sort @timestamp desc | limit 100",
+          region = var.aws_region,
+          title  = "Backend Container Logs (Live Feed)",
+          view   = "table"
+        }
+      }
+    ]
+  })
+}
