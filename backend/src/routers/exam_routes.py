@@ -49,7 +49,6 @@ async def create_exam(
 
     user_id = str(current_user["_id"])
 
-    # Verify teacher belongs to the class
     class_id = exam_data.class_id
     if not ObjectId.is_valid(class_id):
         raise HTTPException(status_code=400, detail="Invalid class ID")
@@ -81,7 +80,6 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
     if role == "admin":
         query = {}
     elif role == "student":
-        # Find class matching student profile
         u_class = current_user.get("class_name")
         u_grade = current_user.get("grade")
         if not u_class or not u_grade:
@@ -93,11 +91,6 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
 
         query = {"class_id": str(cls["_id"])}
     elif role == "teacher":
-        # Teacher sees:
-        # 1. Exams they created
-        # 2. All exams for classes where they are homeroom teacher
-
-        # Find classes where they are homeroom teacher
         homeroom_classes = []
         async for cls in classes_collection.find({"homeroom_teacher_id": user_id}):
             homeroom_classes.append(str(cls["_id"]))
@@ -111,7 +104,6 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
     exams = []
     async for exam in exams_collection.find(query):
         e_dict = exam_helper(exam)
-        # For students, attach their specific submission status
         if role == "student":
             submission = await submissions_collection.find_one(
                 {"exam_id": e_dict["id"], "student_id": user_id}
@@ -158,7 +150,6 @@ async def submit_exam(
     if not ObjectId.is_valid(exam_id):
         raise HTTPException(status_code=400, detail="Invalid exam ID")
 
-    # Check if already submitted
     existing = await submissions_collection.find_one(
         {"exam_id": exam_id, "student_id": str(current_user["_id"])}
     )
@@ -188,11 +179,9 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    # Permission check
     role = current_user.get("role")
     user_id = str(current_user["_id"])
 
-    # Check if student already submitted or violated
     now = datetime.now(timezone.utc)
     if role == "student":
         submission = await submissions_collection.find_one(
@@ -213,7 +202,6 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
                 ),
             }
 
-        # Time-based locking for students
         if now < exam["start_time"]:
             return {
                 "id": str(exam["_id"]),
@@ -237,7 +225,6 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
     if role == "admin":
         has_permission = True
     elif role == "student":
-        # Student must be in the class defined by their name and grade
         u_class = current_user.get("class_name")
         u_grade = current_user.get("grade")
         if u_class and u_grade:
@@ -247,7 +234,6 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
             if cls:
                 has_permission = True
     elif role == "teacher":
-        # Teacher is creator OR homeroom teacher of the class
         if exam["teacher_id"] == user_id:
             has_permission = True
         else:
@@ -274,7 +260,6 @@ async def update_exam(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    # Permission check
     role = current_user.get("role")
     user_id = str(current_user["_id"])
 
@@ -313,7 +298,6 @@ async def delete_exam(exam_id: str, current_user: dict = Depends(get_current_use
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    # Permission check
     role = current_user.get("role")
     user_id = str(current_user["_id"])
 
@@ -347,7 +331,6 @@ async def get_all_violations(current_user: dict = Depends(get_current_user)):
 
     user_id = str(current_user["_id"])
 
-    # Teachers see violations from classes they manage
     query = {}
     if role == "teacher":
         homeroom_classes = []
@@ -357,14 +340,11 @@ async def get_all_violations(current_user: dict = Depends(get_current_user)):
 
     violations = []
     async for v in violations_collection.find(query).sort("violation_time", -1):
-        # Attach student info
         student = await users_collection.find_one({"_id": ObjectId(v["student_id"])})
 
-        # Self-healing: if class_id is unknown, try to fix it
         if v.get("class_id") == "unknown" and student:
             current_class_id = student.get("class_id")
             if not current_class_id:
-                # Try fallback matching by name/grade
                 class_info = await classes_collection.find_one(
                     {"name": student.get("class_name"), "grade": student.get("grade")}
                 )
@@ -386,8 +366,6 @@ async def get_all_violations(current_user: dict = Depends(get_current_user)):
             v["student_name"] = "Unknown student"
             v["student_class"] = "N/A"
 
-        # Attach exam info (Times and Full Title)
-        # Robust lookup by ObjectId or String
         exam = None
         raw_exam_id = str(v.get("exam_id", "")).strip()
         try:
@@ -399,7 +377,6 @@ async def get_all_violations(current_user: dict = Depends(get_current_user)):
             v["exam_title"] = exam.get("title", "Unknown Exam")
             v["exam_start"] = exam.get("start_time")
             v["exam_end"] = exam.get("end_time")
-            # Update subject if it was N/A
             if v.get("subject") == "N/A":
                 v["subject"] = exam.get("subject", "N/A")
                 await violations_collection.update_one(
