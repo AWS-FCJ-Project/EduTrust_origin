@@ -1,6 +1,5 @@
 import boto3
 from botocore.exceptions import ClientError
-
 from src.app_config import app_config
 
 
