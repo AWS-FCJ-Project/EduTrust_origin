@@ -70,7 +70,6 @@ async def log_requests(request: Request, call_next):
     method = request.method
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [ACCESS] {method} {path}")
 
-
     response = await call_next(request)
     return response
 

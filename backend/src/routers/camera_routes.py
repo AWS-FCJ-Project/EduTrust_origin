@@ -22,7 +22,6 @@ async def receive_client_log(request: Request):
     client_ip = request.client.host
     print(f"[ACCESS] POST /camera/log hit from {client_ip}")
 
-
     try:
         payload = await request.json()
         violation_type = payload.get("type", "UNKNOWN")
