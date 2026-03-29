@@ -169,7 +169,7 @@ const ExamListPage = () => {
                                                 const isStarted = new Date() >= new Date(exam.start_time);
                                                 return isStarted ? (
                                                     <Link
-                                                        href={`/dashboard/bai-thi/${exam.id}`}
+                                                        href={`/dashboard/exam_detail/${exam.id}`}
                                                         className="bg-[#5B0019] text-white px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-black transition-all shadow-xl shadow-red-900/20 active:scale-95 group-hover:px-10"
                                                     >
                                                         <PlayCircle size={18} /> Vào thi

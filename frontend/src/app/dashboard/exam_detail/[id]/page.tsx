@@ -4,9 +4,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
     ChevronLeft, ChevronRight, Send,
-    LayoutGrid, Trophy, Clock, Camera, X, AlertTriangle, Loader2, Activity, CheckCircle
+    LayoutGrid, Trophy, Clock, Camera, X, AlertTriangle, Loader2, Activity, CheckCircle, Shield
 } from 'lucide-react';
 import CameraMonitor from '@/components/camera/CameraMonitor';
+import ProctoringLockdown from '@/components/proctoring/ProctoringLockdown';
 import Cookies from 'js-cookie';
 
 type SelectedAnswers = { [key: number]: number };
@@ -43,6 +44,8 @@ const ExamPage = () => {
     const [statusLoading, setStatusLoading] = useState(true);
     const [lockData, setLockData] = useState<{ reason: string, info?: any } | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
+    const [isLockdownActive, setIsLockdownActive] = useState(false);
+    const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
 
     // --- 1. Fetch User & Exam Status ---
     useEffect(() => {
@@ -170,7 +173,7 @@ const ExamPage = () => {
             const timer = setInterval(() => setExitCountdown(prev => prev - 1), 1000);
             return () => clearInterval(timer);
         } else if ((showCheatModal || isSubmitted) && exitCountdown === 0) {
-            router.push('/dashboard/danh-sach-bai-thi');
+            router.push('/dashboard/exam_list');
         }
     }, [showCheatModal, isSubmitted, exitCountdown, router]);
 
@@ -196,10 +199,12 @@ const ExamPage = () => {
 
     const handleStartExam = useCallback(() => {
         setIsStarted(true);
+        setIsLockdownActive(true);
         setIsGracePeriod(true);
+        document.documentElement.requestFullscreen?.();
         setTimeout(() => {
             setIsGracePeriod(false);
-        }, 2500); 
+        }, 2500);
     }, []);
 
     const handleViolation = useCallback(() => {
@@ -213,6 +218,13 @@ const ExamPage = () => {
             return n;
         });
     }, [isStarted, isGracePeriod, isSubmitted]);
+
+    // Deactivate lockdown when exam is submitted
+    useEffect(() => {
+        if (isSubmitted) {
+            setIsLockdownActive(false);
+        }
+    }, [isSubmitted]);
 
     const formatTime = (seconds: number): string => {
         const h = Math.floor(seconds / 3600);
@@ -245,7 +257,7 @@ const ExamPage = () => {
                 <p className="text-gray-500 font-medium mb-8 max-w-md">{fetchError}</p>
                 <div className="flex gap-4">
                     <button 
-                        onClick={() => router.push('/dashboard/danh-sach-bai-thi')} 
+                        onClick={() => router.push('/dashboard/exam_list')} 
                         className="px-8 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black hover:bg-gray-200 transition-all uppercase tracking-widest text-xs"
                     >Quay về</button>
                     <button 
@@ -316,7 +328,7 @@ const ExamPage = () => {
             <div className="fixed inset-0 z-[11000] bg-white flex flex-col items-center justify-center p-6 text-center animate-in zoom-in duration-500">
                 {renderLockContent()}
                 <button 
-                    onClick={() => router.push('/dashboard/danh-sach-bai-thi')} 
+                    onClick={() => router.push('/dashboard/exam_list')} 
                     className="px-16 py-4 bg-[#5B0019] text-white rounded-2xl font-black shadow-2xl hover:bg-black transition-all active:scale-95 uppercase tracking-widest text-sm"
                 >Quay về danh sách</button>
             </div>
@@ -345,6 +357,16 @@ const ExamPage = () => {
     return (
         <div className="fixed inset-0 z-[10000] flex flex-col w-full h-screen bg-gray-50 font-sans overflow-hidden text-sm">
 
+            {/* Fullscreen Exit Warning Toast */}
+            {showFullscreenWarning && (
+                <div className="fixed inset-x-0 top-4 z-[11000] flex justify-center pointer-events-none animate-in slide-in-from-top-2 fade-in duration-300">
+                    <div className="bg-white/95 backdrop-blur-md border border-amber-300 rounded-2xl shadow-2xl px-6 py-3 flex items-center gap-3 max-w-sm">
+                        <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                        <p className="text-sm font-bold text-gray-700">Màn hình đã thoát toàn màn hình</p>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <header className="h-16 bg-[#5B0019] border-b border-red-900 flex items-center justify-between px-6 shrink-0 shadow-md z-10 transition-colors">
                 <div className="flex flex-col text-white">
@@ -360,6 +382,11 @@ const ExamPage = () => {
                     }`}>
                         <Clock size={18} /> {formatTime(timeLeft)}
                     </div>
+                    {isLockdownActive && (
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-full text-xs font-black shadow-lg" aria-label="Chế độ bảo vệ đang bật">
+                            <Shield size={12} /> BẢO VỆ
+                        </span>
+                    )}
                     <button
                         onClick={() => submitExam("completed")}
                         className="bg-white text-[#5B0019] hover:bg-black hover:text-white px-8 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-40 disabled:grayscale"
@@ -609,13 +636,21 @@ const ExamPage = () => {
             <div className="hidden" aria-hidden="true">
                 {user?.id && (
                     <div ref={cameraSourceRef} className="w-full h-full">
-                        <CameraMonitor 
-                            onViolation={handleViolation} 
-                            onStatusChange={setCameraStatus} 
+                        <CameraMonitor
+                            onViolation={handleViolation}
+                            onStatusChange={setCameraStatus}
                             isCheck={!isStarted}
                             isActive={!isSubmitted && !showCheatModal}
                             examId={examId}
                             studentId={user.id}
+                        />
+                        <ProctoringLockdown
+                            isActive={isLockdownActive && isStarted}
+                            onFullscreenExit={() => {
+                                setShowFullscreenWarning(true);
+                                setTimeout(() => setShowFullscreenWarning(false), 3000);
+                            }}
+                            contentSelector="main"
                         />
                     </div>
                 )}
