@@ -517,33 +517,35 @@ export default function AIChatSupport() {
 
     if (isPageLoading) {
         return (
-            <div className="flex h-[calc(100vh-120px)] items-center justify-center rounded-[2rem] bg-[#131313] text-white shadow-2xl">
-                <Loader2 className="animate-spin text-[#d4b28a]" size={40} />
+            <div className="flex h-[calc(100vh-120px)] items-center justify-center rounded-[2rem] border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)]">
+                <Loader2 className="animate-spin text-[#B8976A]" size={40} />
             </div>
         );
     }
 
     return (
-        <div className="grid h-[calc(100vh-120px)] grid-cols-1 gap-4 rounded-[2rem] bg-[#101010] p-3 text-white shadow-2xl xl:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col rounded-[1.75rem] border border-white/8 bg-[#171717] p-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden rounded-[2rem] border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] xl:grid-cols-[320px_minmax(0,1fr)]">
+            <aside className="flex min-h-0 flex-col border-b border-[#D4D0CA] bg-[#F7F5F2] p-6 xl:border-b-0 xl:border-r">
+                <div className="mb-6 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#5B0019] text-white shadow-lg shadow-[#5B0019]/30">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2D2A26] text-[#F5F3F0] shadow-[0_10px_20px_rgba(45,42,38,0.12)]">
                             <Bot size={18} />
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-white">EduTrust AI</p>
-                            <p className="text-xs text-zinc-400">Your chats</p>
+                            <p className="font-serif text-2xl text-[#2D2A26]">EduTrust AI</p>
+                            <p className="text-xs uppercase tracking-[0.28em] text-[#B8976A]">
+                                Your chats
+                            </p>
                         </div>
                     </div>
-                    <PanelLeft size={18} className="text-zinc-500" />
+                    <PanelLeft size={18} className="text-[#B8976A]" />
                 </div>
 
                 <button
                     type="button"
                     onClick={handleCreateConversation}
                     disabled={isCreatingConversation || isSending}
-                    className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:border-[#d4b28a]/30 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mb-4 flex items-center justify-center gap-2 rounded-[1.5rem] border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-3 text-sm font-medium text-[#2D2A26] transition hover:border-[#B8976A] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                     {isCreatingConversation ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -553,28 +555,28 @@ export default function AIChatSupport() {
                     Cuộc trò chuyện mới
                 </button>
 
-                <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/8 bg-[#1e1e1e] px-4 py-3">
-                    <Search size={16} className="text-zinc-500" />
+                <div className="mb-5 flex items-center gap-3 rounded-[1.5rem] border border-[#D4D0CA] bg-[#FBFAF7] px-4 py-3">
+                    <Search size={16} className="text-[#B8976A]" />
                     <input
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                         placeholder="Tìm kiếm hội thoại"
-                        className="w-full bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+                        className="w-full bg-transparent text-sm text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
                     />
                 </div>
 
                 <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#B8976A]">
                         Your Chats
                     </p>
-                    <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-zinc-400">
+                    <span className="rounded-full border border-[#D4D0CA] bg-[#FBFAF7] px-2 py-1 text-[11px] text-[#8E867B]">
                         {filteredConversations.length}
                     </span>
                 </div>
 
                 <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                     {filteredConversations.length === 0 ? (
-                        <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-400">
+                        <div className="rounded-[1.75rem] border border-dashed border-[#D4D0CA] bg-[#FBFAF7] p-4 text-sm leading-7 text-[#8E867B]">
                             {conversations.length === 0
                                 ? "Chưa có lịch sử trò chuyện. Hãy tạo cuộc trò chuyện đầu tiên."
                                 : "Không tìm thấy hội thoại phù hợp."}
@@ -593,19 +595,19 @@ export default function AIChatSupport() {
                                     }
                                     className={`w-full rounded-3xl border px-4 py-3 text-left transition ${
                                         isActive
-                                            ? "border-[#d4b28a]/40 bg-[#5B0019]/45 shadow-lg shadow-[#5B0019]/20"
-                                            : "border-white/6 bg-white/[0.03] hover:border-white/12 hover:bg-white/[0.05]"
+                                            ? "border-[#B8976A] bg-[#FFFDFC] shadow-[0_14px_30px_rgba(184,151,106,0.12)]"
+                                            : "border-[#E6E0D8] bg-transparent hover:border-[#B8976A]/70 hover:bg-[#FBFAF7]"
                                     }`}
                                 >
                                     <div className="mb-1 flex items-start justify-between gap-3">
-                                        <p className="line-clamp-1 text-sm font-semibold text-white">
+                                        <p className="line-clamp-1 text-sm font-semibold text-[#2D2A26]">
                                             {conversation.title || "New Chat"}
                                         </p>
-                                        <span className="shrink-0 text-[11px] text-zinc-400">
+                                        <span className="shrink-0 text-[11px] text-[#8E867B]">
                                             {formatRelativeTime(conversation.updated_at)}
                                         </span>
                                     </div>
-                                    <p className="line-clamp-2 text-xs leading-5 text-zinc-400">
+                                    <p className="line-clamp-2 text-xs leading-5 text-[#8E867B]">
                                         {conversation.preview || "Chưa có tin nhắn"}
                                     </p>
                                 </button>
@@ -614,19 +616,19 @@ export default function AIChatSupport() {
                     )}
                 </div>
 
-                <div className="mt-4 rounded-3xl border border-white/8 bg-linear-to-br from-[#1b1b1b] to-[#111111] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#d4b28a]">
+                <div className="mt-4 rounded-[1.75rem] border border-[#D4D0CA] bg-[#FBFAF7] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#B8976A]">
                         Hồ sơ phiên
                     </p>
                     <div className="mt-3 flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/6">
-                            <CircleUserRound size={22} className="text-zinc-300" />
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#E6E0D8] bg-white">
+                            <CircleUserRound size={22} className="text-[#8E867B]" />
                         </div>
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-white">
+                            <p className="truncate text-sm font-semibold text-[#2D2A26]">
                                 {user?.name || "Người dùng"}
                             </p>
-                            <p className="truncate text-xs text-zinc-400">
+                            <p className="truncate text-xs text-[#8E867B]">
                                 {user?.email || "Tài khoản EduTrust"}
                             </p>
                         </div>
@@ -634,62 +636,62 @@ export default function AIChatSupport() {
                 </div>
             </aside>
 
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/8 bg-[#212121]">
-                <div className="flex items-center justify-between border-b border-white/8 px-6 py-5">
+            <section className="flex min-h-0 flex-col overflow-hidden bg-[#F5F3F0]">
+                <div className="flex items-center justify-between border-b border-[#D4D0CA] px-8 py-6">
                     <div className="min-w-0">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#5B0019] shadow-lg shadow-[#5B0019]/30">
-                                <Sparkles size={18} className="text-white" />
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A]">
+                                <Sparkles size={18} />
                             </div>
                             <div className="min-w-0">
-                                <h2 className="truncate text-lg font-semibold text-white">
+                                <h2 className="truncate font-serif text-4xl leading-none text-[#2D2A26]">
                                     {activeConversation?.title || "Bắt đầu cuộc trò chuyện mới"}
                                 </h2>
-                                <p className="text-sm text-zinc-400">
+                                <p className="mt-2 text-xs uppercase tracking-[0.28em] text-[#B8976A]">
                                     Trợ lý AI cho giáo viên và học sinh
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="hidden items-center gap-3 rounded-full border border-white/8 bg-white/[0.03] px-4 py-2 text-sm text-zinc-300 md:flex">
-                        <CircleUserRound size={16} />
+                    <div className="hidden items-center gap-3 rounded-full border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-2 text-sm text-[#8E867B] md:flex">
+                        <CircleUserRound size={16} className="text-[#B8976A]" />
                         <span>{user?.name || "Người dùng"}</span>
                     </div>
                 </div>
 
                 {error ? (
-                    <div className="mx-6 mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    <div className="mx-8 mt-5 rounded-[1.5rem] border border-[#E1C8B5] bg-[#F1E7DB] px-4 py-3 text-sm text-[#7A5948]">
                         {error}
                     </div>
                 ) : null}
 
                 <div
                     ref={scrollRef}
-                    className="flex-1 overflow-y-auto px-4 py-5 md:px-8"
+                    className="flex-1 overflow-y-auto px-8 py-8"
                 >
                     {isConversationLoading ? (
                         <div className="flex h-full items-center justify-center">
-                            <Loader2 className="animate-spin text-[#d4b28a]" size={34} />
+                            <Loader2 className="animate-spin text-[#B8976A]" size={34} />
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center text-center">
-                            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-[#5B0019] shadow-2xl shadow-[#5B0019]/25">
-                                <MessageSquareText size={28} />
+                        <div className="flex h-full flex-col items-center justify-center text-center">
+                            <div className="mb-8 flex h-18 w-18 items-center justify-center rounded-[1.9rem] border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A] shadow-[0_16px_30px_rgba(184,151,106,0.12)]">
+                                <MessageSquareText size={30} />
                             </div>
-                            <h3 className="text-2xl font-semibold text-white">
+                            <h3 className="font-serif text-6xl leading-[0.9] text-[#2D2A26]">
                                 {activeConversationId
                                     ? "Sẵn sàng cho cuộc trò chuyện mới"
                                     : `Xin chào ${user?.name || ""}`}
                             </h3>
-                            <p className="mt-3 max-w-xl text-sm leading-7 text-zinc-400">
+                            <p className="mt-6 max-w-3xl text-lg leading-10 text-[#8E867B]">
                                 {activeConversationId
                                     ? "Hãy gửi câu hỏi đầu tiên để EduTrust tạo tiêu đề và lưu hội thoại này vào mục Your Chats."
                                     : WELCOME_MESSAGE}
                             </p>
                         </div>
                     ) : (
-                        <div className="mx-auto flex max-w-4xl flex-col gap-6">
+                        <div className="flex flex-col gap-6">
                             {messages.map((message) => (
                                 <div
                                     key={message.id}
@@ -707,10 +709,10 @@ export default function AIChatSupport() {
                                         }`}
                                     >
                                         <div
-                                            className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${
+                                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
                                                 message.role === "user"
-                                                    ? "bg-white/8 text-zinc-200"
-                                                    : "bg-[#5B0019] text-white shadow-lg shadow-[#5B0019]/25"
+                                                    ? "border-[#2D2A26] bg-[#2D2A26] text-[#F5F3F0]"
+                                                    : "border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A]"
                                             }`}
                                         >
                                             {message.role === "user" ? (
@@ -721,15 +723,15 @@ export default function AIChatSupport() {
                                         </div>
 
                                         <div
-                                            className={`rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg ${
+                                            className={`rounded-[1.75rem] px-5 py-4 text-sm leading-7 ${
                                                 message.role === "user"
-                                                    ? "rounded-tr-md bg-linear-to-br from-[#6d0b2a] to-[#4b0015] text-white shadow-[#5B0019]/20"
-                                                    : "rounded-tl-md border border-white/8 bg-[#262626] text-zinc-100"
+                                                    ? "rounded-tr-md bg-[#2D2A26] text-[#F5F3F0]"
+                                                    : "rounded-tl-md border border-[#D4D0CA] bg-[#FFFDFC] text-[#2D2A26]"
                                             }`}
                                         >
                                             {message.role === "ai" ? (
                                                 message.content ? (
-                                                    <div className="prose prose-sm max-w-none overflow-x-auto prose-headings:text-[#f3d7b0] prose-p:text-zinc-100 prose-strong:text-white prose-li:text-zinc-100 prose-code:text-[#f8d7b4]">
+                                                    <div className="prose prose-sm max-w-none overflow-x-auto prose-headings:text-[#2D2A26] prose-p:text-[#4F4A44] prose-strong:text-[#2D2A26] prose-li:text-[#4F4A44] prose-code:text-[#B8976A]">
                                                         <ReactMarkdown
                                                             remarkPlugins={[remarkMath]}
                                                             rehypePlugins={[rehypeKatex]}
@@ -738,7 +740,7 @@ export default function AIChatSupport() {
                                                         </ReactMarkdown>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex items-center gap-3 text-zinc-400">
+                                                    <div className="flex items-center gap-3 text-[#8E867B]">
                                                         <Loader2
                                                             size={16}
                                                             className="animate-spin"
@@ -759,42 +761,40 @@ export default function AIChatSupport() {
                     )}
                 </div>
 
-                <div className="border-t border-white/8 bg-[#1b1b1b] px-4 py-4 md:px-6">
-                    <div className="mx-auto max-w-4xl">
-                        <div className="rounded-[1.75rem] border border-white/8 bg-[#262626] p-2 shadow-2xl shadow-black/10">
-                            <div className="flex items-end gap-3">
-                                <textarea
-                                    value={input}
-                                    disabled={isSending}
-                                    rows={1}
-                                    onChange={(event) => setInput(event.target.value)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter" && !event.shiftKey) {
-                                            event.preventDefault();
-                                            handleSend();
-                                        }
-                                    }}
-                                    placeholder={
-                                        isSending
-                                            ? "EduTrust đang trả lời..."
-                                            : "Hỏi bài, nhờ soạn nội dung, hoặc bắt đầu một cuộc trò chuyện mới..."
+                <div className="border-t border-[#D4D0CA] bg-[#F7F5F2] px-8 py-6">
+                    <div className="rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] p-3 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
+                        <div className="flex items-end gap-3">
+                            <textarea
+                                value={input}
+                                disabled={isSending}
+                                rows={1}
+                                onChange={(event) => setInput(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter" && !event.shiftKey) {
+                                        event.preventDefault();
+                                        handleSend();
                                     }
-                                    className="max-h-40 min-h-[56px] flex-1 resize-none bg-transparent px-4 py-3 text-sm leading-6 text-white placeholder:text-zinc-500 focus:outline-none"
-                                />
+                                }}
+                                placeholder={
+                                    isSending
+                                        ? "EduTrust đang trả lời..."
+                                        : "Hỏi bài, nhờ soạn nội dung, hoặc bắt đầu một cuộc trò chuyện mới..."
+                                }
+                                className="max-h-40 min-h-[72px] flex-1 resize-none bg-transparent px-5 py-4 text-sm leading-7 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
+                            />
 
-                                <button
-                                    type="button"
-                                    onClick={handleSend}
-                                    disabled={isSending || !input.trim()}
-                                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#5B0019] text-white transition hover:bg-[#710321] disabled:cursor-not-allowed disabled:bg-zinc-700"
-                                >
-                                    {isSending ? (
-                                        <Loader2 size={18} className="animate-spin" />
-                                    ) : (
-                                        <ArrowUp size={18} />
-                                    )}
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSend}
+                                disabled={isSending || !input.trim()}
+                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#2D2A26] text-[#F5F3F0] transition hover:bg-[#403B35] disabled:cursor-not-allowed disabled:bg-[#CFC8BF]"
+                            >
+                                {isSending ? (
+                                    <Loader2 size={18} className="animate-spin" />
+                                ) : (
+                                    <ArrowUp size={18} />
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
