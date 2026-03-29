@@ -21,7 +21,7 @@ export default function Header() {
 
             <div className="flex flex-col flex-1">
                 <div className="h-10 md:h-12.5 bg-[#5B0019] flex items-center justify-between px-4">
-                    <span className="text-white text-[10px] md:text-xs font-light italic hidden sm:block">
+                    <span className="text-white text-[10px] md:text-xs font-medium italic tracking-[-0.01em] hidden sm:block">
                         • <strong><em>NỀN TẢNG CỦA SỰ XUẤT SẮC & LÒNG TRUNG THỰC</em></strong>
                     </span>
 
@@ -35,19 +35,19 @@ export default function Header() {
                     <div className="hidden md:flex h-full items-stretch">
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <Megaphone size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-bold uppercase transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Tin tức
                             </span>
                         </div>
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <CalendarCheck size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-bold uppercase transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Lịch
                             </span>
                         </div>
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <Moon size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-bold uppercase transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Chế độ tối
                             </span>
                         </div>
@@ -60,7 +60,7 @@ export default function Header() {
                 </div>
 
                 <div className="h-12.5 md:h-17.5 bg-white flex items-center px-4 justify-between">
-                    <nav className="hidden md:flex gap-6 font-bold text-[#5B0019] text-sm uppercase">
+                    <nav className="hidden md:flex gap-6 text-[#5B0019] text-sm font-medium tracking-[-0.02em]">
                         <a href="#" className="hover:text-red-700">Về chúng tôi</a>
                         <a href="#" className="hover:text-red-700">Tuyển sinh</a>
                         <a href="#" className="hover:text-red-700">Đào tạo</a>
@@ -71,7 +71,7 @@ export default function Header() {
                     <div className="flex items-center ml-auto md:ml-0">
                         <a
                             href="/login"
-                            className="px-4 py-1.5 md:px-6 md:py-2 border-2 border-[#5B0019] bg-white text-[#5B0019] text-[12px] md:text-sm font-bold uppercase rounded hover:bg-[#5B0019] hover:text-white transition-all"
+                            className="px-4 py-1.5 md:px-6 md:py-2 border-2 border-[#5B0019] bg-white text-[#5B0019] text-[12px] md:text-sm font-medium rounded hover:bg-[#5B0019] hover:text-white transition-all"
                         >
                             Đăng nhập
                         </a>
@@ -91,11 +91,11 @@ export default function Header() {
                             <Moon size={20} /> <span>Chế độ tối</span>
                         </div>
                         <div className="flex flex-col gap-2 pt-2">
-                            <a href="#" className="uppercase font-bold">Về chúng tôi</a>
-                            <a href="#" className="uppercase font-bold">Tuyển sinh</a>
-                            <a href="#" className="uppercase font-bold">Đào tạo</a>
-                            <a href="#" className="uppercase font-bold">Văn hóa</a>
-                            <a href="#" className="uppercase font-bold">Nghệ thuật</a>
+                            <a href="#" className="font-medium">Về chúng tôi</a>
+                            <a href="#" className="font-medium">Tuyển sinh</a>
+                            <a href="#" className="font-medium">Đào tạo</a>
+                            <a href="#" className="font-medium">Văn hóa</a>
+                            <a href="#" className="font-medium">Nghệ thuật</a>
                         </div>
                     </div>
                 )
