@@ -21,7 +21,7 @@ export default function Header() {
 
             <div className="flex flex-col flex-1">
                 <div className="h-10 md:h-12.5 bg-[#5B0019] flex items-center justify-between px-4">
-                    <span className="text-white text-[10px] md:text-xs font-medium italic tracking-[-0.01em] hidden sm:block">
+                    <span className="text-white text-xs md:text-sm font-semibold italic tracking-[-0.01em] hidden sm:block">
                         • <strong><em>NỀN TẢNG CỦA SỰ XUẤT SẮC & LÒNG TRUNG THỰC</em></strong>
                     </span>
 
@@ -35,32 +35,32 @@ export default function Header() {
                     <div className="hidden md:flex h-full items-stretch">
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <Megaphone size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-xs font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Tin tức
                             </span>
                         </div>
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <CalendarCheck size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-xs font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Lịch
                             </span>
                         </div>
                         <div className="group flex items-center hover:bg-[#8a0028] transition-all duration-300 px-3 cursor-pointer border-l border-[#4a0014]">
                             <Moon size={18} className="text-white" />
-                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-[11px] font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
+                            <span className="max-w-0 overflow-hidden whitespace-nowrap text-white text-xs font-medium transition-all duration-300 group-hover:max-w-37.5 group-hover:ml-2">
                                 Chế độ tối
                             </span>
                         </div>
                         <div className="flex items-center gap-4 px-4 border-l border-[#4a0014]">
-                            <button className="text-white text-xs hover:text-gray-300 cursor-pointer">Hỗ trợ</button>
-                            <button className="text-white text-xs hover:text-gray-300 cursor-pointer">Thông báo</button>
+                            <button className="text-white text-sm hover:text-gray-300 cursor-pointer">Hỗ trợ</button>
+                            <button className="text-white text-sm hover:text-gray-300 cursor-pointer">Thông báo</button>
                             <Search size={18} className="text-white cursor-pointer hover:text-gray-300" />
                         </div>
                     </div>
                 </div>
 
                 <div className="h-12.5 md:h-17.5 bg-white flex items-center px-4 justify-between">
-                    <nav className="hidden md:flex gap-6 text-[#5B0019] text-sm font-medium tracking-[-0.02em]">
+                    <nav className="hidden md:flex gap-8 text-[#5B0019] text-[1.08rem] font-medium tracking-[-0.02em]">
                         <a href="#" className="hover:text-red-700">Về chúng tôi</a>
                         <a href="#" className="hover:text-red-700">Tuyển sinh</a>
                         <a href="#" className="hover:text-red-700">Đào tạo</a>
@@ -71,7 +71,7 @@ export default function Header() {
                     <div className="flex items-center ml-auto md:ml-0">
                         <a
                             href="/login"
-                            className="px-4 py-1.5 md:px-6 md:py-2 border-2 border-[#5B0019] bg-white text-[#5B0019] text-[12px] md:text-sm font-medium rounded hover:bg-[#5B0019] hover:text-white transition-all"
+                            className="px-5 py-2 md:px-7 md:py-2.5 border-2 border-[#5B0019] bg-white text-[#5B0019] text-sm md:text-lg font-medium rounded hover:bg-[#5B0019] hover:text-white transition-all"
                         >
                             Đăng nhập
                         </a>
