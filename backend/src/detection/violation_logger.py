@@ -20,17 +20,13 @@ class ViolationLogger:
             violations_collection,
         )
 
-        # S3 Prefix: violations/students/{student_id}/{exam_id}/
         s3_prefix = f"violations/students/{student_id}/{exam_id}/"
 
-        # 1. Sync to MongoDB (for Teacher Dashboard)
         try:
             from src.database import exams_collection
 
-            # Find student and exam info
             student = await users_collection.find_one({"_id": ObjectId(student_id)})
 
-            # Try finding exam by ObjectId or String
             exam = None
             try:
                 exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
@@ -56,7 +52,6 @@ class ViolationLogger:
             if exam:
                 subject_name = exam.get("subject", "N/A")
 
-            # Get list of evidence images from S3
             evidence_images = []
             try:
                 from src.utils.s3_utils import get_s3_handler
@@ -74,7 +69,6 @@ class ViolationLogger:
             except Exception as e:
                 print(f"[S3 ERROR] Failed to list evidence images: {e}")
 
-            # Use update_one with upsert=True to maintain a single record per student/exam
             await violations_collection.update_one(
                 {"exam_id": str(exam_id), "student_id": str(student_id)},
                 {

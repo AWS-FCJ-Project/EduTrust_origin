@@ -11,7 +11,6 @@ from src.detection.violation_logger import get_violation_logger
 
 class CameraService:
     def __init__(self):
-        # Default configuration for the detector
         self.config = {
             "objects": {
                 "min_confidence": 0.5,
@@ -25,24 +24,20 @@ class CameraService:
         self.capturer = get_violation_capturer()
 
     async def process_frame(self, frame_bytes: bytes):
-        # Convert bytes to numpy array
         nparr = np.frombuffer(frame_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         if frame is None:
             return {"error": "Invalid image data"}
 
-        # Perform detection
         results = self.detector.detect_objects(frame, visualize=True)
 
         if results:
             violations = self._get_violations(results)
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Persist if violations found
             if violations:
                 for v_type in violations:
-                    # Upload image to S3 FIRST, then log (so log can see the uploaded image)
                     await self.capturer.capture_violation(
                         "unknown_exam", "unknown_student", frame, v_type, timestamp
                     )
@@ -54,7 +49,6 @@ class CameraService:
                         {"person_count": results["person_count"]},
                     )
 
-            # Convert frame back to bytes if we want to return the visualized frame
             _, buffer = cv2.imencode(".jpg", frame)
             visualized_frame_bytes = buffer.tobytes()
 
@@ -95,8 +89,6 @@ class CameraService:
 
         if not violations:
             print(" [DEBUG] No violations in payload. (Could be a clear-log request)")
-            # If it's a clear-log, we might not need an image.
-            # But the user logic currently expects one if violations exist.
 
         if not image_b64:
             if not violations:
@@ -106,7 +98,6 @@ class CameraService:
 
         try:
             print(f" [DEBUG] Base64 Image received (Length: {len(image_b64)} chars)")
-            # Add padding if necessary
             image_b64 += "=" * ((4 - len(image_b64) % 4) % 4)
             try:
                 frame_bytes = base64.b64decode(image_b64)
@@ -126,7 +117,6 @@ class CameraService:
 
             for v_code in violations:
                 print(f" [ACTION] Logging {v_code} for {student_id}...")
-                # Upload image to S3 FIRST, then log (so log can see the uploaded image)
                 await self.capturer.capture_violation(
                     exam_id, student_id, frame, v_code, timestamp
                 )
@@ -144,7 +134,6 @@ class CameraService:
             return {"error": str(e)}
 
 
-# Global instance for the service
 camera_service = None
 
 

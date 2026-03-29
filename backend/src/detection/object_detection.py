@@ -24,17 +24,13 @@ class ObjectDetector:
             model_path = self.config.get("model_path", "yolo26n.pt")
             self.model = YOLO(model_path, task="detect")
 
-            # Optimize model settings
             self.model.overrides["conf"] = self.config["min_confidence"]
             self.model.overrides["device"] = (
                 "cuda" if torch.cuda.is_available() else "cpu"
             )
-            self.model.overrides["imgsz"] = (
-                320  # Smaller input size for faster processing
-            )
-            self.model.overrides["iou"] = 0.45  # Slightly higher IOU threshold
+            self.model.overrides["imgsz"] = 320
+            self.model.overrides["iou"] = 0.45
 
-            # Warm up the model
             dummy_input = torch.zeros((1, 3, 320, 320)).to(self.model.device)
             self.model(dummy_input)
 
@@ -84,7 +80,6 @@ class ObjectDetector:
                 "FORBIDDEN_OBJECT", f"Detected {label} with confidence {conf:.2f}"
             )
 
-        # Scale coordinates
         x1, y1, x2, y2 = box_xyxy
         x1, y1 = int(x1 * (orig_w / new_w)), int(y1 * (orig_h / new_h))
         x2, y2 = int(x2 * (orig_w / new_w)), int(y2 * (orig_h / new_h))

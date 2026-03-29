@@ -8,4 +8,4 @@ class CameraDetectionResponse(BaseModel):
     forbidden_detected: bool
     violations: List[str]
     timestamp: str
-    visualized_frame: Optional[str] = None  # Base64 encoded string
+    visualized_frame: Optional[str] = None

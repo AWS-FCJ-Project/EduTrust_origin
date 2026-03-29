@@ -112,7 +112,6 @@ async def get_violation_image(path: str):
 
         s3 = get_s3_handler()
 
-        # In case the path is missing the prefix 'violations/' (legacy support)
         s3_key = path
         if not s3_key.startswith("violations/") and s3_key.startswith("students/"):
             s3_key = f"violations/{s3_key}"
