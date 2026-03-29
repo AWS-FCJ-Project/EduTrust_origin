@@ -18,10 +18,17 @@ client = TestClient(app)
 
 
 def test_multi_register_csv():
-    csv_content = b"email,password\ntestcsv1@example.com,Pass@word1\ntestcsv2@example.com,Pass@word2"
+    csv_content = b"email,password,class_name,grade\ntestcsv1@example.com,Pass@word1,10A,10\ntestcsv2@example.com,Pass@word2,10A,10"
 
     with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+        "src.routers.auth.register.users_collection.insert_many",
+        new_callable=AsyncMock,
+    ), patch(
+        "src.routers.auth.register.classes_collection.find_one",
+        new_callable=AsyncMock,
+    ), patch(
+        "src.routers.auth.register.classes_collection.insert_one",
+        new_callable=AsyncMock,
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[{"email": "testcsv1@example.com"}])
@@ -42,6 +49,8 @@ def test_multi_register_excel():
         {
             "email": ["testexcel1@example.com", "testexcel2@example.com"],
             "password": ["Pass@word1", "Pass@word2"],
+            "class_name": ["10A", "10A"],
+            "grade": [10, 10],
         }
     )
 
@@ -50,7 +59,14 @@ def test_multi_register_excel():
     excel_file.seek(0)
 
     with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
-        "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
+        "src.routers.auth.register.users_collection.insert_many",
+        new_callable=AsyncMock,
+    ), patch(
+        "src.routers.auth.register.classes_collection.find_one",
+        new_callable=AsyncMock,
+    ), patch(
+        "src.routers.auth.register.classes_collection.insert_one",
+        new_callable=AsyncMock,
     ):
         cursor = AsyncMock()
         cursor.to_list = AsyncMock(return_value=[])

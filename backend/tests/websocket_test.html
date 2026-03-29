@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>WebSocket Camera Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+        }
+
+        #container {
+            position: relative;
+            display: inline-block;
+        }
+
+        #visualized {
+            border: 2px solid #333;
+            max-width: 640px;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .violation {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Real-time Camera Detection (WebSocket)</h1>
+    <div id="container">
+        <video id="video" width="640" height="480" autoplay style="display:none;"></video>
+        <img id="visualized" src="" alt="Camera Feed">
+    </div>
+    <div id="status">Status: Connecting...</div>
+    <div id="violations"></div>
+
+    <script>
+        const video = document.getElementById('video');
+        const visualized = document.getElementById('visualized');
+        const statusDiv = document.getElementById('status');
+        const violationsDiv = document.getElementById('violations');
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = globalThis.location.host || "localhost:8000";
+        let ws = new WebSocket(`${protocol}//${host}/camera/ws`);
+
+        ws.onopen = () => {
+            statusDiv.innerText = 'Status: Connected';
+            startStreaming();
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.visualized_frame) {
+                visualized.src = 'data:image/jpeg;base64,' + data.visualized_frame;
+            }
+
+            if (data.violations && data.violations.length > 0) {
+                violationsDiv.innerHTML = '<h3 class="violation">Violations: ' + data.violations.join(', ') + '</h3>';
+            } else {
+                violationsDiv.innerHTML = '';
+            }
+        };
+
+        ws.onclose = () => {
+            statusDiv.innerText = 'Status: Disconnected';
+        };
+
+        async function startStreaming() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        canvas.toBlob((blob) => {
+                            ws.send(blob);
+                        }, 'image/jpeg', 0.8);
+                    }
+                }, 200); // 5 frames per second
+            } catch (err) {
+                console.error("Error accessing camera: ", err);
+                statusDiv.innerText = 'Status: Camera Error';
+            }
+        }
+    </script>
+</body>
+
+</html>
