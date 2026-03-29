@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import pymongo
@@ -74,6 +75,9 @@ class ConversationHandler:
             print(f"Ping result: {ping_result}")
             self.db = self.client[self.db_name]
             self.collection = self.db[self.collection_name]
+            self.collection.create_index(
+                [("user_id", pymongo.ASCENDING), ("updated_at", pymongo.DESCENDING)]
+            )
             print(f"Connected to database: {self.db_name}")
         except Exception as e:
             print(f"Error connecting to database: {e}")
@@ -92,26 +96,47 @@ class ConversationHandler:
         *,
         role: str,
         content: str,
+        user_id: Optional[str] = None,
         max_messages: Optional[int] = 200,
         **extra: Any,
     ) -> None:
         """Append message to conversation, creating it if needed."""
         collection = self._require_collection()
+        now = datetime.now(timezone.utc)
 
         # MongoDB is the source of truth: always write there first.
-        message: dict[str, Any] = {"role": role, "content": content, **extra}
+        message: dict[str, Any] = {
+            "role": role,
+            "content": content,
+            "created_at": extra.pop("created_at", now),
+            **extra,
+        }
         push_value: dict[str, Any] = {"$each": [message]}
         if max_messages is not None:
             push_value["$slice"] = -max_messages
 
+        set_on_insert: dict[str, Any] = {
+            "_id": conversation_id,
+            "title": "New Chat",
+            "created_at": now,
+            "message_count": 0,
+        }
+        if user_id is not None:
+            set_on_insert["user_id"] = user_id
+
         collection.update_one(
             {"_id": conversation_id},
             {
-                "$setOnInsert": {"_id": conversation_id},
+                "$setOnInsert": set_on_insert,
+                "$set": {"updated_at": now},
+                "$inc": {"message_count": 1},
                 "$push": {"messages": push_value},
             },
             upsert=True,
         )
+
+        if role == "user":
+            self._update_title_from_first_message(conversation_id, content)
 
         if self._conversation_cache:
             # Write-through cache: if Redis already has this conversation, keep it
@@ -132,6 +157,10 @@ class ConversationHandler:
                 self._conversation_cache.cache_conversation(
                     {
                         "_id": conversation_id,
+                        "user_id": cached.get("user_id"),
+                        "title": cached.get("title", "New Chat"),
+                        "created_at": cached.get("created_at"),
+                        "updated_at": now,
                         "messages": cached_messages,
                         "is_complete": is_complete,
                     }
@@ -145,10 +174,14 @@ class ConversationHandler:
                 self._conversation_cache.invalidate_conversation(conversation_id)
 
     def get_context(
-        self, conversation_id: str, *, message_limit: int = 10
+        self,
+        conversation_id: str,
+        *,
+        message_limit: int = 10,
+        user_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Retrieve recent messages from conversation."""
-        if self._conversation_cache and message_limit > 0:
+        if user_id is None and self._conversation_cache and message_limit > 0:
             # Cache-aside: try Redis first; if cache is missing/short, fall back to Mongo
             # and repopulate Redis (marked is_complete=True).
             cached = self._conversation_cache.get_conversation(conversation_id)
@@ -189,20 +222,140 @@ class ConversationHandler:
         collection = self._require_collection()
         projection: dict[str, Any]
         projection = {"messages": 1}
+        query: dict[str, Any] = {"_id": conversation_id}
+        if user_id is not None:
+            query["user_id"] = user_id
 
         self._log_mongo_read(
             conversation_id=conversation_id, message_limit=message_limit
         )
-        doc = collection.find_one({"_id": conversation_id}, projection)
+        doc = collection.find_one(query, projection)
         if not doc:
             return []
 
         messages = list(doc.get("messages", []))
-        if self._conversation_cache and message_limit > 0:
+        if user_id is None and self._conversation_cache and message_limit > 0:
             self._conversation_cache.cache_conversation(
                 {"_id": conversation_id, "messages": messages, "is_complete": True}
             )
         return messages[-message_limit:] if message_limit > 0 else messages
+
+    def create_conversation(
+        self, conversation_id: str, *, user_id: str
+    ) -> dict[str, Any]:
+        """Create a new empty conversation for a user."""
+        collection = self._require_collection()
+        now = datetime.now(timezone.utc)
+        conversation = {
+            "_id": conversation_id,
+            "user_id": user_id,
+            "title": "New Chat",
+            "messages": [],
+            "message_count": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+        collection.insert_one(conversation)
+        return conversation
+
+    def list_conversations(
+        self, *, user_id: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """List conversation summaries for a user, newest first."""
+        collection = self._require_collection()
+        cursor = (
+            collection.find(
+                {"user_id": user_id},
+                {
+                    "title": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "message_count": 1,
+                    "messages": {"$slice": -1},
+                },
+            )
+            .sort("updated_at", pymongo.DESCENDING)
+            .limit(limit)
+        )
+
+        conversations: list[dict[str, Any]] = []
+        for doc in cursor:
+            messages = list(doc.get("messages", []))
+            preview = messages[-1].get("content", "") if messages else ""
+            conversations.append(
+                {
+                    "conversation_id": doc["_id"],
+                    "title": doc.get("title", "New Chat"),
+                    "preview": preview[:140],
+                    "created_at": doc.get("created_at"),
+                    "updated_at": doc.get("updated_at"),
+                    "message_count": int(doc.get("message_count", 0)),
+                }
+            )
+        return conversations
+
+    def get_conversation(
+        self, conversation_id: str, *, user_id: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """Return a conversation document by id, optionally scoped to a user."""
+        collection = self._require_collection()
+        query: dict[str, Any] = {"_id": conversation_id}
+        if user_id is not None:
+            query["user_id"] = user_id
+        return collection.find_one(query)
+
+    def conversation_exists(
+        self, conversation_id: str, *, user_id: Optional[str] = None
+    ) -> bool:
+        """Return True when the conversation exists."""
+        collection = self._require_collection()
+        query: dict[str, Any] = {"_id": conversation_id}
+        if user_id is not None:
+            query["user_id"] = user_id
+        return collection.count_documents(query, limit=1) > 0
+
+    def get_latest_conversation_id(self, user_id: str) -> Optional[str]:
+        """Return the most recently updated conversation id for a user."""
+        collection = self._require_collection()
+        doc = collection.find_one(
+            {"user_id": user_id},
+            {"_id": 1},
+            sort=[("updated_at", pymongo.DESCENDING)],
+        )
+        return str(doc["_id"]) if doc else None
+
+    def _update_title_from_first_message(
+        self, conversation_id: str, content: str
+    ) -> None:
+        """Use the first user message as the conversation title."""
+        collection = self._require_collection()
+        doc = collection.find_one(
+            {"_id": conversation_id},
+            {"title": 1, "messages": {"$slice": 2}},
+        )
+        if not doc:
+            return
+
+        title = str(doc.get("title") or "").strip()
+        if title and title != "New Chat":
+            return
+
+        user_messages = [
+            message
+            for message in doc.get("messages", [])
+            if message.get("role") == "user" and message.get("content")
+        ]
+        if len(user_messages) != 1:
+            return
+
+        normalized = " ".join(content.split()).strip()
+        if not normalized:
+            return
+
+        collection.update_one(
+            {"_id": conversation_id},
+            {"$set": {"title": normalized[:60]}},
+        )
 
     def close(self) -> None:
         """Close database and cache connections."""
