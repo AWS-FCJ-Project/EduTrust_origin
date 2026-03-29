@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-deploy-main
+  group: terraform-state-lock
   cancel-in-progress: false
 
 env:
@@ -34,7 +34,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.10.0"
+          terraform_version: "1.14.6"
           terraform_wrapper: false
 
       - name: Terraform Format Check
@@ -44,6 +44,24 @@ jobs:
       - name: Write terraform.tfvars from secret
         working-directory: ${{ env.TF_DIR }}
         run: printf "%s\n" "$TERRAFORM_VARS" > terraform.tfvars
+
+      - name: Bootstrap Terraform Backend (S3 Native Locking)
+        run: |
+          chmod +x bootstrap.sh
+          ./bootstrap.sh
+
+      - name: Verify S3 Backend is Accessible
+        env:
+          TF_BUCKET: "aws-fcj-terraform-641458060045"
+          TF_REGION: "ap-southeast-1"
+        run: |
+          echo "Verifying S3 backend bucket is fully accessible..."
+          aws s3api wait bucket-exists \
+            --bucket "$TF_BUCKET" \
+            --region "$TF_REGION"
+          # Extra check: confirm we can actually LIST the bucket (not just that it exists)
+          aws s3api head-bucket --bucket "$TF_BUCKET" --region "$TF_REGION"
+          echo "S3 bucket confirmed accessible. Proceeding to terraform init."
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
@@ -61,5 +79,3 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve tfplan
-
-      

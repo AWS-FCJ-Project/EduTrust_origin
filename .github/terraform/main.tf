@@ -172,21 +172,33 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC Endpoints"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "HTTPS from Backend EC2"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.backend.id] # Allow from Backend EC2
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = { Name = "vpc-endpoint-sg" }
 }
 
+resource "aws_vpc_security_group_ingress_rule" "vpce_https" {
+  description                  = "HTTPS from Backend EC2"
+  security_group_id            = aws_security_group.vpc_endpoints.id
+  referenced_security_group_id = aws_security_group.backend.id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "vpce_all" {
+  description       = "Allow all outbound traffic"
+  security_group_id = aws_security_group.vpc_endpoints.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1" # semantically equivalent to all protocols
+}
+
 # S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  service_name      = var.s3_endpoint_service_name
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
 
@@ -196,7 +208,7 @@ resource "aws_vpc_endpoint" "s3" {
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  service_name        = var.ecr_dkr_endpoint_service_name
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -207,7 +219,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
 resource "aws_vpc_endpoint" "ecr_api" {
   vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  service_name        = var.ecr_api_endpoint_service_name
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -219,7 +231,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
 # SSM Endpoint (To retrieve internal Parameter Store)
 resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ssm"
+  service_name        = var.ssm_endpoint_service_name
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -231,7 +243,7 @@ resource "aws_vpc_endpoint" "ssm" {
 # STS Endpoint (Critical for authentication in Private Subnets)
 resource "aws_vpc_endpoint" "sts" {
   vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.sts"
+  service_name        = var.sts_endpoint_service_name
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -243,7 +255,7 @@ resource "aws_vpc_endpoint" "sts" {
 # CloudWatch Logs Endpoint (To send logs to CloudWatch)
 resource "aws_vpc_endpoint" "logs" {
   vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  service_name        = var.logs_endpoint_service_name
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -260,6 +272,13 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   # checkov:skip=CKV_AWS_338: 14 days retention is sufficient for this project.
   name              = "/edutrust/vpc-flow-logs"
   retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "container_logs" {
+  # checkov:skip=CKV_AWS_338: 14 days retention is sufficient for this project.
+  name              = "/edutrust/container-logs"
+  retention_in_days = 14
+  kms_key_id        = aws_kms_key.secrets.arn
 }
 
 data "aws_iam_policy_document" "vpc_flow_log_assume_role" {
@@ -332,6 +351,11 @@ resource "aws_iam_role_policy_attachment" "backend_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "backend_ecr" {
+  role       = aws_iam_role.backend.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_role_policy_attachment" "backend_cw_agent" {
   role       = aws_iam_role.backend.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
@@ -397,6 +421,28 @@ data "aws_iam_policy_document" "kms_secrets_policy" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid    = "AllowCloudWatchLogs"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.aws_region}.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/edutrust/container-logs"]
+    }
+  }
 }
 
 resource "aws_kms_key" "secrets" {
@@ -446,20 +492,27 @@ data "aws_iam_policy_document" "backend_ssm_read" {
   }
 
   statement {
-    # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
     effect    = "Allow"
-    actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket/*"]
   }
 
   statement {
     effect = "Allow"
     actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage"
+      "kms:Decrypt",
+      "kms:DescribeKey"
     ]
-    resources = [aws_ecr_repository.backend.arn]
+    # Allow decrypt for the ECR repository key and SSM secrets.
+    resources = ["*"]
+    condition {
+      test     = "StringLike"
+      variable = "kms:ViaService"
+      values = [
+        "ecr.${var.aws_region}.amazonaws.com",
+        "ssm.${var.aws_region}.amazonaws.com"
+      ]
+    }
   }
 }
 
@@ -585,11 +638,11 @@ resource "aws_lb_target_group" "backend" {
   vpc_id   = aws_vpc.main.id
 
   health_check {
-    path                = "/health"
+    path                = "/docs"
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 3
-    interval            = 5
+    interval            = 10
     matcher             = "200"
   }
 }
@@ -653,6 +706,22 @@ resource "aws_security_group" "backend" {
   }
 
   egress {
+    description = "DNS outbound (UDP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = var.dns_egress_cidr_blocks
+  }
+
+  egress {
+    description = "DNS outbound (TCP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = var.dns_egress_cidr_blocks
+  }
+
+  egress {
     description = "DocumentDB (MongoDB) outbound"
     from_port   = 27017
     to_port     = 27017
@@ -712,44 +781,118 @@ resource "aws_launch_template" "backend" {
   }
 
   user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -e
+#!/bin/bash
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+set -x
 
-    # Environment variables
-    REGION="${var.aws_region}"
-    ECR_URL="${aws_ecr_repository.backend.repository_url}"
-    TARGET_DIR="/home/ubuntu/app"
-    mkdir -p $TARGET_DIR
+echo "--- Starting Deployment Script ---"
 
-    # ECR Login & Image Pull
-    # Use a safer way to extract ECR URL fragments
-    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+# Pre-checks: Verify Docker and AWS CLI
+if ! command -v docker &> /dev/null; then
+  echo "Error: Docker not installed! Please check the Base AMI."
+  exit 1
+fi
+if ! command -v aws &> /dev/null; then
+  echo "Error: AWS CLI not installed! Please check the Base AMI."
+  exit 1
+fi
 
-    # Retrieve env from SSM
-    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+# Environment variables
+REGION="${var.aws_region}"
+ECR_URL="${aws_ecr_repository.backend.repository_url}"
+TARGET_DIR="/home/ubuntu/app"
+mkdir -p $TARGET_DIR
 
-    # Run Container
-    IMAGE="$ECR_URL:${var.backend_image_tag}"
-    docker pull $IMAGE
-    docker stop aws-fcj-backend || true
-    docker rm aws-fcj-backend || true
-    docker run -d --name aws-fcj-backend \
-      --restart unless-stopped \
-      -p ${var.backend_port}:${var.backend_port} \
-      --env-file $TARGET_DIR/.env \
-      $IMAGE
+# ECR Login
+echo "Logging in to ECR..."
+ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+MAX_RETRIES=10
+RETRY_COUNT=0
+until aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "Failed to login to ECR after $MAX_RETRIES attempts."
+    exit 1
+  fi
+  echo "ECR login failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep 10
+done
 
-    # CloudWatch Agent Configuration
-    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
-    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+# Retrieve env from SSM
+echo "Retrieving environment variables from SSM..."
+aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+
+# Pull Image with Retry
+IMAGE="$ECR_URL:${var.backend_image_tag}"
+echo "Pulling image: $IMAGE"
+RETRY_COUNT=0
+until docker pull $IMAGE; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "Failed to pull image $IMAGE after $MAX_RETRIES attempts."
+    exit 1
+  fi
+  echo "Docker pull failed. Retrying in 10s... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep 10
+done
+
+# Validate image exists locally
+if [[ "$(docker images -q $IMAGE 2> /dev/null)" == "" ]]; then
+  echo "Error: Image $IMAGE not found after pull!"
+  exit 1
+fi
+echo "Image pulled successfully."
+
+# Run Container
+echo "Starting container..."
+docker stop aws-fcj-backend || true
+docker rm aws-fcj-backend || true
+docker run -d --name aws-fcj-backend \
+  --restart unless-stopped \
+  -p ${var.backend_port}:${var.backend_port} \
+  --env-file $TARGET_DIR/.env \
+  $IMAGE
+
+# Post-checks: Health check loop
+echo "Waiting for application to be healthy..."
+HEALTH_CHECK_URL="http://localhost:${var.backend_port}/docs"
+MAX_HEALTH_RETRIES=15
+HEALTH_RETRY=0
+until curl -sf "$HEALTH_CHECK_URL" > /dev/null; do
+  HEALTH_RETRY=$((HEALTH_RETRY + 1))
+  if [ $HEALTH_RETRY -ge $MAX_HEALTH_RETRIES ]; then
+    echo "Error: Application failed to start after $(($MAX_HEALTH_RETRIES * 10))s."
+    docker logs aws-fcj-backend
+    exit 1
+  fi
+  echo "Waiting for app at $HEALTH_CHECK_URL... ($HEALTH_RETRY/$MAX_HEALTH_RETRIES)"
+  sleep 10
+done
+
+echo "--- SUCCESS: Container is running and healthy ---"
+curl -i "$HEALTH_CHECK_URL"
+
+# CloudWatch Agent Configuration
+mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
 {
   "metrics": {
-    "namespace": "EduTrust/Container",
+    "namespace": "EduTrust/Core",
     "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_active"],
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent"]
+      },
+      "disk": {
+        "resources": ["/"],
+        "measurement": ["disk_used_percent"]
+      },
       "net": {
         "resources": ["docker*"],
-        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"]
+        "measurement": ["bytes_recv", "bytes_sent"]
       }
     }
   },
@@ -759,7 +902,7 @@ resource "aws_launch_template" "backend" {
         "collect_list": [
           {
             "file_path": "/var/lib/docker/containers/*/*.log",
-            "log_group_name": "/edutrust/container-logs",
+            "log_group_name": "${aws_cloudwatch_log_group.container_logs.name}",
             "log_stream_name": "{instance_id}"
           }
         ]
@@ -768,8 +911,8 @@ resource "aws_launch_template" "backend" {
   }
 }
 CW_EOF
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-  EOF
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+EOF
   )
 
   tag_specifications {
@@ -822,9 +965,235 @@ resource "aws_ecr_repository" "backend" {
 
   encryption_configuration {
     encryption_type = "KMS"
+    kms_key         = aws_kms_key.secrets.arn
   }
 
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+# --- CloudWatch Monitoring Dashboard ---
+
+# --- CloudWatch Monitoring: Cost-Optimized Error Tracking ---
+
+resource "aws_cloudwatch_log_metric_filter" "http_4xx" {
+  name           = "HTTP4xxCount"
+  pattern        = "[level, client, dash, request, status_code=4*]"
+  log_group_name = aws_cloudwatch_log_group.container_logs.name
+
+  metric_transformation {
+    name          = "HTTP_4xx_Count"
+    namespace     = "EduTrust/App"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
+  name           = "HTTP5xxCount"
+  pattern        = "[level, client, dash, request, status_code=5*]"
+  log_group_name = aws_cloudwatch_log_group.container_logs.name
+
+  metric_transformation {
+    name          = "HTTP_5xx_Count"
+    namespace     = "EduTrust/App"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# --- CloudWatch Monitoring Dashboard ---
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "${var.ec2_instance_name}-dashboard"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "text",
+        x      = 0,
+        y      = 0,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Infrastructure Health Metrics"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,cpu} MetricName=\"cpu_usage_active\" cpu=\"cpu-total\"', 'Average', 60)", id = "e1", label = "CPU Utilization" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "CPU Utilization (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 6,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId} MetricName=\"mem_used_percent\"', 'Average', 60)", id = "e2", label = "Memory Utilization" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Memory Utilization (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,device,fstype,path} MetricName=\"disk_used_percent\" path=\"/\"', 'Average', 60)", id = "e3", label = "Disk Usage" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Disk Usage (%)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 18,
+        y      = 1,
+        width  = 6,
+        height = 6,
+        properties = {
+          metrics = [
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,interface} MetricName=\"net_bytes_recv\"', 'Average', 60)", id = "e4", label = "Network RX" }],
+            [{ expression = "SEARCH('{EduTrust/Core,InstanceId,interface} MetricName=\"net_bytes_sent\"', 'Average', 60)", id = "e5", label = "Network TX" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Network Traffic (Bytes)",
+          period = 60,
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "text",
+        x      = 0,
+        y      = 7,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Application & API Health"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 8,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["EduTrust/App", "HTTP_4xx_Count", { label = "4xx Client Errors", color = "#ff9900" }],
+            ["EduTrust/App", "HTTP_5xx_Count", { label = "5xx Server Errors", color = "#d13212" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "API Error Rates (Sum)",
+          period = 60,
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 8,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["EduTrust/App", "HTTP_4xx_Count", { id = "m4", visible = false }],
+            ["EduTrust/App", "HTTP_5xx_Count", { id = "m5", visible = false }],
+            [{ expression = "m4 + m5", label = "Total Errors", color = "#ff0000" }]
+          ],
+          view   = "singleValue",
+          region = var.aws_region,
+          title  = "Total Errors (Last 1h)",
+          period = 3600,
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "text",
+        x      = 0,
+        y      = 14,
+        width  = 24,
+        height = 1,
+        properties = {
+          markdown = "# Load Balancer Health"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 0,
+        y      = 15,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.main.arn_suffix, { label = "Total Requests", stat = "Sum" }],
+            [".", "HTTPCode_Target_5XX_Count", ".", ".", { label = "Target 5xx", color = "#d13212", stat = "Sum" }],
+            [".", "HTTPCode_ELB_5XX_Count", ".", ".", { label = "ELB 5xx", color = "#ff0000", stat = "Sum" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "ALB Throughput & Errors",
+          period = 60
+        }
+      },
+      {
+        type   = "metric",
+        x      = 12,
+        y      = 15,
+        width  = 12,
+        height = 6,
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix, { label = "Avg Latency", stat = "Average" }],
+            [".", ".", ".", ".", { label = "P90 Latency", stat = "p90" }]
+          ],
+          view   = "timeSeries",
+          region = var.aws_region,
+          title  = "Target Response Time (Latency)",
+          period = 60
+        }
+      },
+      {
+        type   = "log",
+        x      = 0,
+        y      = 21,
+        width  = 24,
+        height = 12,
+        properties = {
+          query  = "SOURCE '${aws_cloudwatch_log_group.container_logs.name}' | fields @timestamp, @message | sort @timestamp desc | limit 100",
+          region = var.aws_region,
+          title  = "Backend Container Logs (Live Feed)",
+          view   = "table"
+        }
+      }
+    ]
+  })
 }

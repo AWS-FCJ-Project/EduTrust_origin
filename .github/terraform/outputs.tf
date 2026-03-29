@@ -43,3 +43,8 @@ output "secrets_kms_key_arn" {
   value       = aws_kms_key.secrets.arn
 }
 
+output "cloudwatch_dashboard_url" {
+  description = "Link to the CloudWatch Dashboard in the AWS Console"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${var.ec2_instance_name}-dashboard"
+}
+

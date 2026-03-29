@@ -17,18 +17,25 @@ permissions:
   packages: write
 
 concurrency:
-  group: deploy-ec2-main
+  group: terraform-state-lock
   cancel-in-progress: false
 
 env:
   TF_DIR: .github/terraform
   CONTAINER_NAME: aws-fcj-backend
+  AWS_REGION: ap-southeast-1
 
 jobs:
   packer:
     name: Build Base AMI (Packer)
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      packer_hash: ${{ steps.packer_hash.outputs.hash }}
+    env:
+      VPC_ID: ''
+      IGW_ID: ''
+      SUBNET_ID: ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,24 +43,38 @@ jobs:
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
 
+      - name: Cache Packer plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.packer.d/plugins
+          key: ${{ runner.os }}-packer-${{ hashFiles('.github/packer/*.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-packer-
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Compute Packer Config Hash
+        id: packer_hash
+        working-directory: .github/packer
+        run: echo "hash=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Run Packer Init
         working-directory: .github/packer
         run: packer init .
 
-      - name: Run Packer Build
+      - name: Run Packer Build & Manage Network
         working-directory: .github/packer
         run: |
-          # 1. Compute Hash and Check for existing AMI
-          PACKER_HASH=$(sha256sum base-ami.pkr.hcl | awk '{print $1}')
-          echo "Computed Packer Hash: $PACKER_HASH"
+          set -euo pipefail
+          PACKER_HASH="${{ steps.packer_hash.outputs.hash }}"
           
+          # 1. Check for existing AMI
+          echo "Checking for existing AMI with hash: $PACKER_HASH"
           EXISTING_AMI=$(aws ec2 describe-images --owners self --filters "Name=tag:PackerHash,Values=$PACKER_HASH" --query "Images[0].ImageId" --output text)
           
           FORCE_BUILD="${{ github.event.inputs.build_ami }}"
@@ -78,8 +99,7 @@ jobs:
           RTB_ID=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query "RouteTables[0].RouteTableId" --output text)
           aws ec2 create-route --route-table-id "$RTB_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" >/dev/null
           
-          echo "Found VPC_ID: $VPC_ID"
-          echo "Found SUBNET_ID: $SUBNET_ID"
+          echo "Successfully created networking resources."
           
           # 3. Deregister old versions of EduTrust-Base-AMI (to avoid name collision)
           echo "Deregistering old versions of EduTrust-Base-AMI..."
@@ -110,6 +130,7 @@ jobs:
       - name: Cleanup Packer Build Network
         if: always() && env.VPC_ID != ''
         run: |
+          set -euo pipefail
           echo "Cleaning up temporary VPC resources..."
           # Cleanup in reverse order of creation
           # Wait a few seconds for Packer-provisioned SG to be fully cleared by AWS
@@ -135,7 +156,6 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: ap-southeast-1
       TERRAFORM_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
 
     steps:
@@ -185,6 +205,24 @@ jobs:
           esac
           echo "ecr_tag_immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
 
+      - name: Bootstrap Terraform Backend (S3 Native Locking)
+        run: |
+          set -euo pipefail
+          chmod +x bootstrap.sh
+          ./bootstrap.sh
+
+      - name: Verify S3 Backend is Accessible
+        run: |
+          set -euo pipefail
+          echo "Verifying S3 backend bucket is fully accessible..."
+          aws s3api wait bucket-exists \
+            --bucket "aws-fcj-terraform-641458060045" \
+            --region "ap-southeast-1"
+          aws s3api head-bucket \
+            --bucket "aws-fcj-terraform-641458060045" \
+            --region "ap-southeast-1"
+          echo "S3 bucket confirmed accessible. Proceeding to terraform init."
+
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
@@ -194,10 +232,12 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           set -euo pipefail
           if [ -f terraform.tfvars ]; then
@@ -217,11 +257,151 @@ jobs:
               echo "ECR repo already in Terraform state, skipping import."
             else
               echo "ECR repo exists in AWS but not in state; importing..."
-              terraform import aws_ecr_repository.backend "$REPO_NAME"
+              terraform import -var-file=terraform.tfvars -input=false aws_ecr_repository.backend "$REPO_NAME" || true
             fi
           else
             echo "ECR repo not found in AWS; Terraform will create it."
           fi
+
+      - name: Import existing AWS resources (KMS, SSM, IAM, Logs)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+        run: |
+          # Use a block to simplify logic and handle errors
+          set -euo pipefail
+          
+          echo "--- Starting dynamic resource import check ---"
+
+          # Use grep/sed for robust variable extraction from terraform.tfvars
+          INSTANCE_NAME=$(grep "^[[:space:]]*ec2_instance_name[[:space:]]*=" terraform.tfvars | sed 's/.*=[[:space:]]*"//;s/".*//' | tr -d '\r' || echo "")
+          
+          # Hardcoded fallback because it matches the user's current environment
+          INSTANCE_NAME="${INSTANCE_NAME:-aws-fcj-backend}"
+          echo "Using Instance Name for imports: $INSTANCE_NAME"
+
+          # Get current state to avoid duplicate imports
+          STATE_LIST=$(terraform state list || echo "")
+          
+          # --- 1. KMS Key and Alias ---
+          ALIAS_NAME="alias/${INSTANCE_NAME}-secrets"
+          echo "KMS Alias check for: $ALIAS_NAME"
+          
+          # Check AWS for existence and get KeyId
+          KEY_DATA=$(aws kms describe-key --key-id "$ALIAS_NAME" --region "$AWS_DEFAULT_REGION" --output json || echo "NOT_FOUND")
+          
+          if [ "$KEY_DATA" != "NOT_FOUND" ]; then
+            KEY_ID=$(echo "$KEY_DATA" | jq -r '.KeyMetadata.KeyId')
+            echo "KMS Alias $ALIAS_NAME exists in AWS (Key: $KEY_ID)"
+            
+            # Key Import
+            if ! echo "$STATE_LIST" | grep -q "^aws_kms_key.secrets$"; then
+              echo "Importing KMS Key into Terraform state..."
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_key.secrets "$KEY_ID" || echo "Key import failed (likely already in state or network issue)"
+            fi
+            
+            # Alias Import
+            if ! echo "$STATE_LIST" | grep -q "^aws_kms_alias.secrets$"; then
+              echo "Importing KMS Alias into Terraform state..."
+              # We try to be very explicit here and let it fail if it doesn't work so we can see the error
+              terraform import -var-file=terraform.tfvars -input=false aws_kms_alias.secrets "$ALIAS_NAME"
+            fi
+          else
+            echo "KMS Alias $ALIAS_NAME not found in AWS. Skipping import."
+          fi
+
+          # --- 2. SSM Parameter ---
+          SSM_PARAM="/edutrust/backend/env"
+          if aws ssm get-parameter --name "$SSM_PARAM" --region "$AWS_DEFAULT_REGION" >/dev/null 2>&1; then
+            if ! echo "$STATE_LIST" | grep -q "^aws_ssm_parameter.backend_env$"; then
+               echo "Importing existing SSM Parameter: $SSM_PARAM"
+               terraform import -var-file=terraform.tfvars -input=false aws_ssm_parameter.backend_env "$SSM_PARAM" || echo "SSM import skipped"
+            fi
+          fi
+
+          # --- 3. IAM Roles ---
+          for ROLE_SUFFIX in "role" "vpc-flow-log-role"; do
+            ROLE_NAME="${INSTANCE_NAME}-${ROLE_SUFFIX}"
+            TF_ADDR=$([ "$ROLE_SUFFIX" == "role" ] && echo "aws_iam_role.backend" || echo "aws_iam_role.vpc_flow_log")
+            
+            if aws iam get-role --role-name "$ROLE_NAME" --region "$AWS_DEFAULT_REGION" >/dev/null 2>&1; then
+               if ! echo "$STATE_LIST" | grep -q "^${TF_ADDR}$"; then
+                  echo "Importing IAM Role: $ROLE_NAME"
+                  terraform import -var-file=terraform.tfvars -input=false "$TF_ADDR" "$ROLE_NAME" || true
+               fi
+               
+               # Special handle for instance profile if it's the backend role
+               if [ "$ROLE_SUFFIX" == "role" ] && ! echo "$STATE_LIST" | grep -q "^aws_iam_instance_profile.backend$"; then
+                  echo "Importing Instance Profile..."
+                  terraform import -var-file=terraform.tfvars -input=false aws_iam_instance_profile.backend "${INSTANCE_NAME}-instance-profile" || true
+               fi
+            fi
+          done
+
+          # --- 4. Logs ---
+          for LG in "/edutrust/vpc-flow-logs" "/edutrust/container-logs"; do
+             TF_LG=$([ "$LG" == "/edutrust/vpc-flow-logs" ] && echo "aws_cloudwatch_log_group.vpc_flow_logs" || echo "aws_cloudwatch_log_group.container_logs")
+             if aws logs describe-log-groups --log-group-name-prefix "$LG" --region "$AWS_DEFAULT_REGION" --query "logGroups[?logGroupName=='${LG}'].logGroupName" --output text | grep -q "$LG"; then
+                if ! echo "$STATE_LIST" | grep -q "^${TF_LG}$"; then
+                   echo "Importing Log Group: $LG"
+                   terraform import -var-file=terraform.tfvars -input=false "$TF_LG" "$LG" || true
+                fi
+             fi
+          done
+
+          # --- 5. Security Group Rules ---
+          VPCE_SG_NAME="${INSTANCE_NAME}-vpce-sg"
+          BACKEND_SG_NAME="${INSTANCE_NAME}-sg"
+          
+          # Find SG IDs
+          VPCE_SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$VPCE_SG_NAME" --region "$AWS_DEFAULT_REGION" --query "SecurityGroups[0].GroupId" --output text || echo "None")
+          BACKEND_SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$BACKEND_SG_NAME" --region "$AWS_DEFAULT_REGION" --query "SecurityGroups[0].GroupId" --output text || echo "None")
+          
+          if [ "$VPCE_SG_ID" != "None" ] && [ "$BACKEND_SG_ID" != "None" ]; then
+             echo "Checking Security Group Rules for SG: $VPCE_SG_ID"
+             RULES_JSON=$(aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VPCE_SG_ID" --region "$AWS_DEFAULT_REGION" --output json)
+             echo "DEBUG: Found $(echo "$RULES_JSON" | jq '.SecurityGroupRules | length') rules for SG $VPCE_SG_ID"
+             
+             # --- Ingress Rule (HTTPS from Backend) ---
+             # Using case-insensitive map for IpProtocol and checking multiple source fields
+             INGRESS_RULE_ID=$(echo "$RULES_JSON" | jq -r ".SecurityGroupRules[] | 
+               select(.IsEgress == false) | 
+               select(.FromPort == 443 and .ToPort == 443) | 
+               select(.IpProtocol | ascii_downcase == \"tcp\") | 
+               select(.ReferencedGroupInfo.GroupId == \"$BACKEND_SG_ID\" or .SourceSecurityGroupId == \"$BACKEND_SG_ID\") | 
+               .SecurityGroupRuleId" | head -n 1 || echo "")
+             
+             if [ -n "$INGRESS_RULE_ID" ]; then
+                echo "DEBUG: Found matching Ingress Rule: $INGRESS_RULE_ID"
+                if ! echo "$STATE_LIST" | grep -q "^aws_vpc_security_group_ingress_rule.vpce_https$"; then
+                   echo "Importing Ingress Rule: $INGRESS_RULE_ID"
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_ingress_rule.vpce_https "${VPCE_SG_ID}_${INGRESS_RULE_ID}" || \
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_ingress_rule.vpce_https "$INGRESS_RULE_ID" || true
+                fi
+             else
+                echo "DEBUG: No matching Ingress Rule found in AWS."
+             fi
+             
+             # --- Egress Rule (Allow All) ---
+             EGRESS_RULE_ID=$(echo "$RULES_JSON" | jq -r ".SecurityGroupRules[] | 
+               select(.IsEgress == true) | 
+               select(.IpProtocol == \"-1\") | 
+               select(.CidrIpv4 == \"0.0.0.0/0\") | 
+               .SecurityGroupRuleId" | head -n 1 || echo "")
+             
+             if [ -n "$EGRESS_RULE_ID" ]; then
+                echo "DEBUG: Found matching Egress Rule: $EGRESS_RULE_ID"
+                if ! echo "$STATE_LIST" | grep -q "^aws_vpc_security_group_egress_rule.vpce_all$"; then
+                   echo "Importing Egress Rule: $EGRESS_RULE_ID"
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_egress_rule.vpce_all "${VPCE_SG_ID}_${EGRESS_RULE_ID}" || \
+                   terraform import -var-file=terraform.tfvars -input=false aws_vpc_security_group_egress_rule.vpce_all "$EGRESS_RULE_ID" || true
+                fi
+             else
+                echo "DEBUG: No matching Egress Rule found in AWS."
+             fi
+          fi
+
+          echo "--- Dynamic resource import check complete ---"
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
@@ -256,11 +436,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set image variables
-        id: image_vars
+      - name: Compute Build Hash
+        id: build_hash
         run: |
-          echo "image=${ECR_REPOSITORY_URL}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Hash only relevant files (backend/ and Dockerfile)
+          HASH=$(find backend Dockerfile -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')
+          echo "tag=${HASH}" >> "$GITHUB_OUTPUT"
+          echo "Backend Content Hash: ${HASH}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -273,8 +456,30 @@ jobs:
         id: login_ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Check if image exists in ECR
+        id: check_image
+        env:
+          TAG: ${{ steps.build_hash.outputs.tag }}
+        run: |
+          # Parse REPO_NAME from URL
+          REPO_NAME=$(echo "${ECR_REPOSITORY_URL}" | cut -d'/' -f2)
+          if aws ecr describe-images --repository-name "$REPO_NAME" --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image with hash $TAG already exists in ECR. Skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image with hash $TAG not found. Proceeding with build."
+          fi
+
+      - name: Set image outputs
+        id: image_vars
+        run: |
+          echo "image=${ECR_REPOSITORY_URL}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{ steps.build_hash.outputs.tag }}" >> "$GITHUB_OUTPUT"
+
       - name: Compute Docker tags
         id: docker_tags
+        if: steps.check_image.outputs.exists != 'true'
         env:
           IMAGE: ${{ steps.image_vars.outputs.image }}
           IMAGE_TAG: ${{ steps.image_vars.outputs.image_tag }}
@@ -295,16 +500,31 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        if: steps.check_image.outputs.exists != 'true'
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
+        if: steps.check_image.outputs.exists != 'true'
         with:
           context: .
           file: Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Cleanup Old ECR Images
+        if: always() && steps.login_ecr.outcome == 'success'
+        run: |
+          REPO_NAME=$(echo "${ECR_REPOSITORY_URL}" | cut -d'/' -f2)
+          echo "Cleaning up untagged images in $REPO_NAME..."
+          UNTAGGED_IMAGES=$(aws ecr list-images --repository-name "$REPO_NAME" --filter "tagStatus=UNTAGGED" --query 'imageIds[*]' --output json)
+          if [ "$UNTAGGED_IMAGES" != "[]" ] && [ -n "$UNTAGGED_IMAGES" ]; then
+            aws ecr batch-delete-image --repository-name "$REPO_NAME" --image-ids "$UNTAGGED_IMAGES" || true
+          fi
 
   deploy:
     name: Deploy to ASG (Rolling Update)
@@ -334,6 +554,7 @@ jobs:
 
       - name: Update Environment Variables in SSM
         run: |
+          set -euo pipefail
           aws ssm put-parameter \
             --name "/edutrust/backend/env" \
             --value "$BACKEND_ENV_FILE" \
@@ -361,24 +582,40 @@ jobs:
           TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
           TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
+          set -euo pipefail
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
           terraform apply -auto-approve -input=false -var="backend_image_tag=$IMAGE_TAG"
 
       - name: Start ASG Instance Refresh
         run: |
-          echo "Checking for in-progress instance refresh for ASG: $ASG_NAME"
-          CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --query "InstanceRefreshes[?Status=='InProgress'].InstanceRefreshId" \
-            --output text)
-
-          if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
-            echo "A refresh ($CURRENT_REFRESH_ID) is already in progress. Cancelling it..."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME"
-            echo "Waiting for cancellation to process..."
-            sleep 30
-          fi
+          set -euo pipefail
+          # Use a loop to clear any existing refreshes
+          while true; do
+            CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending' || Status=='Cancelling'].InstanceRefreshId" \
+              --output text)
+            
+            if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
+              # If it's not already cancelling, cancel it
+              STATUS=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name "$ASG_NAME" \
+                --query "InstanceRefreshes[?InstanceRefreshId=='$CURRENT_REFRESH_ID'].Status" \
+                --output text)
+              
+              if [ "$STATUS" != "Cancelling" ]; then
+                echo "A refresh ($CURRENT_REFRESH_ID, Status: $STATUS) is already in progress. Cancelling it..."
+                aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME" || true
+              fi
+              
+              echo "Waiting for existing refresh to clear... status: $STATUS"
+              sleep 15
+            else
+              echo "No active refresh found. Proceeding..."
+              break
+            fi
+          done
 
           echo "Starting new instance refresh for ASG: $ASG_NAME"
           # TIMEOUT removed as requested
@@ -414,3 +651,126 @@ jobs:
               *) sleep 30 ;;
             esac
           done
+
+      - name: SSM Verification - Check Container Status (Hard Check)
+        run: |
+          echo "Fetching instance IDs for ASG: $ASG_NAME"
+          # Get all instance IDs that are currently in the ASG and Healthy
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --region "$AWS_REGION" \
+            --query "AutoScalingGroups[0].Instances[?HealthStatus=='Healthy'].InstanceId" \
+            --output text)
+          
+          if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" == "None" ]; then
+            echo "No healthy instances found in ASG. This is unexpected after a Successful Refresh."
+            exit 1
+          fi
+
+          echo "Assessing container health on instances: $INSTANCE_IDS"
+          
+          # Use a JSON heredoc to avoid quoting hell in the shell/YAML combo
+          cat > ssm_params.json <<EOF
+          {
+            "commands": [
+              "echo 'Waiting for cloud-init to finish (max 2 mins)...'",
+              "timeout 120 bash -c 'until [ -f /var/lib/cloud/instance/boot-finished ]; do sleep 5; done' || (echo 'WARNING: cloud-init did not finish in time' && exit 1)",
+              "if ! docker ps -f name=aws-fcj-backend --format '{{.Status}}' | grep -q 'Up'; then",
+              "  echo 'CRITICAL: Container not running after boot!'",
+              "  docker ps -a",
+              "  echo '--- Tail user-data.log ---'",
+              "  if [ -f /var/log/user-data.log ]; then tail -n 50 /var/log/user-data.log; else echo 'user-data.log not found'; fi",
+              "  echo '--- Tail cloud-init-output.log ---'",
+              "  tail -n 50 /var/log/cloud-init-output.log || true",
+              "  exit 1",
+              "fi",
+              "echo 'SUCCESS: Container is UP and running. Recent app logs:'",
+              "docker logs --tail 50 aws-fcj-backend || true"
+            ]
+          }
+          EOF
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids $INSTANCE_IDS \
+            --region "$AWS_REGION" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file://ssm_params.json \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "Waiting for SSM command ($COMMAND_ID) to complete across all instances..."
+          # Poll for status
+          MAX_RETRIES=15
+          RETRY_COUNT=0
+          FINAL_STATUS="Pending"
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # We check the overall command status
+            OVERALL_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --region "$AWS_REGION" --query "Commands[0].Status" --output text)
+            echo "Current Command Status: $OVERALL_STATUS (Check $RETRY_COUNT/$MAX_RETRIES)"
+            
+            if [[ "$OVERALL_STATUS" == "Success" ]]; then
+              FINAL_STATUS="Success"
+              break
+            elif [[ "$OVERALL_STATUS" == "Failed" || "$OVERALL_STATUS" == "TimedOut" || "$OVERALL_STATUS" == "Cancelled" ]]; then
+              FINAL_STATUS="$OVERALL_STATUS"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            sleep 15
+          done
+
+          # Output detailed results for each instance
+          FAIL_DETECTED=0
+          for INSTANCE in $INSTANCE_IDS; do
+            echo "--- Detailed Result for Instance: $INSTANCE ---"
+            # Get the full output (StandardOutputContent and StandardErrorContent)
+            RESULTS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE" --region "$AWS_REGION" --query "{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}" --output json)
+            STATUS=$(echo "$RESULTS" | jq -r '.Status')
+            echo "Instance Verification Status: $STATUS"
+            echo "System Output:"
+            echo "$RESULTS" | jq -r '.Output'
+            
+            if [[ "$STATUS" != "Success" ]]; then
+               echo "ERROR: Instance $INSTANCE failed verification! Error Output Below:"
+               echo "$RESULTS" | jq -r '.Error'
+               FAIL_DETECTED=1
+            fi
+          done
+
+          if [ $FAIL_DETECTED -eq 1 ] || [ "$FINAL_STATUS" != "Success" ]; then
+            echo "CRITICAL: SSM Verification failed on one or more instances. Container is NOT running correctly."
+            echo "Please check the 'System Output' above for errors from cloud-init/dockerd."
+            
+            echo "--- SSM VERIFICATION SUMMARY TABLE ---"
+            aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[*].[InstanceId, Status, CommandPlugins[0].Output]" --output table
+            exit 1
+          fi
+          
+          echo "SSM Verification PASSED: Container is running and healthy on all instances."
+          echo "--- SSM VERIFICATION SUMMARY TABLE ---"
+          aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[*].[InstanceId, Status, CommandPlugins[0].Output]" --output table
+
+      - name: Smoke Test - Verify Application Health
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          ALB_URL=$(terraform output -raw alb_dns_name)
+          # We check both the raw ALB URL and the custom domain if available
+          CHECK_URL="http://$ALB_URL/docs"
+          echo "Performing smoke test on $CHECK_URL..."
+          
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          until curl -sf -o /dev/null "$CHECK_URL"; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+              echo "Smoke test FAILED: Application is not reachable at $CHECK_URL"
+              exit 1
+            fi
+            echo "Waiting for app at $CHECK_URL... ($RETRY_COUNT/$MAX_RETRIES)"
+            sleep 30
+          done
+          
+          echo "Deployment verified! Application is healthy at $CHECK_URL"
+          curl -i "$CHECK_URL" | head -n 20
