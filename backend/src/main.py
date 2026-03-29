@@ -12,7 +12,7 @@ from src.extensions import limiter
 from src.memory.conversation_cache import ConversationCache
 from src.memory.conversation_handler import ConversationHandler
 from src.memory.redis_client import RedisClient
-from src.routers import translate_routes, unified_agent_routes
+from src.routers import class_routes, translate_routes, unified_agent_routes
 from src.routers.auth import login, password, register
 
 logfire.configure(
@@ -48,11 +48,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Rate Limiter Configuration
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,12 +61,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
 app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
+app.include_router(class_routes.router)
 
 
 @app.get("/")
