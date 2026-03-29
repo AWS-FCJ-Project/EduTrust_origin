@@ -12,6 +12,7 @@ from src.extensions import limiter
 from src.memory.conversation_cache import ConversationCache
 from src.memory.conversation_handler import ConversationHandler
 from src.memory.redis_client import RedisClient
+from src.routers import exam_routes, translate_routes, unified_agent_routes
 from src.routers import class_routes, translate_routes, unified_agent_routes
 from src.routers.auth import login, password, register
 
@@ -66,6 +67,7 @@ app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
+app.include_router(exam_routes.router)
 app.include_router(class_routes.router)
 
 
