@@ -161,20 +161,20 @@ const AIChatSupport = () => {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-120px)] bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
+        <div className="surface-panel flex flex-col h-[calc(100vh-120px)] rounded-[1.75rem] overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200/80 flex justify-between items-center shrink-0 bg-white/90">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-[#5B0019] flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-[#5B0019] flex items-center justify-center shadow-sm">
                         <Bot size={22} className="text-white" />
                     </div>
                     <div>
-                        <h2 className="font-bold text-gray-800">EduTrust AI Assistant</h2>
-                        <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">AI Trợ lý đa năng</span>
+                        <h2 className="type-title text-slate-900">EduTrust AI Assistant</h2>
+                        <span className="type-label text-slate-500">AI trợ lý đa năng cho hệ thống học tập</span>
                     </div>
                 </div>
                 <button
                     onClick={() => setMessages([{ id: 1, role: 'ai', content: `Lịch sử đã được làm mới, chào mừng ${user?.name || ''} trở lại!` }])}
-                    className="p-2 hover:bg-red-50 hover:text-red-500 transition-colors rounded-full text-gray-400"
+                    className="p-2 hover:bg-red-50 hover:text-red-500 transition-colors rounded-full text-slate-400"
                     title="Xóa lịch sử chat"
                 >
                     <Eraser size={18} />
@@ -190,12 +190,12 @@ const AIChatSupport = () => {
                                 {msg.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
                             </div>
 
-                            <div className={`p-4 rounded-2xl text-sm shadow-sm leading-relaxed ${msg.role === 'user'
-                                ? 'bg-[#5B0019] text-white rounded-tr-none'
-                                : 'bg-white text-gray-700 border border-gray-100 rounded-tl-none'
+                            <div className={`p-4 rounded-[1.35rem] text-sm shadow-sm leading-relaxed ${msg.role === 'user'
+                                ? 'bg-[#5B0019] text-white rounded-tr-md'
+                                : 'bg-white text-slate-700 border border-slate-200 rounded-tl-md'
                                 }`}>
                                 {msg.role === 'ai' ? (
-                                    <div className="markdown-container prose prose-sm max-w-none prose-headings:text-[#5B0019] overflow-x-auto">
+                                    <div className="markdown-container prose prose-sm max-w-none prose-headings:text-[#5B0019] prose-p:leading-7 prose-p:tracking-[-0.01em] prose-li:leading-7 overflow-x-auto">
                                         {msg.content ? (
                                             <ReactMarkdown
                                                 remarkPlugins={[remarkMath]}
@@ -205,7 +205,7 @@ const AIChatSupport = () => {
                                             </ReactMarkdown>
                                         ) : (
                                             <div className="flex flex-col gap-2">
-                                                <span className="text-xs text-gray-400 italic animate-pulse">
+                                                <span className="text-xs text-slate-400 italic animate-pulse">
                                                     EduTrust đang suy nghĩ...
                                                 </span>
                                                 <div className="dot-loading">
@@ -217,7 +217,7 @@ const AIChatSupport = () => {
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                                    <div className="whitespace-pre-wrap tracking-[-0.01em]">{msg.content}</div>
                                 )}
                             </div>
                         </div>
@@ -225,7 +225,7 @@ const AIChatSupport = () => {
                 ))}
             </div>
 
-            <div className="p-4 bg-white border-t border-gray-100">
+            <div className="p-4 bg-white/95 border-t border-slate-200/80">
                 <div className="max-w-4xl mx-auto relative">
                     <input
                         type="text"
@@ -238,7 +238,7 @@ const AIChatSupport = () => {
                                 handleSend();
                             }
                         }}
-                        className="w-full pl-6 pr-14 py-4 bg-gray-50 border border-gray-200 focus:border-[#5B0019] focus:ring-1 focus:ring-[#5B0019] rounded-2xl outline-none transition-all disabled:opacity-50"
+                        className="w-full pl-6 pr-14 py-4 bg-slate-50 border border-slate-200 focus:border-[#5B0019] focus:ring-1 focus:ring-[#5B0019] rounded-2xl outline-none transition-all disabled:opacity-50 tracking-[-0.015em] text-[15px]"
                         placeholder={isLoading ? "AI đang trả lời..." : `Bạn muốn hỏi gì không ${user?.name || ''}?`}
                     />
                     <button
