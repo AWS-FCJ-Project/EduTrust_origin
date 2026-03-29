@@ -70,11 +70,6 @@ async def log_requests(request: Request, call_next):
     method = request.method
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [ACCESS] {method} {path}")
 
-    # Special logging for ngrok headers to debug proxy issues
-    if "ngrok-skip-browser-warning" in request.headers:
-        print(
-            f" [DEBUG] ngrok-skip-browser-warning header present: {request.headers['ngrok-skip-browser-warning']}"
-        )
 
     response = await call_next(request)
     return response

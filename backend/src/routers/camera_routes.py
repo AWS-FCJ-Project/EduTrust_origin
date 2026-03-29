@@ -22,11 +22,6 @@ async def receive_client_log(request: Request):
     client_ip = request.client.host
     print(f"[ACCESS] POST /camera/log hit from {client_ip}")
 
-    # Check for ngrok-specific headers to verify bypass is active
-    if "ngrok-skip-browser-warning" in request.headers:
-        print(
-            f" [DEBUG] ngrok-skip-browser-warning detected: {request.headers['ngrok-skip-browser-warning']}"
-        )
 
     try:
         payload = await request.json()
