@@ -10,7 +10,6 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
 
 
 async def class_helper(cls) -> dict:
-    # Dynamically count students
     student_count = await users_collection.count_documents(
         {"role": "student", "class_name": cls["name"], "grade": cls["grade"]}
     )
@@ -35,7 +34,6 @@ async def create_class(
         raise HTTPException(status_code=403, detail="Only admins can create classes")
 
     new_class = class_data.model_dump()
-    # Initial status check
     if new_class.get("homeroom_teacher_id") and new_class.get("subject_teachers"):
         new_class["status"] = "active"
     else:
@@ -61,7 +59,6 @@ async def get_classes(current_user: dict = Depends(get_current_user)):
             ]
         }
     elif role == "student":
-        # Student sees class matching their profile
         u_class = current_user.get("class_name")
         u_grade = current_user.get("grade")
         if not u_class or not u_grade:
@@ -86,22 +83,19 @@ async def list_teachers(current_user: dict = Depends(get_current_user)):
         t_id = str(t["_id"])
         assigned_classes = []
 
-        # Check for Homeroom
         async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
             assigned_classes.append(
-                {"id": str(c["_id"]), "name": c["name"], "role": "Giáo viên Chủ nhiệm"}
+                {"id": str(c["_id"]), "name": c["name"], "role": "Homeroom Teacher"}
             )
 
-        # Check for Subject Teacher
         async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
-            # Find the specific subject for this teacher in this class
             for st in c.get("subject_teachers", []):
                 if st["teacher_id"] == t_id:
                     assigned_classes.append(
                         {
                             "id": str(c["_id"]),
                             "name": c["name"],
-                            "role": f"Giáo viên Bộ môn ({st.get('subject', 'N/A')})",
+                            "role": f"Subject Teacher ({st.get('subject', 'N/A')})",
                         }
                     )
 
@@ -161,7 +155,6 @@ async def update_class(
     if not ObjectId.is_valid(class_id):
         raise HTTPException(status_code=400, detail="Invalid class ID")
 
-    # Filter out None values, empty strings, "string" or grade = 0 (Swagger defaults)
     update_data_filtered = {
         k: v
         for k, v in class_data.model_dump().items()
@@ -172,9 +165,8 @@ async def update_class(
     }
 
     if not update_data_filtered:
-        return {"message": "Không có thông tin nào thay đổi"}
+        return {"message": "No changes provided"}
 
-    # Check for status update
     current_class = await classes_collection.find_one({"_id": ObjectId(class_id)})
     if not current_class:
         raise HTTPException(status_code=404, detail="Class not found")
@@ -223,8 +215,6 @@ async def get_available_students(
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    # Search for ALL students NOT in this class
-    # (Including those currently in another class, so they can be "moved")
     students = []
     async for s in users_collection.find(
         {
@@ -255,7 +245,6 @@ async def add_student_to_class(
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    # Update student record
     result = await users_collection.update_one(
         {"_id": ObjectId(student_id), "role": "student"},
         {"$set": {"class_name": cls["name"], "grade": cls["grade"]}},
@@ -277,7 +266,6 @@ async def remove_student_from_class(
     if not ObjectId.is_valid(class_id) or not ObjectId.is_valid(student_id):
         raise HTTPException(status_code=400, detail="Invalid IDs")
 
-    # Clear class info from student record
     result = await users_collection.update_one(
         {"_id": ObjectId(student_id), "role": "student"},
         {"$set": {"class_name": None, "grade": None}},
@@ -301,13 +289,11 @@ async def delete_class(class_id: str, current_user: dict = Depends(get_current_u
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    # 1. Clear class/grade from all students in THIS class
     await users_collection.update_many(
         {"role": "student", "class_name": cls["name"], "grade": cls["grade"]},
         {"$set": {"class_name": None, "grade": None}},
     )
 
-    # 2. Delete the class record
     await classes_collection.delete_one({"_id": ObjectId(class_id)})
 
     return {
