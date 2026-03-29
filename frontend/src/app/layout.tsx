@@ -21,7 +21,7 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
       </head>
-      <body className="antialiased">
+      <body className="bg-background font-sans text-[15px] text-foreground antialiased">
         {children}
       </body>
     </html>
