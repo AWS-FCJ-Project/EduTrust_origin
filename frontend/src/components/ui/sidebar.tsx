@@ -29,7 +29,7 @@ export const Sidebar = ({ role }: { role: 'student' | 'admin' }) => {
                 <div className="shrink-0">
                     <Image src={logo} alt="Logo" width={40} height={40} />
                 </div>
-                {!isCollapsed && <span className="font-bold text-lg whitespace-nowrap">EduTrust</span>}
+                {!isCollapsed && <span className="text-lg font-semibold tracking-[-0.04em] whitespace-nowrap">EduTrust</span>}
             </div>
 
             {/* Main Menu */}
@@ -55,10 +55,10 @@ const SidebarItem = ({ icon, label, desc, path, isCollapsed }: any) => (
         </div>
         {!isCollapsed && (
             <div>
-                <span className="text-sm font-medium whitespace-nowrap opacity-100 block">
+                <span className="text-[0.95rem] font-medium tracking-[-0.025em] whitespace-nowrap opacity-100 block">
                     {label}
                 </span>
-                <p className="text-[11px] text-gray-400 font-semibold mt-1 uppercase tracking-wider">
+                <p className="mt-1 text-[11px] font-medium tracking-[-0.01em] text-gray-400">
                     {desc}
                 </p>
             </div>

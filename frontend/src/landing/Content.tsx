@@ -76,18 +76,18 @@ export default function Content() {
                 <Section id="section-1" className="bg-white flex items-center justify-center py-20">
                     <div className="container mx-auto px-6 flex flex-col md:flex-row items-center gap-12">
                         <div className="flex-1 space-y-6">
-                            <h3 className="text-[#5B0019] font-bold uppercase tracking-widest text-sm">
+                            <h3 className="type-label text-[#5B0019]">
                                 CÁC SINH VIÊN
                             </h3>
-                            <h2 className="text-4xl md:text-5xl font-extrabold text-[#1a1a1a] leading-tight">
+                            <h2 className="type-display text-[#1a1a1a]">
                                 Các Sinh viên Kinh nghiệm
                             </h2>
-                            <p className="text-gray-600 text-lg leading-relaxed max-w-xl">
+                            <p className="type-body text-gray-600 max-w-xl">
                                 Lakeside là một cộng đồng học tập sôi động, nơi học sinh được khuyến khích khám phá đam mê của họ,
                                 phát triển kỹ năng lãnh đạo và xây dựng những mối quan hệ bền chặt. Chúng tôi tin rằng giáo dục
                                 không chỉ diễn ra trong lớp học mà còn thông qua các hoạt động ngoại khóa, dự án cộng đồng và giao lưu văn hóa.
                             </p>
-                            <button className="px-8 py-3 border-2 border-[#5B0019] text-[#5B0019] font-semibold rounded-md hover:bg-[#5B0019] hover:text-white transition-all uppercase text-sm tracking-wider">
+                            <button className="px-8 py-3 border-2 border-[#5B0019] text-[#5B0019] text-sm font-medium rounded-md hover:bg-[#5B0019] hover:text-white transition-all">
                                 Tìm hiểu thêm
                             </button>
                         </div>
@@ -116,21 +116,21 @@ export default function Content() {
 
                         <div className="w-full md:w-1/2 space-y-6 text-left">
                             <header>
-                                <p className="text-sm font-semibold text-red-800 uppercase tracking-widest mb-2">
+                                <p className="type-label text-red-800 mb-2">
                                     Học Tập
                                 </p>
-                                <h2 className="text-5xl font-extrabold text-slate-900 leading-tight">
+                                <h2 className="type-display text-slate-900">
                                     Học tập Học thuật
                                 </h2>
                             </header>
 
-                            <p className="text-gray-600 text-lg leading-relaxed">
+                            <p className="type-body text-gray-600">
                                 Chương trình học tập của chúng tôi được thiết kế để thách thức và truyền cảm hứng cho học sinh.
                                 Với đội ngũ giáo viên giàu kinh nghiệm và tận tâm, chúng tôi cung cấp một môi trường học tập
                                 hỗ trợ và khuyến khích tư duy phản biện, sáng tạo và độc lập.
                             </p>
 
-                            <button className="mt-4 px-8 py-3 border-2 border-orange-300 text-orange-400 font-bold rounded-sm hover:bg-orange-50 transition-colors uppercase tracking-wide">
+                            <button className="mt-4 px-8 py-3 border-2 border-orange-300 text-orange-400 font-medium rounded-sm hover:bg-orange-50 transition-colors">
                                 Khám phá chương trình
                             </button>
                         </div>
@@ -140,19 +140,19 @@ export default function Content() {
                 <Section id="section-3" className="py-16 px-8 md:px-20 bg-white">
                     <div className="flex flex-col md:flex-row items-center gap-12 max-w-7xl mx-auto">
                         <div className="flex-1 space-y-6">
-                            <p className="text-sm font-bold uppercase tracking-widest text-red-800">
+                            <p className="type-label text-red-800">
                                 Athletics
                             </p>
-                            <h2 className="text-5xl font-extrabold text-slate-900 leading-tight">
+                            <h2 className="type-display text-slate-900">
                                 Thể thao & Vận động
                             </h2>
-                            <p className="text-gray-600 leading-relaxed text-lg">
+                            <p className="type-body text-gray-600">
                                 Chương trình thể thao của Lakeside phát triển tinh thần đồng đội, kỷ luật
                                 và sự kiên trì. Với nhiều môn thể thao khác nhau từ bóng rổ, bơi lội đến
                                 bóng đá, học sinh có cơ hội phát triển kỹ năng thể chất và tinh thần cạnh
                                 tranh lành mạnh.
                             </p>
-                            <button className="mt-4 px-8 py-3 border-2 border-amber-600 text-amber-700 font-semibold uppercase tracking-wider hover:bg-amber-600 hover:text-white transition-all duration-300">
+                            <button className="mt-4 px-8 py-3 border-2 border-amber-600 text-amber-700 font-medium hover:bg-amber-600 hover:text-white transition-all duration-300">
                                 Xem các đội thể thao
                             </button>
                         </div>
@@ -175,19 +175,19 @@ export default function Content() {
                 <Section id="section-4" className="bg-white flex items-center justify-center py-20">
                     <div className="container mx-auto px-6 flex flex-col md:flex-row-reverse items-center gap-12">
                         <div className="flex-1 space-y-6">
-                            <h3 className="text-[#5B0019] font-bold uppercase tracking-widest text-sm">
+                            <h3 className="type-label text-[#5B0019]">
                                 NGHỆ THUẬT
                             </h3>
-                            <h2 className="text-4xl md:text-5xl font-extrabold text-[#1a1a1a] leading-tight">
+                            <h2 className="type-display text-[#1a1a1a]">
                                 Nghệ thuật & Sáng tạo
                             </h2>
-                            <p className="text-gray-600 text-lg leading-relaxed max-w-xl">
+                            <p className="type-body text-gray-600 max-w-xl">
                                 Lakeside khuyến khích sự sáng tạo và biểu đạt cá nhân thông qua các chương trình
                                 nghệ thuật đa dạng bao gồm âm nhạc, hội họa, kịch nghệ và nhiều lĩnh vực khác.
                                 Học sinh được tự do khám phá và phát triển tài năng nghệ thuật của mình trong
                                 môi trường hỗ trợ và chuyên nghiệp.
                             </p>
-                            <button className="px-8 py-3 border-2 border-[#b58e58] text-[#b58e58] font-semibold rounded-md hover:bg-[#b58e58] hover:text-white transition-all uppercase text-sm tracking-wider">
+                            <button className="px-8 py-3 border-2 border-[#b58e58] text-[#b58e58] text-sm font-medium rounded-md hover:bg-[#b58e58] hover:text-white transition-all">
                                 Khám phá nghệ thuật
                             </button>
                         </div>

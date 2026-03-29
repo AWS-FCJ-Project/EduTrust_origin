@@ -121,13 +121,13 @@ export default function LoginPage() {
                         <div className="bg-[#0D9488] p-1.5 rounded-lg">
                             <span className="text-white font-bold text-xl">ET</span>
                         </div>
-                        <span className="text-white font-bold text-2xl tracking-tight">EDUTRUST</span>
+                        <span className="text-white text-2xl font-semibold tracking-[-0.05em]">EDUTRUST</span>
                     </div>
                 </div>
 
                 <div className="text-center mb-8">
-                    <h1 className="text-white text-2xl font-bold mb-2 tracking-wide">Hệ thống học tập</h1>
-                    <p className="text-gray-400 text-sm leading-relaxed px-2">
+                    <h1 className="text-white text-[2rem] leading-[1.1] font-semibold mb-2 tracking-[-0.05em]">Hệ thống học tập</h1>
+                    <p className="text-gray-400 text-sm leading-relaxed tracking-[-0.015em] px-2">
                         Vui lòng đăng nhập để tiếp tục hành trình <br /> chinh phục tri thức của bạn
                     </p>
                 </div>
@@ -140,7 +140,7 @@ export default function LoginPage() {
 
                 <form className="space-y-5" onSubmit={handleSubmit}>
                     <div className="space-y-1">
-                        <label className="text-gray-300 text-xs ml-1 font-medium">Email address</label>
+                        <label className="text-gray-300 text-xs ml-1 font-medium tracking-[-0.01em]">Email address</label>
                         <div className="relative">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                             <input
@@ -157,7 +157,7 @@ export default function LoginPage() {
 
                     <div className="space-y-1">
                         <div className="flex justify-between items-center px-1">
-                            <label className="text-gray-300 text-xs font-medium">Password</label>
+                            <label className="text-gray-300 text-xs font-medium tracking-[-0.01em]">Password</label>
                             <Link href="#" className="text-gray-400 text-xs hover:text-white hover:underline transition-colors">Quên mật khẩu?</Link>
                         </div>
                         <div className="relative">
@@ -184,7 +184,7 @@ export default function LoginPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-white border-2 border-[#5B0019] text-[#5B0019] font-bold py-3 rounded-xl transition-all duration-300 shadow-lg mt-4 hover:bg-[#5B0019] hover:border-[#5B0019] hover:text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-white border-2 border-[#5B0019] text-[#5B0019] font-medium py-3 rounded-xl transition-all duration-300 shadow-lg mt-4 hover:bg-[#5B0019] hover:border-[#5B0019] hover:text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? (
                             <>
@@ -199,7 +199,7 @@ export default function LoginPage() {
 
                 <p className="text-center text-gray-400 text-sm mt-8">
                     Bạn chưa có tài khoản?{" "}
-                    <Link href="/contact" className="text-[#0D9488] font-bold hover:text-[#11ad9e] transition-colors">
+                    <Link href="/contact" className="text-[#0D9488] font-medium hover:text-[#11ad9e] transition-colors">
                         Liên hệ nhà trường
                     </Link>
                 </p>

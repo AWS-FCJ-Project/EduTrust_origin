@@ -66,7 +66,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         fetchUserInfo();
     }, []);
 
-    if (loading) return <div className="flex h-screen w-full items-center justify-center bg-[#F0F2F5]">Loading...</div>;
+    if (loading) return <div className="flex h-screen w-full items-center justify-center bg-[#F0F2F5] text-sm font-medium text-slate-500">Loading...</div>;
     if (!user) return null;
 
     const role = user.role;
@@ -94,20 +94,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Sidebar role={role} />
 
             <main className="flex-1 flex flex-col min-w-0">
-                <header className="h-16 bg-white flex items-center justify-between px-8 shadow-sm z-10 shrink-0">
-                    <h2 className="text-gray-700 font-bold text-lg">
+                <header className="h-16 bg-white/92 backdrop-blur-md flex items-center justify-between px-8 shadow-sm z-10 shrink-0">
+                    <h2 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-slate-900">
                         Chào {user.name || 'Người dùng'}! 👋
                     </h2>
                     <div className="flex items-center gap-6">
                         <button className="relative p-1"><Bell size={20} /></button>
-                        <div className="flex items-center gap-3 border-l pl-6">
-                            <p className="text-sm font-bold">{user.name || 'Người dùng'}</p>
+                        <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
+                            <p className="text-sm font-medium tracking-[-0.02em] text-slate-700">{user.name || 'Người dùng'}</p>
                             <div className="w-10 h-10 rounded-full relative overflow-hidden">
                                 <Image src={study} alt="Avatar" fill className="object-cover" />
                             </div>
                             <button
                                 onClick={handleLogout}
-                                className="ml-4 flex items-center gap-2 px-5 py-2.5 bg-[#5B0019] text-white text-sm font-semibold rounded-xl hover:bg-red-700 transition-all shadow-md active:scale-95"
+                                className="ml-4 flex items-center gap-2 px-5 py-2.5 bg-[#5B0019] text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all shadow-md active:scale-95"
                             >
                                 <LogOut size={18} />
                                 Đăng xuất
