@@ -21,6 +21,8 @@ ENV/
 
 # Frontend
 node_modules/
+.next/
+frontend/.next/
 dist/
 build/
 npm-debug.log*
@@ -60,3 +62,4 @@ known_hosts
 !*.tfvars.example
 crash.log
 crash.*.log
+.atlas*
