@@ -101,7 +101,6 @@ app.include_router(exam_routes.router)
 
 import os
 
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 # Mount storage directory
@@ -121,50 +120,6 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
-
-
-# Serve frontend build if exists
-frontend_dist = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
-)
-
-# Disable static frontend serving to avoid interception of API routes
-"""
-if os.path.exists(frontend_dist):
-    app.mount(
-        "/assets",
-        StaticFiles(directory=os.path.join(frontend_dist, "assets")),
-        name="assets",
-    )
-
-    @app.get(
-        "/{full_path:path}",
-        responses={
-            403: {"description": "Forbidden"},
-            404: {"description": "Not Found"},
-        },
-    )
-    async def serve_frontend(full_path: str):
-        # Don't intercept API routes...
-        # Don't intercept API routes...
-        api_prefixes = ["api", "docs", "redoc", "camera", "classes", "exams", "users"]
-        if any(full_path.startswith(p) for p in api_prefixes):
-            raise HTTPException(status_code=404)
-
-        # Sanitize path to prevent traversal
-        safe_path = os.path.abspath(os.path.join(frontend_dist, full_path))
-        if not safe_path.startswith(frontend_dist):
-            raise HTTPException(status_code=403, detail="Forbidden")
-
-        if os.path.isfile(safe_path):
-            return FileResponse(safe_path)
-
-        # SPA fallback
-        index_path = os.path.join(frontend_dist, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        raise HTTPException(status_code=404, detail="Resource not found")
-"""
 
 
 if __name__ == "__main__":
