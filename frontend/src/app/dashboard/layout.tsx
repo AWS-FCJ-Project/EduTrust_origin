@@ -21,6 +21,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     return;
                 }
 
+                // Try to get cached user info from cookie first
+                const cachedUserInfo = Cookies.get('user_info');
+                if (cachedUserInfo) {
+                    try {
+                        const parsedUser = JSON.parse(cachedUserInfo);
+                        setUser(parsedUser);
+                        setLoading(false);
+                        return;
+                    } catch {
+                        // Invalid cached data, continue to fetch
+                    }
+                }
+
+                // Fetch fresh user info from API
                 const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-info`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -30,8 +44,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 if (response.ok) {
                     const data = await response.json();
                     setUser(data);
+                    // Cache user info in cookie
+                    Cookies.set('user_info', JSON.stringify(data), {
+                        expires: 7,
+                        path: '/',
+                        sameSite: 'strict',
+                        secure: process.env.NODE_ENV === 'production'
+                    });
                 } else {
                     Cookies.remove('auth_token');
+                    Cookies.remove('user_info');
                     window.location.href = '/login';
                 }
             } catch (error) {
@@ -63,6 +85,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             console.error("Lỗi gọi API logout:", error);
         } finally {
             Cookies.remove('auth_token', { path: '/' });
+            Cookies.remove('user_info', { path: '/' });
             window.location.href = '/';
         }
     };

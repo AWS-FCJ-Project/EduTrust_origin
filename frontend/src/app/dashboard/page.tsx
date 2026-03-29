@@ -29,6 +29,20 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // Try to get cached user info from cookie first
+        const cachedUserInfo = Cookies.get('user_info');
+        if (cachedUserInfo) {
+            try {
+                const parsedUser = JSON.parse(cachedUserInfo);
+                setUser(parsedUser);
+                setLoading(false);
+                return;
+            } catch {
+                // Invalid cached data, continue to fetch
+            }
+        }
+
+        // Fallback: fetch user info from API
         const fetchUser = async () => {
             try {
                 const token = Cookies.get('auth_token');

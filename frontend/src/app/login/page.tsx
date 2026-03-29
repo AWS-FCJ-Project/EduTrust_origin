@@ -12,6 +12,16 @@ interface LoginResponse {
     message?: string;
 }
 
+interface UserInfo {
+    id?: string | number;
+    name?: string;
+    email?: string;
+    role?: string;
+    class_name?: string;
+    grade?: string;
+    [key: string]: any;
+}
+
 export default function LoginPage() {
     const router = useRouter();
     const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -57,6 +67,29 @@ export default function LoginPage() {
                         sameSite: 'strict',
                         secure: process.env.NODE_ENV === 'production'
                     });
+
+                    // Fetch user info immediately after login
+                    try {
+                        const userInfoResponse = await fetch(`${apiUrl}/user-info`, {
+                            method: "GET",
+                            headers: {
+                                "Authorization": `Bearer ${token}`,
+                                "Content-Type": "application/json",
+                            },
+                        });
+
+                        if (userInfoResponse.ok) {
+                            const userData: UserInfo = await userInfoResponse.json();
+                            Cookies.set("user_info", JSON.stringify(userData), {
+                                expires: 7,
+                                path: '/',
+                                sameSite: 'strict',
+                                secure: process.env.NODE_ENV === 'production'
+                            });
+                        }
+                    } catch (userInfoError) {
+                        console.error("Error fetching user info:", userInfoError);
+                    }
 
                     router.push("/dashboard");
                     router.refresh();
