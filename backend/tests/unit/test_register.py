@@ -18,7 +18,11 @@ client = TestClient(app)
 
 
 def test_multi_register_csv():
-    csv_content = b"email,password\ntestcsv1@example.com,Pass@word1\ntestcsv2@example.com,Pass@word2"
+    csv_content = (
+        b"email,password,role\n"
+        b"testcsv1@example.com,Pass@word1,teacher\n"
+        b"testcsv2@example.com,Pass@word2,teacher"
+    )
 
     with patch("src.routers.auth.register.users_collection.find") as mock_find, patch(
         "src.routers.auth.register.users_collection.insert_many", new_callable=AsyncMock
@@ -42,6 +46,7 @@ def test_multi_register_excel():
         {
             "email": ["testexcel1@example.com", "testexcel2@example.com"],
             "password": ["Pass@word1", "Pass@word2"],
+            "role": ["teacher", "teacher"],
         }
     )
 
