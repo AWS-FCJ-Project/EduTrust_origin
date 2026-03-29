@@ -161,7 +161,7 @@ async def update_class(
     if not ObjectId.is_valid(class_id):
         raise HTTPException(status_code=400, detail="Invalid class ID")
 
-    # Lọc bỏ các giá trị None, chuỗi rỗng, chữ "string" hoặc grade = 0 (mặc định Swagger)
+    # Filter out None values, empty strings, "string" or grade = 0 (Swagger defaults)
     update_data_filtered = {
         k: v
         for k, v in class_data.model_dump().items()

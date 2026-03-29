@@ -1,20 +1,17 @@
-import os
-
 import boto3
 from botocore.exceptions import ClientError
-from dotenv import load_dotenv
 
-load_dotenv()
+from src.app_config import app_config
 
 
 class S3Handler:
     def __init__(self):
-        self.bucket_name = os.getenv("S3_BUCKET_NAME")
-        self.region = os.getenv("AWS_REGION", "ap-southeast-1")
+        self.bucket_name = app_config.S3_BUCKET_NAME
+        self.region = app_config.AWS_REGION
         self.s3_client = boto3.client(
             "s3",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            aws_access_key_id=app_config.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=app_config.AWS_SECRET_ACCESS_KEY,
             region_name=self.region,
         )
 

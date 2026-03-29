@@ -75,7 +75,6 @@ async def update_user(
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
-    # Bỏ qua các giá trị None, chuỗi rỗng, chữ "string" hoặc grade = 0 (giá trị mặc định Swagger)
     update_dict = {
         k: v
         for k, v in update_data.model_dump().items()
@@ -95,7 +94,6 @@ async def update_user(
     if not update_dict:
         return {"message": "Không có thông tin nào thay đổi"}
 
-    # Auto-create class if changed and doesn't exist
     if "class_name" in update_dict and "grade" in update_dict:
         existing_class = await classes_collection.find_one(
             {"name": update_dict["class_name"], "grade": update_dict["grade"]}
@@ -132,7 +130,6 @@ async def delete_user(
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
-    # Cleanup if teacher
     target_user = await users_collection.find_one({"_id": ObjectId(user_id)})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
