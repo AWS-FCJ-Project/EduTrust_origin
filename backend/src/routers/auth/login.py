@@ -92,7 +92,7 @@ async def update_user(
         update_dict["password_plain"] = new_password
 
     if not update_dict:
-        return {"message": "Không có thông tin nào thay đổi"}
+        return {"message": "No changes provided"}
 
     if "class_name" in update_dict and "grade" in update_dict:
         existing_class = await classes_collection.find_one(

@@ -27,7 +27,6 @@ async def register(request: Request, user: UserRegister):
 
     hashed = hash_password(user.password)
     default_name = user.email.split("@", 1)[0]
-    # Auto-create class if it doesn't exist (Only for students)
     if user.role == UserRole.student and user.class_name and user.grade:
         existing_class = await classes_collection.find_one(
             {"name": user.class_name, "grade": user.grade}
@@ -168,7 +167,6 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
 
         hashed = hash_password(valid_user.password)
 
-        # Auto-create class if it doesn't exist (Only for students)
         if (
             valid_user.role == UserRole.student
             and valid_user.class_name
