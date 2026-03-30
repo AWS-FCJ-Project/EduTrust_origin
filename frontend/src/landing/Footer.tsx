@@ -22,7 +22,7 @@ export default function Footer() {
                             <div className="bg-[#0D9488] p-1.5 rounded-lg">
                                 <span className="text-white font-bold text-xl leading-none">ET</span>
                             </div>
-                            <span className="text-white font-bold text-2xl tracking-tight">EDUTRUST</span>
+                            <span className="text-white text-2xl font-semibold tracking-[-0.05em]">EDUTRUST</span>
                         </div>
                         <p className="text-sm leading-relaxed mb-6">
                             Nền tảng xây dựng niềm tin và chuẩn mực cho giáo dục hiện đại. Giải pháp kiểm định toàn diện.
@@ -36,7 +36,7 @@ export default function Footer() {
                     </div>
 
                     <div>
-                        <h3 className="text-white font-bold text-sm mb-6 uppercase tracking-[0.1em]">Về EduTrust</h3>
+                        <h3 className="text-white text-sm font-semibold mb-6 tracking-[-0.02em]">Về EduTrust</h3>
                         <ul className="space-y-4 text-sm">
                             <li><a href="#" className="hover:text-white transition-colors">Giới thiệu</a></li>
                             <li><a href="#" className="hover:text-white transition-colors">Sứ mệnh & Tầm nhìn</a></li>
@@ -45,7 +45,7 @@ export default function Footer() {
                         </ul>
                     </div>
                     <div>
-                        <h3 className="text-white font-bold text-sm mb-6 uppercase tracking-[0.1em]">Nền tảng</h3>
+                        <h3 className="text-white text-sm font-semibold mb-6 tracking-[-0.02em]">Nền tảng</h3>
                         <ul className="space-y-4 text-sm">
                             <li><a href="#" className="hover:text-white transition-colors">Hệ thống LMS</a></li>
                             <li><a href="#" className="hover:text-white transition-colors">Quản lý Học viên</a></li>
@@ -56,7 +56,7 @@ export default function Footer() {
 
 
                     <div>
-                        <h3 className="text-white font-bold text-sm mb-6 uppercase tracking-[0.1em]">Hỗ trợ</h3>
+                        <h3 className="text-white text-sm font-semibold mb-6 tracking-[-0.02em]">Hỗ trợ</h3>
                         <ul className="space-y-4 text-sm">
                             <li><a href="#" className="hover:text-white transition-colors">Trung tâm Trợ giúp</a></li>
                             <li><a href="#" className="hover:text-white transition-colors">Hướng dẫn Sử dụng</a></li>
@@ -65,7 +65,7 @@ export default function Footer() {
                         </ul>
                     </div>
                     <div>
-                        <h3 className="text-white font-bold text-sm mb-6 uppercase tracking-[0.1em]">Liên hệ</h3>
+                        <h3 className="text-white text-sm font-semibold mb-6 tracking-[-0.02em]">Liên hệ</h3>
                         <div className="space-y-4 text-sm">
                             <div className="flex items-center gap-3">
                                 <Phone size={16} className="text-[#0D9488]" />
