@@ -532,7 +532,7 @@ const TeacherExams: React.FC = () => {
                                         </div>
 
                                         {showSubjectDropdown && (
-                                            <div className="absolute z-[100] w-full mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-200">
+                                            <div className="absolute z-100 w-full mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-200">
                                                 {filteredSubjects.length > 0 ? filteredSubjects.map((subject) => (
                                                     <button
                                                         key={subject}
@@ -692,7 +692,7 @@ const TeacherExams: React.FC = () => {
                                                     autoResize(e);
                                                 }}
                                                 onFocus={autoResize}
-                                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold italic text-sm resize-none overflow-hidden break-words"
+                                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold italic text-sm resize-none overflow-hidden wrap-break-word"
                                             />
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 {q.options.map((opt: string, oIdx: number) => (
@@ -724,7 +724,7 @@ const TeacherExams: React.FC = () => {
                                                                 autoResize(e);
                                                             }}
                                                             onFocus={autoResize}
-                                                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold resize-none overflow-hidden break-words"
+                                                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold resize-none overflow-hidden wrap-break-word"
                                                         />
                                                     </div>
                                                 ))}
@@ -746,7 +746,7 @@ const TeacherExams: React.FC = () => {
                             <button 
                                 onClick={handleUpdateExam}
                                 disabled={isActionLoading}
-                                className="flex-[2] py-4 bg-[#5B0019] text-white rounded-2xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-red-900/10"
+                                className="flex-2 py-4 bg-[#5B0019] text-white rounded-2xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-red-900/10"
                             >
                                 {isActionLoading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
                                 Lưu thay đổi
@@ -857,11 +857,11 @@ const TeacherExams: React.FC = () => {
                     background: transparent;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: #eee;
+                    background: rgba(0, 0, 0, 0.2);
                     border-radius: 10px;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: #ddd;
+                    background: rgba(0, 0, 0, 0.3);
                 }
             `}</style>
         </div>

@@ -761,11 +761,11 @@ const ClassesPage = () => {
                     background: transparent;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: #eee;
+                    background: rgba(0, 0, 0, 0.2);
                     border-radius: 10px;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: #ddd;
+                    background: rgba(0, 0, 0, 0.3);
                 }
             `}</style>
         </div>

@@ -164,7 +164,7 @@ async def list_teachers(current_user: dict = Depends(get_current_user_from_token
 
         async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
             assigned_classes.append(
-                {"id": str(c["_id"]), "name": c["name"], "role": "Homeroom Teacher"}
+                {"id": str(c["_id"]), "name": c["name"], "role": "Giáo viên Chủ nhiệm"}
             )
 
         async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
@@ -174,7 +174,7 @@ async def list_teachers(current_user: dict = Depends(get_current_user_from_token
                         {
                             "id": str(c["_id"]),
                             "name": c["name"],
-                            "role": f"Subject Teacher ({st.get('subject', 'N/A')})",
+                            "role": f"Giáo viên Bộ môn ({st.get('subject', 'N/A')})",
                         }
                     )
 

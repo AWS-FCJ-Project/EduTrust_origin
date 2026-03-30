@@ -237,15 +237,15 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.35);
     border-radius: 20px;
-    border: 1px solid transparent;
+    border: 1px solid rgba(0, 0, 0, 0.05);
     background-clip: padding-box;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.35);
-    border: 1px solid transparent;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(0, 0, 0, 0.1);
     background-clip: padding-box;
   }
 }
