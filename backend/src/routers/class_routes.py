@@ -73,8 +73,6 @@ async def get_classes(current_user: dict = Depends(get_current_user)):
     return classes
 
 
-
-
 @router.get("/homeroom/violations", response_model=List[dict])
 async def get_homeroom_violations(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])

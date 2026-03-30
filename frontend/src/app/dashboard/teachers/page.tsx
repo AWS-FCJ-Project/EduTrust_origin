@@ -471,7 +471,7 @@ const TeachersPage = () => {
                                 <button 
                                     disabled={isActionLoading}
                                     type="submit"
-                                    className="flex-[2] py-4 bg-[#5B0019] text-white rounded-2xl font-black shadow-lg shadow-red-900/10 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 uppercase text-[10px] tracking-widest"
+                                    className="flex-2 py-4 bg-[#5B0019] text-white rounded-2xl font-black shadow-lg shadow-red-900/10 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 uppercase text-[10px] tracking-widest"
                                 >
                                     {isActionLoading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                                     Lưu hồ sơ

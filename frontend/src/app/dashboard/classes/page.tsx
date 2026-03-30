@@ -705,7 +705,7 @@ const ClassesPage = () => {
                                     {isAdmin && (
                                         <button 
                                             type="submit"
-                                            className="flex-[2] py-4 bg-[#5B0019] text-white rounded-2xl font-black shadow-lg shadow-red-900/20 hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-3 uppercase text-sm tracking-widest"
+                                            className="flex-2 py-4 bg-[#5B0019] text-white rounded-2xl font-black shadow-lg shadow-red-900/20 hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-3 uppercase text-sm tracking-widest"
                                         >
                                             <Save size={20} /> {modalMode === 'create' ? 'Tạo Lớp học' : 'Lưu thay đổi'}
                                         </button>
@@ -719,7 +719,7 @@ const ClassesPage = () => {
 
             {/* Delete Confirmation Modal */}
             {deletingClass && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
                     <div className="w-full max-w-md bg-white rounded-[4rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                         <div className="p-12 text-center space-y-6">
                             <div className="mx-auto w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center animate-bounce duration-1000 shadow-inner">

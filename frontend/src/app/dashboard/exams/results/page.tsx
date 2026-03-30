@@ -39,7 +39,7 @@ export default function StaffResultsPage() {
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 10000); // Cập nhật mỗi 10 giây
+        const timer = setInterval(() => setCurrentTime(new Date()), 10000); // Update every 10 seconds
         return () => clearInterval(timer);
     }, []);
 
