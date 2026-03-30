@@ -1,5 +1,5 @@
 import io
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
@@ -15,7 +15,6 @@ def mock_dependencies():
 
 
 from src.main import app
-from src.auth.dependencies import get_current_user
 
 client = TestClient(app)
 
@@ -104,6 +103,15 @@ def test_multi_register_invalid_format():
     files = {"file": ("users.txt", b"invalid", "text/plain")}
     response = client.post("/multi-register", files=files)
     assert response.status_code == 400
+    assert "Invalid file format." in response.json()["detail"]
+
+
+def test_multi_register_missing_columns():
+    csv_content = b"email,role\ntest@example.com,teacher"
+    files = {"file": ("users.csv", csv_content, "text/csv")}
+    response = client.post("/multi-register", files=files)
+    assert response.status_code == 400
+    assert "must contain 'email' and 'password' columns" in response.json()["detail"]
 
 
 def test_register_single_security(mock_db):

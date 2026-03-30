@@ -24,7 +24,7 @@ def mock_user_session():
         return user
 
     yield _mock
-    app.dependency_overrides = {}
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
