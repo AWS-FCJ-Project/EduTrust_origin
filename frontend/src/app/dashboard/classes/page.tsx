@@ -52,7 +52,7 @@ const ClassesPage = () => {
             }
 
             // Fetch Teachers
-            const teachersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/classes/teachers`, {
+            const teachersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/teachers`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (teachersRes.ok) {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Shield, UserPlus, Mail, Search, Loader2, Download, Edit2, Trash2, X, Save, AlertTriangle, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Shield, UserPlus, Mail, Search, Loader2, Download, Edit2, Trash2, X, Save, AlertTriangle, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import Cookies from 'js-cookie';
 
@@ -15,13 +15,12 @@ const AdminsPage = () => {
     const [deletingAdmin, setDeletingAdmin] = useState<any>(null);
     const [viewingProfile, setViewingProfile] = useState<any>(null);
     const [isActionLoading, setIsActionLoading] = useState(false);
-    const [showAdminPassword, setShowAdminPassword] = useState(false);
 
     const fetchAdmins = async () => {
         const token = Cookies.get('auth_token');
         try {
             setLoading(true);
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/classes/admins`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/admins`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
@@ -224,18 +223,12 @@ const AdminsPage = () => {
                                 </div>
                                 <div className="space-y-2">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                        <ShieldCheck size={12} /> Mật khẩu đăng nhập
+                                        <ShieldCheck size={12} /> Trạng thái tài khoản
                                     </p>
                                     <div className="flex items-center gap-2">
-                                        <code className="px-3 py-1 bg-gray-100 text-[#5B0019] rounded-lg font-mono font-black text-sm border border-gray-200 min-w-[100px]">
-                                            {showAdminPassword ? (viewingProfile.password_plain || 'N/A') : '********'}
-                                        </code>
-                                        <button 
-                                            onClick={() => setShowAdminPassword(!showAdminPassword)}
-                                            className="p-1.5 text-gray-400 hover:text-[#5B0019] transition-all bg-white rounded-lg border border-gray-100 shadow-sm"
-                                        >
-                                            {showAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
+                                        <span className="px-3 py-1 bg-green-50 text-green-600 rounded-lg font-bold text-sm border border-green-100">
+                                            Đang hoạt động
+                                        </span>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
@@ -306,7 +299,7 @@ const AdminsPage = () => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-2">Mật khẩu mới (Để trống nếu không đổi)</label>
                                     <input 
-                                        type="text"
+                                        type="password"
                                         placeholder="Nhập mật khẩu mới cho admin..."
                                         value={editingAdmin.new_password || ''}
                                         onChange={(e) => setEditingAdmin({...editingAdmin, new_password: e.target.value})}

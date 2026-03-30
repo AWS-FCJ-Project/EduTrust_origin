@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { FileText, Users, Award, Search, Eye, ChevronRight, ChevronDown, BookOpen, Clock, ShieldAlert, ShieldCheck, X, User } from 'lucide-react';
+import { FileText, Users, Award, Search, Eye, ChevronRight, ChevronDown, Clock, ShieldAlert, ShieldCheck, X, User } from 'lucide-react';
 import Cookies from 'js-cookie';
 
 interface ExamStat {

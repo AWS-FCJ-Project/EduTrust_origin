@@ -73,62 +73,6 @@ async def get_classes(current_user: dict = Depends(get_current_user)):
     return classes
 
 
-@router.get("/teachers", response_model=List[dict])
-async def list_teachers(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    teachers = []
-    async for t in users_collection.find({"role": "teacher"}):
-        t_id = str(t["_id"])
-        assigned_classes = []
-
-        async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
-            assigned_classes.append(
-                {"id": str(c["_id"]), "name": c["name"], "role": "Homeroom Teacher"}
-            )
-
-        async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
-            for st in c.get("subject_teachers", []):
-                if st["teacher_id"] == t_id:
-                    assigned_classes.append(
-                        {
-                            "id": str(c["_id"]),
-                            "name": c["name"],
-                            "role": f"Subject Teacher ({st.get('subject', 'N/A')})",
-                        }
-                    )
-
-        teachers.append(
-            {
-                "id": t_id,
-                "name": t.get("name"),
-                "email": t["email"],
-                "subjects": t.get("subjects", []),
-                "password_plain": t.get("password_plain"),
-                "assigned_classes": assigned_classes,
-                "is_assigned": len(assigned_classes) > 0,
-            }
-        )
-    return teachers
-
-
-@router.get("/admins", response_model=List[dict])
-async def list_admins(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    admins = []
-    async for a in users_collection.find({"role": "admin"}):
-        admins.append(
-            {
-                "id": str(a["_id"]),
-                "name": a.get("name"),
-                "email": a["email"],
-                "password_plain": a.get("password_plain"),
-            }
-        )
-    return admins
 
 
 @router.get("/homeroom/violations", response_model=List[dict])

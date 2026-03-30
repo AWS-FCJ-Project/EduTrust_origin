@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Users, UserPlus, Mail, Shield, Search, Loader2, Download, Edit2, Trash2, X, Save, AlertTriangle, CheckCircle, BookOpen, Plus, GraduationCap, School, Eye, EyeOff } from 'lucide-react';
+import { Users, UserPlus, Mail, Shield, Search, Loader2, Download, Edit2, Trash2, X, Save, AlertTriangle, CheckCircle, BookOpen, Plus, GraduationCap, School } from 'lucide-react';
 import Link from 'next/link';
 import Cookies from 'js-cookie';
 
@@ -15,7 +15,6 @@ const TeachersPage = () => {
     const [deletingTeacher, setDeletingTeacher] = useState<any>(null);
     const [viewingProfile, setViewingProfile] = useState<any>(null);
     const [isActionLoading, setIsActionLoading] = useState(false);
-    const [showTeacherPassword, setShowTeacherPassword] = useState(false);
     
     // UI Helpers
     const [newSubject, setNewSubject] = useState('');
@@ -24,7 +23,7 @@ const TeachersPage = () => {
         const token = Cookies.get('auth_token');
         try {
             setLoading(true);
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/classes/teachers`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/teachers`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
@@ -269,18 +268,12 @@ const TeachersPage = () => {
                                         </div>
                                         <div className="space-y-2">
                                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                                <Shield size={12} /> Mật khẩu đăng nhập
+                                                <Shield size={12} /> Trạng thái tài khoản
                                             </p>
                                             <div className="flex items-center gap-2">
-                                                <code className="px-3 py-1 bg-gray-100 text-[#5B0019] rounded-lg font-mono font-black text-sm border border-gray-200 min-w-[100px]">
-                                                    {showTeacherPassword ? (viewingProfile.password_plain || 'N/A') : '********'}
-                                                </code>
-                                                <button 
-                                                    onClick={() => setShowTeacherPassword(!showTeacherPassword)}
-                                                    className="p-1.5 text-gray-400 hover:text-[#5B0019] transition-all bg-white rounded-lg border border-gray-100 shadow-sm"
-                                                >
-                                                    {showTeacherPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                </button>
+                                                <span className="px-3 py-1 bg-green-50 text-green-600 rounded-lg font-bold text-sm border border-green-100">
+                                                    Đang hoạt động
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -422,7 +415,7 @@ const TeachersPage = () => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-2">Mật khẩu mới (Để trống nếu không đổi)</label>
                                     <input 
-                                        type="text"
+                                        type="password"
                                         placeholder="Nhập mật khẩu mới cho giáo viên..."
                                         value={editingTeacher.new_password || ''}
                                         onChange={(e) => setEditingTeacher({...editingTeacher, new_password: e.target.value})}

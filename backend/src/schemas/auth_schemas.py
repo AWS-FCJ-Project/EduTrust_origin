@@ -105,7 +105,6 @@ class UserInfoResponse(BaseModel):
     grade: Optional[int] = None
     subjects: List[str] = []
     is_verified: bool = False
-    password_plain: Optional[str] = None
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
@@ -128,7 +127,6 @@ def user_helper(user) -> dict:
         "class_name": user.get("class_name"),
         "grade": user.get("grade"),
         "subjects": user.get("subjects", []),
-        "password_plain": user.get("password_plain"),
         "is_verified": bool(user.get("is_verified", False)),
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),

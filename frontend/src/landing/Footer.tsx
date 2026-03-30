@@ -48,7 +48,7 @@ export default function Footer() {
                         <ul className="space-y-3 text-[13px]">
                             <li><a href="#" className="hover:text-white transition-colors">Giới thiệu</a></li>
                             <li><a href="#" className="hover:text-white transition-colors">Sứ mệnh & Tầm nhìn</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Đôi ngũ</a></li>
+                            <li><a href="#" className="hover:text-white transition-colors">Đội ngũ</a></li>
                             <li><a href="#" className="hover:text-white transition-colors">Tuyển dụng</a></li>
                         </ul>
                     </div>
