@@ -15,6 +15,8 @@ interface ExamStat {
     average_score: number;
     highest_score: number;
     violations_count: number;
+    start_time: string;
+    end_time: string;
 }
 
 interface SubmissionDetail {
@@ -34,6 +36,12 @@ export default function StaffResultsPage() {
     const [selectedExam, setSelectedExam] = useState<{ id: string, title: string } | null>(null);
     const [submissions, setSubmissions] = useState<SubmissionDetail[]>([]);
     const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 10000); // Cập nhật mỗi 10 giây
+        return () => clearInterval(timer);
+    }, []);
 
     useEffect(() => {
         const fetchStaffResults = async () => {
@@ -197,6 +205,7 @@ export default function StaffResultsPage() {
                                                     <th className="px-8 py-6 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">ĐTB</th>
                                                     <th className="px-8 py-6 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Cao Nhất</th>
                                                     <th className="px-8 py-6 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Vi Phạm</th>
+                                                    <th className="px-8 py-6 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Trạng Thái</th>
                                                     <th className="px-10 py-6"></th>
                                                 </tr>
                                             </thead>
@@ -242,6 +251,23 @@ export default function StaffResultsPage() {
                                                             ) : (
                                                                 <span className="text-[10px] font-black text-green-500 uppercase">An toàn</span>
                                                             )}
+                                                        </td>
+                                                        <td className="px-8 py-8 text-center">
+                                                            {(() => {
+                                                                const now = currentTime;
+                                                                const start = new Date(exam.start_time);
+                                                                const end = new Date(exam.end_time);
+                                                                
+                                                                if (now < start) return (
+                                                                    <span className="px-3 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full uppercase tracking-widest border border-blue-100">Sắp mở</span>
+                                                                );
+                                                                if (now > end) return (
+                                                                    <span className="px-3 py-1.5 bg-gray-100 text-gray-400 text-[10px] font-black rounded-full uppercase tracking-widest border border-gray-200">Đã đóng</span>
+                                                                );
+                                                                return (
+                                                                    <span className="px-3 py-1.5 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase tracking-widest border border-green-100">Đang mở</span>
+                                                                );
+                                                            })()}
                                                         </td>
                                                         <td className="px-10 py-8 text-right">
                                                             <button

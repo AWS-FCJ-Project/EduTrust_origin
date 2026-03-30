@@ -219,12 +219,6 @@ const ExamPage = () => {
                 body: JSON.stringify({ key: keyInput.trim().toUpperCase() }),
             });
             if (res.ok) {
-                // Call start exam API to track progress
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${examId}/start`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).catch(err => console.error("Error starting exam:", err));
-
                 setExamStep('exam');
                 setIsLockdownActive(true);
                 setIsGracePeriod(true);

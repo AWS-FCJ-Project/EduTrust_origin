@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Edit, Trash2, Plus, Clock, FileText, CheckCircle2, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen, KeyRound, RefreshCw, Copy, Check, Search, Activity } from 'lucide-react';
+import { Edit, Trash2, Plus, Clock, FileText, CheckCircle2, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen, KeyRound, RefreshCw, Copy, Check, Search } from 'lucide-react';
 import TimePicker from '@/components/ui/TimePicker';
 import Link from 'next/link';
 import Cookies from 'js-cookie';
@@ -53,11 +53,12 @@ const TeacherExams: React.FC = () => {
     const [subjectSearch, setSubjectSearch] = useState('');
     const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
     const [lastExamId, setLastExamId] = useState<string | null>(null);
-    
-    // Status Modal State
-    const [statusModalExam, setStatusModalExam] = useState<ExamItem | null>(null);
-    const [studentStatusList, setStudentStatusList] = useState<any[]>([]);
-    const [isStatusLoading, setIsStatusLoading] = useState(false);
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 10000);
+        return () => clearInterval(timer);
+    }, []);
 
     const autoResize = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
         const element = e.currentTarget;
@@ -122,22 +123,6 @@ const TeacherExams: React.FC = () => {
     }, [editingExam, lastExamId]);
 
     useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (statusModalExam) {
-            interval = setInterval(() => {
-                const token = Cookies.get('auth_token');
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${statusModalExam.id}/student-status`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
-                .then(res => res.json())
-                .then(data => setStudentStatusList(data))
-                .catch(err => console.error("Poll error:", err));
-            }, 5000); // Poll every 5 seconds
-        }
-        return () => clearInterval(interval);
-    }, [statusModalExam]);
-
-    useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (showSubjectDropdown && !(e.target as HTMLElement).closest('.subject-selection')) {
                 setShowSubjectDropdown(false);
@@ -195,26 +180,6 @@ const TeacherExams: React.FC = () => {
         setTimeout(() => setSecretKeyCopied(false), 2000);
     };
 
-    const fetchStudentStatus = async (exam: ExamItem) => {
-        setStatusModalExam(exam);
-        setIsStatusLoading(true);
-        setStudentStatusList([]);
-        try {
-            const token = Cookies.get('auth_token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${exam.id}/student-status`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setStudentStatusList(data);
-            }
-        } catch (error) {
-            console.error("Error fetching student status:", error);
-        } finally {
-            setIsStatusLoading(false);
-        }
-    };
-
     const handleDeleteExam = async () => {
         if (!deletingExam) return;
         setIsActionLoading(true);
@@ -258,7 +223,7 @@ const TeacherExams: React.FC = () => {
             // Combine Date and Time for End - LOCAL time
             let finalEnd = "";
             const eDate = dataToUpdate.end_date || (dataToUpdate.end_time ? dataToUpdate.end_time.split('T')[0] : '');
-            const eTime = dataToUpdate.end_time_only || (dataToUpdate.end_time ? new Date(dataToUpdate.end_time).toLocaleTimeString('vi-VN', {hour12: false, hour: '2-digit', minute: '2-digit'}) : '00:00');
+            const eTime = dataToUpdate.end_time_only || (dataToUpdate.end_time ? new Date(dataToUpdate.end_time).toLocaleTimeString('vi-VN', {hour12: false, hour: '2-digit', minute: '2-digit'}) : '23:59');
             
             if (eDate) {
                 const localDate = new Date(`${eDate}T${eTime}`);
@@ -436,11 +401,23 @@ const TeacherExams: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* Actions Footer */}
                                                 <div className="mt-8 pt-6 border-t border-gray-50 flex items-center justify-between">
                                                     <div className="flex items-center gap-1">
-                                                        <CheckCircle2 size={14} className="text-green-500" />
-                                                        <span className="text-[10px] font-black uppercase text-green-600 tracking-tighter">Sẵn sàng</span>
+                                                        {(() => {
+                                                            const now = currentTime;
+                                                            const start = new Date(exam.start_time);
+                                                            const end = new Date(exam.end_time);
+                                                            
+                                                            if (now < start) return (
+                                                                <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-lg uppercase tracking-widest border border-blue-100">Sắp mở</span>
+                                                            );
+                                                            if (now > end) return (
+                                                                <span className="px-3 py-1 bg-gray-100 text-gray-400 text-[9px] font-black rounded-lg uppercase tracking-widest border border-gray-200">Đã đóng</span>
+                                                            );
+                                                            return (
+                                                                <span className="px-3 py-1 bg-green-50 text-green-600 text-[9px] font-black rounded-lg uppercase tracking-widest border border-green-100">Đang mở</span>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <button 
@@ -449,13 +426,6 @@ const TeacherExams: React.FC = () => {
                                                             title="Xem mã đề thi"
                                                         >
                                                             <KeyRound size={18} />
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => fetchStudentStatus(exam)}
-                                                            className="p-3 bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white rounded-xl transition-all"
-                                                            title="Danh sách & Trạng thái"
-                                                        >
-                                                            <GraduationCap size={18} />
                                                         </button>
                                                         <button 
                                                             onClick={() => setEditingExam(exam)}
@@ -839,87 +809,6 @@ const TeacherExams: React.FC = () => {
                                 Tạo Mã Mới
                             </button>
                             <p className="text-[10px] text-gray-400 font-medium -mt-4">Tạo mã mới sẽ vô hiệu hóa mã cũ ngay lập tức</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Student Status Modal */}
-            {statusModalExam && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[85vh] flex flex-col">
-                        <div className="p-8 border-b bg-blue-50/50 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 bg-blue-500 text-white rounded-2xl">
-                                    <GraduationCap size={22} />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-black text-gray-800 tracking-tight">Trạng Thái Làm Bài</h2>
-                                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-0.5 line-clamp-1">{statusModalExam.title}</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setStatusModalExam(null)} className="p-2 hover:bg-gray-200 rounded-xl transition-all">
-                                <X size={22} className="text-gray-400" />
-                            </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                            {isStatusLoading ? (
-                                <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                                    <Loader2 className="animate-spin text-blue-500" size={40} />
-                                    <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">Đang tải danh sách...</p>
-                                </div>
-                            ) : studentStatusList.length === 0 ? (
-                                <div className="text-center py-20">
-                                    <p className="text-gray-400 font-bold italic">Không tìm thấy dữ liệu học sinh.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {studentStatusList.map((student: any) => (
-                                        <div key={student.student_id} className="flex items-center justify-between p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:bg-gray-100 transition-colors">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400 font-black shadow-sm">
-                                                    {student.student_name.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <p className="font-black text-gray-800 tracking-tight">{student.student_name}</p>
-                                                    {student.started_at && (
-                                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-                                                            Bắt đầu: {new Date(student.started_at).toLocaleTimeString('vi-VN')}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex items-center gap-2">
-                                                {student.status === 'completed' ? (
-                                                    <span className="px-4 py-1.5 bg-green-100 text-green-600 text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1.5">
-                                                        <Check size={12} /> Đã hoàn thành
-                                                    </span>
-                                                ) : student.status === 'in-progress' ? (
-                                                    <span className="px-4 py-1.5 bg-blue-100 text-blue-600 text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1.5 animate-pulse">
-                                                        <RefreshCw size={12} className="animate-spin" /> Đang làm bài
-                                                    </span>
-                                                ) : student.status === 'failed' ? (
-                                                    <span className="px-4 py-1.5 bg-red-100 text-red-600 text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1.5">
-                                                        <AlertTriangle size={12} /> Bị đình chỉ
-                                                    </span>
-                                                ) : (
-                                                    <span className="px-4 py-1.5 bg-gray-200 text-gray-500 text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1.5">
-                                                        <Clock size={12} /> Chưa làm bài
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        
-                        <div className="p-6 border-t bg-gray-50/50 flex justify-center">
-                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                                <Activity size={12} className="text-green-500" /> Tự động cập nhật sau mỗi 5 giây
-                            </p>
                         </div>
                     </div>
                 </div>
