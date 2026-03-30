@@ -245,6 +245,38 @@ async def submit_exam(
     return {"message": "Exam submitted successfully"}
 
 
+@router.post("/{exam_id}/start", response_model=dict)
+async def start_exam(exam_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Only students can start exams")
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+
+    student_id = str(current_user["_id"])
+    existing = await submissions_collection.find_one(
+        {"exam_id": exam_id, "student_id": student_id}
+    )
+
+    if existing:
+        return {"message": "Exam already started or submitted", "status": existing.get("status")}
+
+    new_submission = {
+        "exam_id": exam_id,
+        "student_id": student_id,
+        "started_at": datetime.now(timezone.utc),
+        "status": "in-progress",
+        "answers": {},
+        "violation_count": 0,
+        "score": 0,
+        "correct_count": 0,
+        "total_questions": 0
+    }
+
+    await submissions_collection.insert_one(new_submission)
+    return {"message": "Exam started successfully", "status": "in-progress"}
+
+
 @router.get("/results/my", response_model=List[dict])
 async def get_my_results(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "student":
@@ -407,6 +439,58 @@ async def get_exam_submissions(
                 "submitted_at": sub.get("submitted_at"),
             }
         )
+
+    return results
+
+
+@router.get("/{exam_id}/student-status", response_model=List[dict])
+async def get_exam_student_status(
+    exam_id: str, current_user: dict = Depends(get_current_user)
+):
+    role = current_user.get("role")
+    if role not in ["admin", "teacher"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    class_id = exam.get("class_id")
+    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+
+    # Get all students in the class
+    students_cursor = users_collection.find(
+        {"role": "student", "class_name": cls["name"], "grade": cls["grade"]}
+    )
+    students = await students_cursor.to_list(None)
+
+    # Get all submissions for this exam
+    submissions_cursor = submissions_collection.find({"exam_id": exam_id})
+    submissions = await submissions_cursor.to_list(None)
+    submission_map = {s["student_id"]: s for s in submissions}
+
+    results = []
+    for student in students:
+        student_id = str(student["_id"])
+        submission = submission_map.get(student_id)
+        
+        status = "not-started"
+        if submission:
+            status = submission.get("status", "in-progress")
+
+        results.append({
+            "student_id": student_id,
+            "student_name": student.get("name", "Unknown student"),
+            "status": status,
+            "submitted_at": submission.get("submitted_at") if submission else None,
+            "started_at": submission.get("started_at") if submission else None,
+            "violation_count": submission.get("violation_count", 0) if submission else 0
+        })
 
     return results
 
