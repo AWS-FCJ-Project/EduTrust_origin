@@ -9,12 +9,12 @@ import React, {
 } from "react";
 import {
     ArrowUp,
-    Bot,
     CircleUserRound,
+    PenLine,
     Loader2,
     MessageSquareText,
-    PanelLeft,
-    Plus,
+    PanelRightClose,
+    PanelRightOpen,
     Search,
     Sparkles,
 } from "lucide-react";
@@ -62,9 +62,8 @@ type Message = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-const WELCOME_MESSAGE =
-    "Chào bạn! Mình là trợ lý EduTrust. Hãy bắt đầu một cuộc trò chuyện mới ở khung bên trái.";
-
+const VIETNAM_TIMEZONE = "Asia/Ho_Chi_Minh";
+const EMPTY_STATE_ROTATION_MS = 10000;
 const mapApiMessage = (message: ApiMessage, index: number): Message => ({
     id: `${message.created_at || "message"}-${index}`,
     role: message.role === "assistant" ? "ai" : "user",
@@ -80,41 +79,6 @@ const formatTitleFromInput = (value: string) => {
     return normalized.length > 60 ? `${normalized.slice(0, 57)}...` : normalized;
 };
 
-const formatRelativeTime = (value?: string | null) => {
-    if (!value) {
-        return "";
-    }
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return "";
-    }
-
-    const diffMinutes = Math.max(
-        0,
-        Math.round((Date.now() - date.getTime()) / (1000 * 60)),
-    );
-
-    if (diffMinutes < 1) {
-        return "Vừa xong";
-    }
-    if (diffMinutes < 60) {
-        return `${diffMinutes} phút trước`;
-    }
-
-    const diffHours = Math.round(diffMinutes / 60);
-    if (diffHours < 24) {
-        return `${diffHours} giờ trước`;
-    }
-
-    const diffDays = Math.round(diffHours / 24);
-    if (diffDays < 7) {
-        return `${diffDays} ngày trước`;
-    }
-
-    return date.toLocaleDateString("vi-VN");
-};
-
 const formatLaTeX = (text: string) => {
     if (!text) {
         return "";
@@ -128,8 +92,45 @@ const formatLaTeX = (text: string) => {
         .replace(/\$(\w)/g, "$ $1");
 };
 
+const getVietnamHour = () => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+        hour: "numeric",
+        hour12: false,
+        timeZone: VIETNAM_TIMEZONE,
+    }).formatToParts(new Date());
+
+    return Number(parts.find((part) => part.type === "hour")?.value || "0");
+};
+
+const getVietnameseDaypart = () => {
+    const hour = getVietnamHour();
+    if (hour < 11) {
+        return "Chào buổi sáng";
+    }
+    if (hour < 14) {
+        return "Chào buổi trưa";
+    }
+    if (hour < 18) {
+        return "Chào buổi chiều";
+    }
+    return "Chào buổi tối";
+};
+
+const buildWelcomePrompts = (name?: string) => {
+    const displayName = name?.trim() || "bạn";
+    const daypart = getVietnameseDaypart();
+
+    return [
+        `${daypart}, ${displayName}.`,
+        "Hôm nay bạn muốn học gì?",
+        "Bạn cần hỗ trợ bài nào?",
+        "Mình giúp bạn ôn tập nhé.",
+        "Bạn muốn hỏi gì hôm nay?",
+        "Bắt đầu học cùng EduTrust.",
+    ];
+};
+
 export default function AIChatSupport() {
-    const [user, setUser] = useState<UserInfo | null>(null);
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(
         null,
@@ -142,6 +143,11 @@ export default function AIChatSupport() {
     const [isConversationLoading, setIsConversationLoading] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [welcomeIndex, setWelcomeIndex] = useState(0);
+    const [welcomePrompts, setWelcomePrompts] = useState<string[]>(() =>
+        buildWelcomePrompts(),
+    );
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const deferredSearch = useDeferredValue(search);
@@ -157,14 +163,6 @@ export default function AIChatSupport() {
             return haystack.includes(keyword);
         });
     }, [conversations, deferredSearch]);
-
-    const activeConversation = useMemo(
-        () =>
-            conversations.find(
-                (conversation) => conversation.conversation_id === activeConversationId,
-            ) || null,
-        [activeConversationId, conversations],
-    );
 
     useEffect(() => {
         if (!scrollRef.current) {
@@ -184,7 +182,7 @@ export default function AIChatSupport() {
 
             try {
                 const resolvedUser = await fetchUserInfo();
-                setUser(resolvedUser);
+                setWelcomePrompts(buildWelcomePrompts(resolvedUser.name));
 
                 const fetchedConversations = await fetchConversations();
                 setConversations(fetchedConversations);
@@ -206,6 +204,18 @@ export default function AIChatSupport() {
 
         bootstrap();
     }, []);
+
+    useEffect(() => {
+        if (welcomePrompts.length <= 1) {
+            return;
+        }
+
+        const intervalId = window.setInterval(() => {
+            setWelcomeIndex((current) => (current + 1) % welcomePrompts.length);
+        }, EMPTY_STATE_ROTATION_MS);
+
+        return () => window.clearInterval(intervalId);
+    }, [welcomePrompts]);
 
     const fetchUserInfo = async (): Promise<UserInfo> => {
         const cachedUser = Cookies.get("user_info");
@@ -517,149 +527,21 @@ export default function AIChatSupport() {
 
     if (isPageLoading) {
         return (
-            <div className="flex h-[calc(100vh-120px)] items-center justify-center rounded-[2rem] border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)]">
+            <div className="flex h-[calc(100vh-120px)] items-center justify-center border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)]">
                 <Loader2 className="animate-spin text-[#B8976A]" size={40} />
             </div>
         );
     }
 
+    const showCenteredComposer = !activeConversationId && !isConversationLoading;
+
     return (
-        <div className="grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden rounded-[2rem] border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] xl:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col border-b border-[#D4D0CA] bg-[#F7F5F2] p-6 xl:border-b-0 xl:border-r">
-                <div className="mb-6 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2D2A26] text-[#F5F3F0] shadow-[0_10px_20px_rgba(45,42,38,0.12)]">
-                            <Bot size={18} />
-                        </div>
-                        <div>
-                            <p className="font-serif text-2xl text-[#2D2A26]">EduTrust AI</p>
-                            <p className="text-xs uppercase tracking-[0.28em] text-[#B8976A]">
-                                Your chats
-                            </p>
-                        </div>
-                    </div>
-                    <PanelLeft size={18} className="text-[#B8976A]" />
-                </div>
-
-                <button
-                    type="button"
-                    onClick={handleCreateConversation}
-                    disabled={isCreatingConversation || isSending}
-                    className="mb-4 flex items-center justify-center gap-2 rounded-[1.5rem] border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-3 text-sm font-medium text-[#2D2A26] transition hover:border-[#B8976A] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                    {isCreatingConversation ? (
-                        <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                        <Plus size={16} />
-                    )}
-                    Cuộc trò chuyện mới
-                </button>
-
-                <div className="mb-5 flex items-center gap-3 rounded-[1.5rem] border border-[#D4D0CA] bg-[#FBFAF7] px-4 py-3">
-                    <Search size={16} className="text-[#B8976A]" />
-                    <input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Tìm kiếm hội thoại"
-                        className="w-full bg-transparent text-sm text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
-                    />
-                </div>
-
-                <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#B8976A]">
-                        Your Chats
-                    </p>
-                    <span className="rounded-full border border-[#D4D0CA] bg-[#FBFAF7] px-2 py-1 text-[11px] text-[#8E867B]">
-                        {filteredConversations.length}
-                    </span>
-                </div>
-
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                    {filteredConversations.length === 0 ? (
-                        <div className="rounded-[1.75rem] border border-dashed border-[#D4D0CA] bg-[#FBFAF7] p-4 text-sm leading-7 text-[#8E867B]">
-                            {conversations.length === 0
-                                ? "Chưa có lịch sử trò chuyện. Hãy tạo cuộc trò chuyện đầu tiên."
-                                : "Không tìm thấy hội thoại phù hợp."}
-                        </div>
-                    ) : (
-                        filteredConversations.map((conversation) => {
-                            const isActive =
-                                conversation.conversation_id === activeConversationId;
-
-                            return (
-                                <button
-                                    key={conversation.conversation_id}
-                                    type="button"
-                                    onClick={() =>
-                                        handleSelectConversation(conversation.conversation_id)
-                                    }
-                                    className={`w-full rounded-3xl border px-4 py-3 text-left transition ${
-                                        isActive
-                                            ? "border-[#B8976A] bg-[#FFFDFC] shadow-[0_14px_30px_rgba(184,151,106,0.12)]"
-                                            : "border-[#E6E0D8] bg-transparent hover:border-[#B8976A]/70 hover:bg-[#FBFAF7]"
-                                    }`}
-                                >
-                                    <div className="mb-1 flex items-start justify-between gap-3">
-                                        <p className="line-clamp-1 text-sm font-semibold text-[#2D2A26]">
-                                            {conversation.title || "New Chat"}
-                                        </p>
-                                        <span className="shrink-0 text-[11px] text-[#8E867B]">
-                                            {formatRelativeTime(conversation.updated_at)}
-                                        </span>
-                                    </div>
-                                    <p className="line-clamp-2 text-xs leading-5 text-[#8E867B]">
-                                        {conversation.preview || "Chưa có tin nhắn"}
-                                    </p>
-                                </button>
-                            );
-                        })
-                    )}
-                </div>
-
-                <div className="mt-4 rounded-[1.75rem] border border-[#D4D0CA] bg-[#FBFAF7] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#B8976A]">
-                        Hồ sơ phiên
-                    </p>
-                    <div className="mt-3 flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#E6E0D8] bg-white">
-                            <CircleUserRound size={22} className="text-[#8E867B]" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[#2D2A26]">
-                                {user?.name || "Người dùng"}
-                            </p>
-                            <p className="truncate text-xs text-[#8E867B]">
-                                {user?.email || "Tài khoản EduTrust"}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
+        <div
+            className={`grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] ${
+                isSidebarOpen ? "xl:grid-cols-[minmax(0,1fr)_336px]" : "xl:grid-cols-[minmax(0,1fr)_88px]"
+            } transition-[grid-template-columns] duration-300 ease-in-out`}
+        >
             <section className="flex min-h-0 flex-col overflow-hidden bg-[#F5F3F0]">
-                <div className="flex items-center justify-between border-b border-[#D4D0CA] px-8 py-6">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A]">
-                                <Sparkles size={18} />
-                            </div>
-                            <div className="min-w-0">
-                                <h2 className="truncate font-serif text-4xl leading-none text-[#2D2A26]">
-                                    {activeConversation?.title || "Bắt đầu cuộc trò chuyện mới"}
-                                </h2>
-                                <p className="mt-2 text-xs uppercase tracking-[0.28em] text-[#B8976A]">
-                                    Trợ lý AI cho giáo viên và học sinh
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="hidden items-center gap-3 rounded-full border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-2 text-sm text-[#8E867B] md:flex">
-                        <CircleUserRound size={16} className="text-[#B8976A]" />
-                        <span>{user?.name || "Người dùng"}</span>
-                    </div>
-                </div>
-
                 {error ? (
                     <div className="mx-8 mt-5 rounded-[1.5rem] border border-[#E1C8B5] bg-[#F1E7DB] px-4 py-3 text-sm text-[#7A5948]">
                         {error}
@@ -675,20 +557,39 @@ export default function AIChatSupport() {
                             <Loader2 className="animate-spin text-[#B8976A]" size={34} />
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center text-center">
-                            <div className="mb-8 flex h-18 w-18 items-center justify-center rounded-[1.9rem] border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A] shadow-[0_16px_30px_rgba(184,151,106,0.12)]">
-                                <MessageSquareText size={30} />
+                        <div className="flex h-full items-center justify-center">
+                            <div className="flex w-full max-w-4xl flex-col items-center text-center">
+                                <div className="mx-auto mb-10 flex h-16 w-16 items-center justify-center rounded-full border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A] shadow-[0_16px_30px_rgba(184,151,106,0.12)]">
+                                    <MessageSquareText size={28} />
+                                </div>
+                                {showCenteredComposer ? (
+                                    <div className="mx-auto mb-8 max-w-4xl px-6 text-center">
+                                        <p className="whitespace-nowrap font-serif text-[clamp(1.75rem,2.2vw,2.8rem)] leading-none text-[#2D2A26] transition-opacity duration-500">
+                                            {welcomePrompts[welcomeIndex]}
+                                        </p>
+                                    </div>
+                                ) : null}
+                                {showCenteredComposer ? (
+                                    <div className="mx-auto w-full max-w-3xl rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-2.5 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
+                                        <div className="flex items-center gap-3">
+                                            <textarea
+                                                value={input}
+                                                disabled={isSending}
+                                                rows={1}
+                                                onChange={(event) => setInput(event.target.value)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === "Enter" && !event.shiftKey) {
+                                                        event.preventDefault();
+                                                        handleSend();
+                                                    }
+                                                }}
+                                                placeholder="Hỏi bất kỳ điều gì"
+                                                className="max-h-32 min-h-[52px] flex-1 resize-none bg-transparent px-4 py-2.5 text-base leading-7 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
-                            <h3 className="font-serif text-6xl leading-[0.9] text-[#2D2A26]">
-                                {activeConversationId
-                                    ? "Sẵn sàng cho cuộc trò chuyện mới"
-                                    : `Xin chào ${user?.name || ""}`}
-                            </h3>
-                            <p className="mt-6 max-w-3xl text-lg leading-10 text-[#8E867B]">
-                                {activeConversationId
-                                    ? "Hãy gửi câu hỏi đầu tiên để EduTrust tạo tiêu đề và lưu hội thoại này vào mục Your Chats."
-                                    : WELCOME_MESSAGE}
-                            </p>
                         </div>
                     ) : (
                         <div className="flex flex-col gap-6">
@@ -761,44 +662,161 @@ export default function AIChatSupport() {
                     )}
                 </div>
 
-                <div className="border-t border-[#D4D0CA] bg-[#F7F5F2] px-8 py-6">
-                    <div className="rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] p-3 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
-                        <div className="flex items-end gap-3">
-                            <textarea
-                                value={input}
-                                disabled={isSending}
-                                rows={1}
-                                onChange={(event) => setInput(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter" && !event.shiftKey) {
+                {!showCenteredComposer ? (
+                    <div className="border-t border-[#D4D0CA] bg-[#F7F5F2] px-8 py-5">
+                        <div className="rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] p-3 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
+                            <div className="flex items-center gap-3">
+                                <textarea
+                                    value={input}
+                                    disabled={isSending}
+                                    rows={1}
+                                    onChange={(event) => setInput(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter" && !event.shiftKey) {
                                         event.preventDefault();
                                         handleSend();
                                     }
                                 }}
-                                placeholder={
-                                    isSending
-                                        ? "EduTrust đang trả lời..."
-                                        : "Hỏi bài, nhờ soạn nội dung, hoặc bắt đầu một cuộc trò chuyện mới..."
-                                }
-                                className="max-h-40 min-h-[72px] flex-1 resize-none bg-transparent px-5 py-4 text-sm leading-7 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
-                            />
-
-                            <button
-                                type="button"
-                                onClick={handleSend}
-                                disabled={isSending || !input.trim()}
-                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#2D2A26] text-[#F5F3F0] transition hover:bg-[#403B35] disabled:cursor-not-allowed disabled:bg-[#CFC8BF]"
-                            >
-                                {isSending ? (
-                                    <Loader2 size={18} className="animate-spin" />
-                                ) : (
-                                    <ArrowUp size={18} />
-                                )}
-                            </button>
+                                    placeholder={isSending ? "EduTrust đang trả lời..." : "Hỏi bất kỳ điều gì"}
+                                    className="max-h-40 min-h-[64px] flex-1 resize-none bg-transparent px-5 py-4 text-base leading-8 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleSend}
+                                    disabled={isSending || !input.trim()}
+                                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#DDD5CA] text-[#F5F3F0] transition hover:bg-[#2D2A26] disabled:cursor-not-allowed disabled:bg-[#CFC8BF]"
+                                >
+                                    {isSending ? (
+                                        <Loader2 size={18} className="animate-spin" />
+                                    ) : (
+                                        <ArrowUp size={18} />
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                ) : null}
             </section>
+
+            <aside className="flex min-h-0 flex-col overflow-hidden border-t border-[#D4D0CA] bg-[#F7F5F2] xl:border-t-0 xl:border-l">
+                <div className={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? "p-6" : "items-center py-6"}`}>
+                    <div className={`mb-6 flex transition-all duration-300 ease-in-out ${isSidebarOpen ? "items-center justify-between gap-3" : "flex-col gap-4"}`}>
+                        <button
+                            type="button"
+                            onClick={() => setIsSidebarOpen((value) => !value)}
+                            className="flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-[#2D2A26] text-[#F5F3F0] shadow-[0_10px_20px_rgba(45,42,38,0.12)]"
+                            aria-label={isSidebarOpen ? "Đóng danh sách hội thoại" : "Mở danh sách hội thoại"}
+                        >
+                            {isSidebarOpen ? <PanelRightClose size={24} /> : <PanelRightOpen size={24} />}
+                        </button>
+
+                        {isSidebarOpen ? (
+                            <div className="min-w-0 flex-1 origin-right transition-all duration-300 ease-in-out">
+                                <p className="font-serif text-2xl text-[#2D2A26]">EduTrust AI</p>
+                                <p className="text-xs uppercase tracking-[0.28em] text-[#B8976A]">
+                                    Your chats
+                                </p>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    {isSidebarOpen ? (
+                        <div className="flex min-h-0 flex-1 flex-col origin-right animate-in fade-in slide-in-from-right-4 duration-300">
+                            <button
+                                type="button"
+                                onClick={handleCreateConversation}
+                                disabled={isCreatingConversation || isSending}
+                                className="mb-3 flex items-center gap-3 px-1 py-2 text-left text-[#2D2A26] transition hover:text-[#B8976A] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isCreatingConversation ? (
+                                    <Loader2 size={22} className="animate-spin" />
+                                ) : (
+                                    <PenLine size={22} />
+                                )}
+                                <span className="text-[1.05rem]">New chat</span>
+                            </button>
+
+                            <label className="mb-6 flex items-center gap-3 px-1 py-2 text-[#2D2A26]">
+                                <Search size={22} />
+                                <input
+                                    value={search}
+                                    onChange={(event) => setSearch(event.target.value)}
+                                    placeholder="Search chats"
+                                    className="w-full bg-transparent text-[1.05rem] placeholder:text-[#8E867B] focus:outline-none"
+                                />
+                            </label>
+
+                            <div className="mb-4 flex items-center justify-between">
+                                <p className="text-sm font-medium text-[#8E867B]">Your chats</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSidebarOpen(false)}
+                                    className="text-[#8E867B] transition hover:text-[#B8976A]"
+                                    aria-label="Thu gọn danh sách hội thoại"
+                                >
+                                    <PanelRightClose size={22} />
+                                </button>
+                            </div>
+
+                            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+                                {filteredConversations.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm leading-7 text-[#8E867B]">
+                                        {conversations.length === 0
+                                            ? "Chưa có lịch sử trò chuyện."
+                                            : "Không tìm thấy hội thoại phù hợp."}
+                                    </div>
+                                ) : (
+                                    filteredConversations.map((conversation) => {
+                                        const isActive =
+                                            conversation.conversation_id === activeConversationId;
+
+                                        return (
+                                            <button
+                                                key={conversation.conversation_id}
+                                                type="button"
+                                                onClick={() =>
+                                                    handleSelectConversation(conversation.conversation_id)
+                                                }
+                                                className={`w-full rounded-[1.5rem] px-3 py-3 text-left transition ${
+                                                    isActive
+                                                        ? "bg-[#EAE4DB]"
+                                                        : "hover:bg-[#FBFAF7]"
+                                                }`}
+                                            >
+                                                <p className="line-clamp-1 text-[1.05rem] font-medium text-[#2D2A26]">
+                                                    {conversation.title || "New Chat"}
+                                                </p>
+                                                <p className="mt-1 line-clamp-1 text-sm text-[#8E867B]">
+                                                    {conversation.preview || "Chưa có tin nhắn"}
+                                                </p>
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-1 flex-col items-center gap-4 animate-in fade-in slide-in-from-right-2 duration-200">
+                            <button
+                                type="button"
+                                onClick={handleCreateConversation}
+                                className="text-[#2D2A26] transition hover:text-[#B8976A]"
+                                aria-label="Tạo cuộc trò chuyện mới"
+                            >
+                                <PenLine size={24} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsSidebarOpen(true)}
+                                className="text-[#2D2A26] transition hover:text-[#B8976A]"
+                                aria-label="Mở tìm kiếm hội thoại"
+                            >
+                                <Search size={24} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </aside>
         </div>
     );
 }
