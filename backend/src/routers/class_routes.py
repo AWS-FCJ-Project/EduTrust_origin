@@ -113,6 +113,24 @@ async def list_teachers(current_user: dict = Depends(get_current_user)):
     return teachers
 
 
+@router.get("/admins", response_model=List[dict])
+async def list_admins(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    admins = []
+    async for a in users_collection.find({"role": "admin"}):
+        admins.append(
+            {
+                "id": str(a["_id"]),
+                "name": a.get("name"),
+                "email": a["email"],
+                "password_plain": a.get("password_plain"),
+            }
+        )
+    return admins
+
+
 @router.get("/homeroom/violations", response_model=List[dict])
 async def get_homeroom_violations(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])
