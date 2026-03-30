@@ -1,25 +1,44 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from 'react';
-import { Save, ArrowLeft, Loader2, Plus, Trash2, KeyRound, RefreshCw, Copy, Check } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, Plus, Trash2, KeyRound, RefreshCw, Copy, Check, Search } from 'lucide-react';
 import TimePicker from '@/components/ui/TimePicker';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
 
+const SUBJECTS = [
+    "Toán học", "Vật lí", "Hóa học", "Sinh học", "Ngữ văn",
+    "Lịch sử", "Địa lí", "Tiếng Anh", "Công nghệ", "Tin học",
+    "Giáo dục kinh tế và pháp luật", "Giáo dục thể chất", "Giáo dục quốc phòng và an ninh"
+];
+
+const EXAM_TYPES = [
+    "Kiểm tra miệng", "Kiểm tra 15 phút", "Kiểm tra 1 tiết", "Kiểm giữa kỳ", "Kiểm học kỳ"
+];
+
 const CreateExamForm = () => {
     const searchParams = useSearchParams();
     const preselectedClassId = searchParams.get('class_id');
+
+    const autoResize = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+        const element = e.currentTarget;
+        element.style.height = 'auto';
+        element.style.height = `${element.scrollHeight}px`;
+    };
     
     const [loading, setLoading] = useState(false);
     const [classes, setClasses] = useState<any[]>([]);
     const [createdKey, setCreatedKey] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [secretKeyMode, setSecretKeyMode] = useState<'auto' | 'manual'>('auto');
+    const [subjectSearch, setSubjectSearch] = useState('');
+    const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
     const [formData, setFormData] = useState<any>({
         title: '',
         description: '',
         subject: '',
+        exam_type: 'Kiểm tra 15 phút',
         class_id: '',
         start_date: '',
         start_time: '',
@@ -29,6 +48,10 @@ const CreateExamForm = () => {
         secret_key: '',
         questions: [{ q: '', options: ['', '', '', ''], correct: 0 }]
     });
+
+    const filteredSubjects = SUBJECTS.filter((subject) =>
+        subject.toLowerCase().includes(subjectSearch.toLowerCase())
+    );
 
     useEffect(() => {
         const fetchClasses = async () => {
@@ -52,6 +75,16 @@ const CreateExamForm = () => {
         };
         fetchClasses();
     }, [preselectedClassId]);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (showSubjectDropdown && !(e.target as HTMLElement).closest('.subject-selection')) {
+                setShowSubjectDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showSubjectDropdown]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -85,6 +118,12 @@ const CreateExamForm = () => {
                 duration: parseInt(formData.duration) || 0,
                 secret_key: secretKeyMode === 'manual' && formData.secret_key ? formData.secret_key : undefined,
             };
+
+            if (!SUBJECTS.includes(payload.subject)) {
+                alert("Vui lòng chọn môn học từ danh sách");
+                setLoading(false);
+                return;
+            }
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams`, {
                 method: 'POST',
@@ -183,21 +222,80 @@ const CreateExamForm = () => {
                                 placeholder="VD: Kiểm tra giữa kỳ Hóa học"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-black text-gray-400 uppercase tracking-widest pl-2">Môn học</label>
-                            <input 
-                                required
-                                type="text" 
-                                value={formData.subject}
-                                onChange={(e) => setFormData({...formData, subject: e.target.value})}
-                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold"
-                                placeholder="VD: Hóa học"
-                            />
+                        <div className="space-y-2 relative subject-selection">
+                            <label className="text-sm font-black text-gray-400 uppercase tracking-widest pl-2 flex justify-between">
+                                <span>Môn học</span>
+                                {formData.subject && <span className="text-[#005B19] text-[10px] font-black uppercase tracking-widest">Đã chọn</span>}
+                            </label>
+                            <div className="relative">
+                                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                <input
+                                    required
+                                    type="text"
+                                    value={subjectSearch}
+                                    onFocus={() => setShowSubjectDropdown(true)}
+                                    onChange={(e) => {
+                                        setSubjectSearch(e.target.value);
+                                        setFormData({ ...formData, subject: '' });
+                                        setShowSubjectDropdown(true);
+                                    }}
+                                    className={`w-full pl-14 pr-14 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 transition-all font-bold ${
+                                        formData.subject ? 'focus:ring-[#005B19]/20' : 'focus:ring-[#5B0019]'
+                                    }`}
+                                    placeholder="Tìm kiếm môn học..."
+                                />
+                                {subjectSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSubjectSearch('');
+                                            setFormData({ ...formData, subject: '' });
+                                        }}
+                                        className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                                    >
+                                        <Plus className="rotate-45" size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            {showSubjectDropdown && (
+                                <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-60 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-200">
+                                    {filteredSubjects.length > 0 ? filteredSubjects.map((subject) => (
+                                        <button
+                                            key={subject}
+                                            type="button"
+                                            onClick={() => {
+                                                setFormData({ ...formData, subject });
+                                                setSubjectSearch(subject);
+                                                setShowSubjectDropdown(false);
+                                            }}
+                                            className="w-full text-left px-4 py-3 rounded-xl hover:bg-gray-50 flex items-center justify-between group transition-colors"
+                                        >
+                                            <span className={`font-bold ${formData.subject === subject ? 'text-[#005B19]' : 'text-gray-600'}`}>{subject}</span>
+                                            {formData.subject === subject && <Check size={16} className="text-[#005B19]" />}
+                                        </button>
+                                    )) : (
+                                        <div className="px-4 py-3 text-gray-400 font-bold text-center">Không tìm thấy môn học</div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-1 gap-8">
-                        <div className="space-y-2 max-w-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-2">
+                            <label className="text-sm font-black text-gray-400 uppercase tracking-widest pl-2">Loại bài thi</label>
+                            <select
+                                required
+                                value={formData.exam_type}
+                                onChange={(e) => setFormData({ ...formData, exam_type: e.target.value })}
+                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold text-[#5B0019]"
+                            >
+                                {EXAM_TYPES.map((type) => (
+                                    <option key={type} value={type}>{type}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-2">
                             <label className="text-sm font-black text-gray-400 uppercase tracking-widest pl-2">Lớp học</label>
                             <select 
                                 required
@@ -211,7 +309,9 @@ const CreateExamForm = () => {
                                 ))}
                             </select>
                         </div>
+                    </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-1 gap-8">
                         <div className="space-y-3 p-6 bg-[#5B0019]/3 rounded-[2rem] border border-[#5B0019]/10">
                             <div className="flex items-center gap-2 mb-1">
                                 <KeyRound size={16} className="text-[#5B0019]" />
@@ -346,14 +446,17 @@ const CreateExamForm = () => {
                             </div>
                             <textarea 
                                 required
-                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold italic text-sm"
+                                rows={1}
+                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-bold italic text-sm resize-none overflow-hidden break-words"
                                 placeholder="Nhập nội dung câu hỏi..."
                                 value={q.q}
                                 onChange={(e) => {
                                     const newQ = [...formData.questions];
                                     newQ[qIdx].q = e.target.value;
                                     setFormData({...formData, questions: newQ});
+                                    autoResize(e);
                                 }}
+                                onFocus={autoResize}
                             />
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {q.options.map((opt: string, oIdx: number) => (
@@ -373,17 +476,19 @@ const CreateExamForm = () => {
                                             />
                                             {q.correct === oIdx && <span className="text-[7px] font-black text-[#5B0019] uppercase">Đúng</span>}
                                         </div>
-                                        <input 
+                                        <textarea 
                                             required
-                                            type="text"
+                                            rows={1}
                                             placeholder={`Đáp án ${oIdx + 1}`}
                                             value={opt}
                                             onChange={(e) => {
                                                 const newQ = [...formData.questions];
                                                 newQ[qIdx].options[oIdx] = e.target.value;
                                                 setFormData({...formData, questions: newQ});
+                                                autoResize(e);
                                             }}
-                                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold"
+                                            onFocus={autoResize}
+                                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold resize-none overflow-hidden break-words py-1"
                                         />
                                     </div>
                                 ))}
