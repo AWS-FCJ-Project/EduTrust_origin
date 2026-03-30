@@ -1,5 +1,5 @@
 orchestrator_model: gpt-5.4-mini
-agent_model: gpt-5.4-nano
+agent_model: gpt-5.4-mini
 translate_model: gpt-5.4-nano
 
 model_list:
