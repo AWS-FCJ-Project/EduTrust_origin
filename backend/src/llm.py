@@ -1,7 +1,7 @@
 from typing import Any
 
 import yaml
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
 from src.app_config import app_config
 
@@ -16,7 +16,11 @@ class LLM:
         with open(app_config.LLMS_CONFIG_PATH) as file:
             return yaml.safe_load(file) or {}
 
-    def init_chat_model(self, model_name: str) -> OpenAIChatModel:
-        """Return a configured OpenAIChatModel."""
+    def init_chat_model(self, model_name: str) -> OpenAIResponsesModel:
+        """Return a configured OpenAIResponsesModel with reasoning effort."""
         provider = OpenAIProvider(api_key=app_config.OPENAI_API_KEY)
-        return OpenAIChatModel(model_name, provider=provider)
+        settings = OpenAIResponsesModelSettings(
+            openai_reasoning_effort="low",
+            openai_reasoning_summary="detailed",
+        )
+        return OpenAIResponsesModel(model_name, provider=provider, settings=settings)
