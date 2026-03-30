@@ -67,6 +67,8 @@ const VIETNAM_TIMEZONE = "Asia/Ho_Chi_Minh";
 const EMPTY_STATE_ROTATION_MS = 10000;
 const DEFAULT_CONVERSATION_TITLE_VI = "Hội thoại mới";
 const DEFAULT_CONVERSATION_TITLE_EN = "New Chat";
+const STREAM_TYPING_INTERVAL_MS = 42;
+const STREAM_TYPING_CHARS_PER_TICK = 2;
 
 const stripMarkdownForPreview = (value?: string | null) => {
     const text = (value || "").trim();
@@ -108,6 +110,13 @@ const isDefaultConversationTitle = (title?: string | null) => {
         normalized === DEFAULT_CONVERSATION_TITLE_VI ||
         normalized === DEFAULT_CONVERSATION_TITLE_EN
     );
+};
+
+const normalizeConversationTitle = (title?: string | null) => {
+    if (isDefaultConversationTitle(title)) {
+        return DEFAULT_CONVERSATION_TITLE_VI;
+    }
+    return (title || "").trim();
 };
 
 const mapApiMessage = (message: ApiMessage, index: number): Message => ({
@@ -161,6 +170,35 @@ const getVietnameseDaypart = () => {
         return "Chào buổi chiều";
     }
     return "Chào buổi tối";
+};
+
+const useTypingEffect = (text: string, speed = 150) => {
+    const [displayed, setDisplayed] = useState("");
+
+    useEffect(() => {
+        setDisplayed("");
+        let i = 0;
+        const id = setInterval(() => {
+            if (i < text.length) {
+                setDisplayed(text.slice(0, ++i));
+            } else {
+                clearInterval(id);
+            }
+        }, speed);
+        return () => clearInterval(id);
+    }, [text, speed]);
+
+    return displayed;
+};
+
+const TypingMessage = ({ text }: { text: string }) => {
+    const displayed = useTypingEffect(text, 150);
+    return (
+        <span>
+            {displayed}
+            <span className="animate-pulse">|</span>
+        </span>
+    );
 };
 
 const getUserDisplayName = (user?: UserInfo) => {
@@ -350,7 +388,11 @@ export default function AIChatSupport() {
             throw new Error("Unable to fetch conversations");
         }
 
-        return (await response.json()) as ConversationSummary[];
+        const data = (await response.json()) as ConversationSummary[];
+        return data.map((conversation) => ({
+            ...conversation,
+            title: normalizeConversationTitle(conversation.title),
+        }));
     };
 
     const loadConversation = async (conversationId: string) => {
@@ -403,7 +445,7 @@ export default function AIChatSupport() {
             const conversation = (await response.json()) as ApiConversation;
             const summary: ConversationSummary = {
                 conversation_id: conversation.conversation_id,
-                title: conversation.title || DEFAULT_CONVERSATION_TITLE_VI,
+                title: normalizeConversationTitle(conversation.title),
                 preview: "",
                 created_at: conversation.created_at,
                 updated_at: conversation.updated_at,
@@ -547,54 +589,98 @@ export default function AIChatSupport() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let assistantContent = "";
+            let pendingRenderBuffer = "";
+            let typingTimer: ReturnType<typeof setInterval> | null = null;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
+            const renderAssistantMessage = (content: string) => {
+                setMessages((previous) =>
+                    previous.map((message) =>
+                        message.id === optimisticAssistantMessageId
+                            ? { ...message, content }
+                            : message,
+                    ),
+                );
+            };
+
+            const flushPendingBuffer = () => {
+                if (!pendingRenderBuffer) {
+                    return;
                 }
+                assistantContent += pendingRenderBuffer;
+                pendingRenderBuffer = "";
+                renderAssistantMessage(assistantContent);
+            };
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split("\n");
-
-                for (const line of lines) {
-                    const trimmedLine = line.trim();
-                    if (!trimmedLine.startsWith("data: ")) {
-                        continue;
+            const startTypingTimer = () => {
+                if (typingTimer) {
+                    return;
+                }
+                typingTimer = setInterval(() => {
+                    if (!pendingRenderBuffer) {
+                        return;
                     }
 
-                    const payload = trimmedLine.replace("data: ", "");
-                    if (payload === "[DONE]") {
-                        continue;
+                    const nextChunk = pendingRenderBuffer.slice(
+                        0,
+                        STREAM_TYPING_CHARS_PER_TICK,
+                    );
+                    pendingRenderBuffer = pendingRenderBuffer.slice(
+                        STREAM_TYPING_CHARS_PER_TICK,
+                    );
+                    assistantContent += nextChunk;
+                    renderAssistantMessage(assistantContent);
+                }, STREAM_TYPING_INTERVAL_MS);
+            };
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        break;
                     }
 
-                    try {
-                        const parsed = JSON.parse(payload) as {
-                            type: string;
-                            content?: string;
-                        };
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split("\n");
 
-                        if (parsed.type === "text_delta" && parsed.content) {
-                            assistantContent += parsed.content;
-                            setMessages((previous) =>
-                                previous.map((message) =>
-                                    message.id === optimisticAssistantMessageId
-                                        ? { ...message, content: assistantContent }
-                                        : message,
-                                ),
-                            );
-                        }
-
-                        if (parsed.type === "error") {
-                            throw new Error(parsed.content || "Streaming error");
-                        }
-                    } catch (streamError) {
-                        if (streamError instanceof SyntaxError) {
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine.startsWith("data: ")) {
                             continue;
                         }
-                        throw streamError;
+
+                        const payload = trimmedLine.replace("data: ", "");
+                        if (payload === "[DONE]") {
+                            continue;
+                        }
+
+                        try {
+                            const parsed = JSON.parse(payload) as {
+                                type: string;
+                                content?: string;
+                            };
+
+                            if (parsed.type === "text_delta" && parsed.content) {
+                                pendingRenderBuffer += parsed.content;
+                                startTypingTimer();
+                            }
+
+                            if (parsed.type === "error") {
+                                throw new Error(parsed.content || "Streaming error");
+                            }
+                        } catch (streamError) {
+                            if (streamError instanceof SyntaxError) {
+                                continue;
+                            }
+                            throw streamError;
+                        }
                     }
                 }
+            } finally {
+                if (typingTimer) {
+                    clearInterval(typingTimer);
+                    typingTimer = null;
+                }
+                flushPendingBuffer();
             }
 
             await refreshConversations(conversationId);
@@ -737,7 +823,7 @@ export default function AIChatSupport() {
                                                             size={16}
                                                             className="animate-spin"
                                                         />
-                                                        EduTrust đang suy nghĩ...
+                                                        <TypingMessage text="EduTrust đang suy nghĩ..." />
                                                     </div>
                                                 )
                                             ) : (
@@ -797,13 +883,11 @@ export default function AIChatSupport() {
                 >
                     {isSidebarOpen ? (
                         <div className="mb-6 flex w-full items-center gap-4 transition-all duration-300 ease-in-out">
-                            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[1.75rem] bg-[var(--chat-button-bg)] shadow-[0_10px_20px_var(--chat-shadow)]">
-                                <img
-                                    src="/edutrust.png"
-                                    alt="EduTrust logo"
-                                    className="h-12 w-12 object-contain"
-                                />
-                            </div>
+                            <img
+                                src="/edutrust.png"
+                                alt="EduTrust logo"
+                                className="h-12 w-12 object-contain"
+                            />
 
                             <div className="min-w-0 flex-1 origin-right transition-all duration-300 ease-in-out">
                                 <p className="text-xl font-semibold tracking-[-0.03em] text-[var(--chat-sidebar-text)]">
@@ -889,7 +973,9 @@ export default function AIChatSupport() {
                                             > 
                                                 <p className="line-clamp-1 text-[1.05rem] font-medium text-[var(--chat-sidebar-text)]">
                                                     {stripMarkdownForPreview(
-                                                        conversation.title || DEFAULT_CONVERSATION_TITLE_VI,
+                                                        normalizeConversationTitle(
+                                                            conversation.title,
+                                                        ),
                                                     )}
                                                 </p>
                                                 <p className="mt-1 line-clamp-1 text-sm text-[var(--chat-text-muted)]">
