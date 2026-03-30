@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from 'react';
-import { Save, ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, Plus, Trash2, KeyRound, RefreshCw, Copy, Check } from 'lucide-react';
 import TimePicker from '@/components/ui/TimePicker';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -13,6 +13,9 @@ const CreateExamForm = () => {
     
     const [loading, setLoading] = useState(false);
     const [classes, setClasses] = useState<any[]>([]);
+    const [createdKey, setCreatedKey] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [secretKeyMode, setSecretKeyMode] = useState<'auto' | 'manual'>('auto');
     const [formData, setFormData] = useState<any>({
         title: '',
         description: '',
@@ -23,6 +26,7 @@ const CreateExamForm = () => {
         end_date: '',
         end_time: '00:00',
         duration: '',
+        secret_key: '',
         questions: [{ q: '', options: ['', '', '', ''], correct: 0 }]
     });
 
@@ -78,7 +82,8 @@ const CreateExamForm = () => {
                 ...formData,
                 start_time: finalStart,
                 end_time: finalEnd,
-                duration: parseInt(formData.duration) || 0
+                duration: parseInt(formData.duration) || 0,
+                secret_key: secretKeyMode === 'manual' && formData.secret_key ? formData.secret_key : undefined,
             };
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams`, {
@@ -90,7 +95,8 @@ const CreateExamForm = () => {
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                window.location.href = '/dashboard/exams';
+                const data = await res.json();
+                setCreatedKey(data.secret_key || null);
             } else {
                 alert("Lỗi khi tạo đề thi");
             }
@@ -107,6 +113,50 @@ const CreateExamForm = () => {
             questions: [...formData.questions, { q: '', options: ['', '', '', ''], correct: 0 }]
         });
     };
+
+    const handleCopyKey = () => {
+        if (!createdKey) return;
+        navigator.clipboard.writeText(createdKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    if (createdKey !== null) {
+        return (
+            <div className="fixed inset-0 bg-white/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-500">
+                <div className="bg-white rounded-[3rem] shadow-2xl border border-gray-100 p-12 max-w-md w-full text-center space-y-8 animate-in zoom-in-95 duration-500">
+                    <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                        <Check size={40} className="text-green-500" />
+                    </div>
+                    <div className="space-y-2">
+                        <h2 className="text-3xl font-black text-gray-900">Đề thi đã được tạo!</h2>
+                        <p className="text-gray-500 font-medium">Chia sẻ mã đề thi này cho học sinh của bạn</p>
+                    </div>
+                    <div className="bg-[#5B0019]/5 border-2 border-[#5B0019]/20 rounded-3xl p-6 space-y-3">
+                        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Mã Đề Thi</p>
+                        <div className="flex items-center justify-center gap-4">
+                            <span className="text-5xl font-black text-[#5B0019] tracking-[0.3em]">{createdKey}</span>
+                            <button
+                                onClick={handleCopyKey}
+                                className={`p-3 rounded-2xl transition-all ${
+                                    copied ? 'bg-green-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:text-[#5B0019] hover:border-[#5B0019]'
+                                }`}
+                            >
+                                {copied ? <Check size={20} /> : <Copy size={20} />}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-400 font-medium">Học sinh cần nhập mã này trước khi vào thi</p>
+                    </div>
+                    <button
+                        onClick={() => window.location.href = '/dashboard/exams'}
+                        className="w-full py-4 bg-[#5B0019] text-white rounded-2xl font-black hover:bg-black transition-all shadow-xl shadow-red-900/20 active:scale-95 uppercase tracking-widest text-sm"
+                    >
+                        Đến danh sách đề thi
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -147,7 +197,7 @@ const CreateExamForm = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-1 gap-8">
-                         <div className="space-y-2 max-w-sm">
+                        <div className="space-y-2 max-w-sm">
                             <label className="text-sm font-black text-gray-400 uppercase tracking-widest pl-2">Lớp học</label>
                             <select 
                                 required
@@ -160,6 +210,51 @@ const CreateExamForm = () => {
                                     <option key={cls.id} value={cls.id}>{cls.name}</option>
                                 ))}
                             </select>
+                        </div>
+
+                        <div className="space-y-3 p-6 bg-[#5B0019]/3 rounded-[2rem] border border-[#5B0019]/10">
+                            <div className="flex items-center gap-2 mb-1">
+                                <KeyRound size={16} className="text-[#5B0019]" />
+                                <label className="text-sm font-black text-gray-400 uppercase tracking-widest">Mã Đề Thi (Secret Key)</label>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setSecretKeyMode('auto')}
+                                    className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                                        secretKeyMode === 'auto'
+                                            ? 'bg-[#5B0019] text-white shadow-lg shadow-red-900/20'
+                                            : 'bg-white border border-gray-200 text-gray-400 hover:border-[#5B0019]/30'
+                                    }`}
+                                >
+                                    <RefreshCw size={13} className="inline mr-1.5" />Tự động tạo
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSecretKeyMode('manual')}
+                                    className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                                        secretKeyMode === 'manual'
+                                            ? 'bg-[#5B0019] text-white shadow-lg shadow-red-900/20'
+                                            : 'bg-white border border-gray-200 text-gray-400 hover:border-[#5B0019]/30'
+                                    }`}
+                                >
+                                    <KeyRound size={13} className="inline mr-1.5" />Nhập thủ công
+                                </button>
+                            </div>
+                            {secretKeyMode === 'auto' ? (
+                                <p className="text-xs text-gray-400 font-medium pl-1">
+                                    Hệ thống sẽ tự động tạo mã bí mật 6 ký tự ngẫu nhiên sau khi tạo đề thi.
+                                </p>
+                            ) : (
+                                <input
+                                    type="text"
+                                    maxLength={12}
+                                    value={formData.secret_key}
+                                    onChange={(e) => setFormData({ ...formData, secret_key: e.target.value.toUpperCase() })}
+                                    className="w-full px-6 py-4 bg-white border-none rounded-2xl focus:ring-2 focus:ring-[#5B0019] transition-all font-black text-2xl tracking-[0.3em] text-[#5B0019] uppercase"
+                                    placeholder="VD: ABC123"
+                                />
+                            )}
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-4">
