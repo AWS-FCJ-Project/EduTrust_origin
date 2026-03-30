@@ -27,6 +27,8 @@ import { useTheme } from "@/components/providers/ThemeProvider";
 type UserInfo = {
     id: string;
     name?: string;
+    full_name?: string;
+    username?: string;
     email?: string;
 };
 
@@ -161,12 +163,22 @@ const getVietnameseDaypart = () => {
     return "Chào buổi tối";
 };
 
-const buildWelcomePrompts = (name?: string) => {
-    const displayName = name?.trim() || "bạn";
+const getUserDisplayName = (user?: UserInfo) => {
+    const candidate =
+        user?.name?.trim() ||
+        user?.full_name?.trim() ||
+        user?.username?.trim() ||
+        "";
+    return candidate;
+};
+
+const buildWelcomePrompts = (user?: UserInfo) => {
+    const displayName = getUserDisplayName(user);
     const daypart = getVietnameseDaypart();
+    const greeting = displayName ? `${daypart} ${displayName}.` : `${daypart}.`;
 
     return [
-        `${daypart}, ${displayName}.`,
+        greeting,
         "Hôm nay bạn muốn học gì?",
         "Bạn cần hỗ trợ bài nào?",
         "Mình giúp bạn ôn tập nhé.",
@@ -252,18 +264,12 @@ export default function AIChatSupport() {
 
             try {
                 const resolvedUser = await fetchUserInfo();
-                setWelcomePrompts(buildWelcomePrompts(resolvedUser.name));
+                setWelcomePrompts(buildWelcomePrompts(resolvedUser));
 
                 const fetchedConversations = await fetchConversations();
                 setConversations(fetchedConversations);
-
-                if (fetchedConversations.length > 0) {
-                    const firstConversationId = fetchedConversations[0].conversation_id;
-                    setActiveConversationId(firstConversationId);
-                    await loadConversation(firstConversationId);
-                } else {
-                    setMessages([]);
-                }
+                setActiveConversationId(null);
+                setMessages([]);
             } catch (bootstrapError) {
                 console.error(bootstrapError);
                 setError("Không thể tải danh sách hội thoại. Vui lòng thử lại.");
@@ -276,16 +282,30 @@ export default function AIChatSupport() {
     }, []);
 
     useEffect(() => {
-        if (welcomePrompts.length <= 1) {
+        const shouldRotateWelcome =
+            !isConversationLoading &&
+            messages.length === 0;
+
+        if (!shouldRotateWelcome || welcomePrompts.length <= 1) {
             return;
         }
 
         const intervalId = window.setInterval(() => {
-            setWelcomeIndex((current) => (current + 1) % welcomePrompts.length);
+            setWelcomeIndex((current) => {
+                if (welcomePrompts.length <= 1) {
+                    return 0;
+                }
+
+                let next = current;
+                while (next === current) {
+                    next = Math.floor(Math.random() * welcomePrompts.length);
+                }
+                return next;
+            });
         }, EMPTY_STATE_ROTATION_MS);
 
         return () => window.clearInterval(intervalId);
-    }, [welcomePrompts]);
+    }, [welcomePrompts, isConversationLoading, messages.length]);
 
     const fetchUserInfo = async (): Promise<UserInfo> => {
         const cachedUser = Cookies.get("user_info");
@@ -605,7 +625,7 @@ export default function AIChatSupport() {
         );
     }
 
-    const showCenteredComposer = !activeConversationId && !isConversationLoading;
+    const showCenteredComposer = messages.length === 0 && !isConversationLoading;
 
     return (
         <div
@@ -644,9 +664,6 @@ export default function AIChatSupport() {
                     ) : messages.length === 0 ? (
                         <div className="flex h-full items-center justify-center">
                             <div className="flex w-full max-w-4xl flex-col items-center text-center">
-                                <div className="mx-auto mb-10 flex h-16 w-16 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-accent)] shadow-[0_16px_30px_var(--chat-shadow)]">
-                                    <MessageSquareText size={28} />
-                                </div>
                                 {showCenteredComposer ? (
                                     <div className="mx-auto mb-8 max-w-4xl px-6 text-center">
                                         <p className="whitespace-nowrap text-[clamp(1.85rem,2.4vw,3rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--chat-text)] transition-opacity duration-500">
@@ -780,16 +797,17 @@ export default function AIChatSupport() {
                 >
                     {isSidebarOpen ? (
                         <div className="mb-6 flex w-full items-center gap-4 transition-all duration-300 ease-in-out">
-                            <div className="flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-[var(--chat-button-bg)] text-[var(--chat-button-text)] shadow-[0_10px_20px_var(--chat-shadow)]">
-                                <MessageSquareText size={26} strokeWidth={2.5} />
+                            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[1.75rem] bg-[var(--chat-button-bg)] shadow-[0_10px_20px_var(--chat-shadow)]">
+                                <img
+                                    src="/edutrust.png"
+                                    alt="EduTrust logo"
+                                    className="h-12 w-12 object-contain"
+                                />
                             </div>
 
                             <div className="min-w-0 flex-1 origin-right transition-all duration-300 ease-in-out">
                                 <p className="text-xl font-semibold tracking-[-0.03em] text-[var(--chat-sidebar-text)]">
                                     EduTrust AI
-                                </p>
-                                <p className="type-label mt-1 text-[var(--chat-accent)]">
-                                    Hội thoại
                                 </p>
                             </div>
                         </div>
