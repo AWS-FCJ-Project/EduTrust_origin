@@ -537,11 +537,11 @@ export default function AIChatSupport() {
 
     return (
         <div
-            className={`grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] ${
+            className={`grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden rounded-3xl border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] ${
                 isSidebarOpen ? "xl:grid-cols-[minmax(0,1fr)_336px]" : "xl:grid-cols-[minmax(0,1fr)_88px]"
             } transition-[grid-template-columns] duration-300 ease-in-out`}
         >
-            <section className="flex min-h-0 flex-col overflow-hidden bg-[#F5F3F0]">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-[#F5F3F0]">
                 {error ? (
                     <div className="mx-8 mt-5 rounded-[1.5rem] border border-[#E1C8B5] bg-[#F1E7DB] px-4 py-3 text-sm text-[#7A5948]">
                         {error}
@@ -663,7 +663,7 @@ export default function AIChatSupport() {
                 </div>
 
                 {!showCenteredComposer ? (
-                    <div className="border-t border-[#D4D0CA] bg-[#F7F5F2] px-8 py-5">
+                    <div className="bg-[#F7F5F2] px-8 py-5">
                         <div className="rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] p-3 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
                             <div className="flex items-center gap-3">
                                 <textarea

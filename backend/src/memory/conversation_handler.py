@@ -119,7 +119,6 @@ class ConversationHandler:
             "_id": conversation_id,
             "title": "New Chat",
             "created_at": now,
-            "message_count": 0,
         }
         if user_id is not None:
             set_on_insert["user_id"] = user_id
