@@ -14,6 +14,7 @@ from src.memory.conversation_handler import ConversationHandler
 from src.memory.redis_client import RedisClient
 from src.routers import (
     class_routes,
+    conversation_routes,
     exam_routes,
     translate_routes,
     unified_agent_routes,
@@ -74,6 +75,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(unified_agent_routes.router, tags=["Unified Agent"])
+app.include_router(conversation_routes.router, tags=["Conversations"])
 app.include_router(translate_routes.router, tags=["Translate"])
 app.include_router(register.router, tags=["Register"])
 app.include_router(login.router, tags=["Login"])

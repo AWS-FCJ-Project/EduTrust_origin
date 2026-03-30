@@ -3,7 +3,10 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from src.auth.dependencies import get_current_user
-from src.schemas.conversation_schema import ConversationResponseSchema
+from src.schemas.conversation_schema import (
+    ConversationResponseSchema,
+    ConversationSummarySchema,
+)
 from src.state import get_conversation_handler
 
 router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
@@ -11,30 +14,54 @@ router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
 
 @router.post("/conversations", response_model=ConversationResponseSchema)
 async def create_conversation(
-    email: Annotated[str, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
     handler=Depends(get_conversation_handler),
 ):
     conversation_id = str(uuid4())
-    handler.touch_conversation(conversation_id, user_id=email)
-    return ConversationResponseSchema(conversation_id=conversation_id, messages=[])
+    user_id = str(current_user["_id"])
+    conversation = handler.create_conversation(conversation_id, user_id=user_id)
+    return ConversationResponseSchema(
+        conversation_id=conversation_id,
+        title=conversation.get("title", "New Chat"),
+        created_at=conversation.get("created_at"),
+        updated_at=conversation.get("updated_at"),
+        messages=[],
+    )
+
+
+@router.get("/conversations", response_model=list[ConversationSummarySchema])
+async def list_conversations(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    limit: int = 50,
+    handler=Depends(get_conversation_handler),
+):
+    user_id = str(current_user["_id"])
+    return handler.list_conversations(user_id=user_id, limit=limit)
 
 
 @router.get("/conversations/latest", response_model=ConversationResponseSchema)
 async def get_latest_conversation(
-    email: Annotated[str, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
     message_limit: int = 50,
     handler=Depends(get_conversation_handler),
 ):
-    conversation_id = handler.get_latest_conversation_id(email)
+    user_id = str(current_user["_id"])
+    conversation_id = handler.get_latest_conversation_id(user_id)
     if not conversation_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No conversation found"
         )
+
+    conversation = handler.get_conversation(conversation_id, user_id=user_id)
     messages = handler.get_context(
-        conversation_id, message_limit=message_limit, user_id=email
+        conversation_id, message_limit=message_limit, user_id=user_id
     )
     return ConversationResponseSchema(
-        conversation_id=conversation_id, messages=messages
+        conversation_id=conversation_id,
+        title=conversation.get("title", "New Chat") if conversation else "New Chat",
+        created_at=conversation.get("created_at") if conversation else None,
+        updated_at=conversation.get("updated_at") if conversation else None,
+        messages=messages,
     )
 
 
@@ -43,17 +70,24 @@ async def get_latest_conversation(
 )
 async def get_conversation(
     conversation_id: str,
-    email: Annotated[str, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
     message_limit: int = 0,
     handler=Depends(get_conversation_handler),
 ):
-    messages = handler.get_context(
-        conversation_id, message_limit=message_limit, user_id=email
-    )
-    if not messages and not handler.conversation_exists(conversation_id, user_id=email):
+    user_id = str(current_user["_id"])
+    conversation = handler.get_conversation(conversation_id, user_id=user_id)
+    if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
+
+    messages = handler.get_context(
+        conversation_id, message_limit=message_limit, user_id=user_id
+    )
     return ConversationResponseSchema(
-        conversation_id=conversation_id, messages=messages
+        conversation_id=conversation_id,
+        title=conversation.get("title", "New Chat"),
+        created_at=conversation.get("created_at"),
+        updated_at=conversation.get("updated_at"),
+        messages=messages,
     )
