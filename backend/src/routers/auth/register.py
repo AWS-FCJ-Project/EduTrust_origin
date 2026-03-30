@@ -51,7 +51,6 @@ async def register(request: Request, user: UserRegister):
         "role": (user.role or UserRole.student).value,
         "class_name": user.class_name if user.role == UserRole.student else None,
         "grade": user.grade if user.role == UserRole.student else None,
-        "password_plain": user.password,
         "created_at": datetime.now(timezone.utc),
     }
     await users_collection.insert_one(user_doc)
@@ -196,7 +195,6 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 "role": valid_user.role.value,
                 "class_name": valid_user.class_name,
                 "grade": valid_user.grade,
-                "password_plain": valid_user.password,
                 "created_at": datetime.now(timezone.utc),
             }
         )

@@ -327,7 +327,6 @@ async def get_all_results_summary(current_user: dict = Depends(get_current_user)
             {"_id": {"$in": list(class_object_ids)}}
         ).to_list(None)
         classes_by_id = {str(c["_id"]): c for c in classes_list}
-
     summary = []
     for exam in exams:
         exam_id = str(exam["_id"])

@@ -89,7 +89,6 @@ async def update_user(
         from src.auth.auth_utils import hash_password
 
         update_dict["hashed_password"] = hash_password(new_password)
-        update_dict["password_plain"] = new_password
 
     if not update_dict:
         return {"message": "No changes provided"}
@@ -151,3 +150,59 @@ async def delete_user(
 async def logout():
     """Logout user (client-side handles token removal)"""
     return {"message": "Client should remove the token to logout"}
+
+
+@router.get("/users/teachers", response_model=list[dict])
+async def list_teachers(current_user: dict = Depends(get_current_user_from_token)):
+    if current_user.get("role") not in ["admin", "teacher"]:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    teachers = []
+    async for t in users_collection.find({"role": "teacher"}):
+        t_id = str(t["_id"])
+        assigned_classes = []
+
+        async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
+            assigned_classes.append(
+                {"id": str(c["_id"]), "name": c["name"], "role": "Giáo viên Chủ nhiệm"}
+            )
+
+        async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
+            for st in c.get("subject_teachers", []):
+                if st["teacher_id"] == t_id:
+                    assigned_classes.append(
+                        {
+                            "id": str(c["_id"]),
+                            "name": c["name"],
+                            "role": f"Giáo viên Bộ môn ({st.get('subject', 'N/A')})",
+                        }
+                    )
+
+        teachers.append(
+            {
+                "id": t_id,
+                "name": t.get("name"),
+                "email": t["email"],
+                "subjects": t.get("subjects", []),
+                "assigned_classes": assigned_classes,
+                "is_assigned": len(assigned_classes) > 0,
+            }
+        )
+    return teachers
+
+
+@router.get("/users/admins", response_model=list[dict])
+async def list_admins(current_user: dict = Depends(get_current_user_from_token)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    admins = []
+    async for a in users_collection.find({"role": "admin"}):
+        admins.append(
+            {
+                "id": str(a["_id"]),
+                "name": a.get("name"),
+                "email": a["email"],
+            }
+        )
+    return admins

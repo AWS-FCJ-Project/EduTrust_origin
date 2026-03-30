@@ -52,7 +52,7 @@ const ClassesPage = () => {
             }
 
             // Fetch Teachers
-            const teachersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/classes/teachers`, {
+            const teachersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/teachers`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (teachersRes.ok) {
@@ -753,21 +753,6 @@ const ClassesPage = () => {
                 </div>
             )}
 
-            <style jsx>{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: #eee;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: #ddd;
-                }
-            `}</style>
         </div>
     );
 };
