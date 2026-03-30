@@ -27,10 +27,18 @@ export default function Footer() {
                             Nền tảng xây dựng niềm tin và chuẩn mực cho giáo dục hiện đại. Giải pháp kiểm định toàn diện.
                         </p>
                         <div className="flex justify-center gap-4">
-                            <Facebook size={18} className="cursor-pointer hover:text-white transition-colors" />
-                            <Linkedin size={18} className="cursor-pointer hover:text-white transition-colors" />
-                            <Github size={18} className="cursor-pointer hover:text-white transition-colors" />
-                            <Twitter size={18} className="cursor-pointer hover:text-white transition-colors" />
+                            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" aria-label="EduTrust on Facebook" title="Facebook">
+                                <Facebook size={18} className="cursor-pointer hover:text-white transition-colors" />
+                            </a>
+                            <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" aria-label="EduTrust on LinkedIn" title="LinkedIn">
+                                <Linkedin size={18} className="cursor-pointer hover:text-white transition-colors" />
+                            </a>
+                            <a href="https://github.com" target="_blank" rel="noopener noreferrer" aria-label="EduTrust on GitHub" title="GitHub">
+                                <Github size={18} className="cursor-pointer hover:text-white transition-colors" />
+                            </a>
+                            <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" aria-label="EduTrust on Twitter" title="Twitter">
+                                <Twitter size={18} className="cursor-pointer hover:text-white transition-colors" />
+                            </a>
                         </div>
                     </div>
 
@@ -104,6 +112,7 @@ export default function Footer() {
                         src="/edutrust.png"
                         alt="EduTrust Crest"
                         fill
+                        sizes="(min-width: 768px) 7rem, 6rem"
                         className="object-contain opacity-90 hover:opacity-100 transition-opacity"
                     />
                 </div>
@@ -118,10 +127,10 @@ export default function Footer() {
                     <div className="flex items-center gap-6">
                         <a href="#" className="hover:text-white transition-colors">Điều khoản</a>
                         <a href="#" className="hover:text-white transition-colors">Bảo mật</a>
-                        <div className="flex items-center gap-1.5 border border-gray-700 px-3 py-1 rounded-md hover:bg-gray-800 transition-all cursor-pointer">
+                        <button className="flex items-center gap-1.5 border border-gray-700 px-3 py-1 rounded-md hover:bg-gray-800 transition-all cursor-pointer">
                             <Globe size={11} />
                             <span>Tiếng Việt</span>
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>

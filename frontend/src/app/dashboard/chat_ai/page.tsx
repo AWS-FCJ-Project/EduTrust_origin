@@ -24,7 +24,7 @@ import Cookies from "js-cookie";
 import "katex/dist/katex.min.css";
 import {
     Check as OaiCheck,
-    ClipboardCopy,
+    Copy,
 } from "@openai/apps-sdk-ui/components/Icon";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -1141,40 +1141,8 @@ export default function AIChatSupport() {
                                                     message.role === "user"
                                                         ? "rounded-2xl bg-[var(--chat-user-bg)] font-medium text-[var(--chat-user-text)]"
                                                         : "font-medium text-[var(--chat-text)]"
-                                                } relative`}
+                                                }`}
                                             >
-                                                {message.content ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            copyText(
-                                                                message.content,
-                                                                "message",
-                                                                message.id,
-                                                            )
-                                                        }
-                                                        className="pointer-events-auto absolute right-2 top-2 opacity-0 transition group-hover:opacity-100"
-                                                        aria-label={
-                                                            copiedMessageId ===
-                                                            message.id
-                                                                ? "Đã copy"
-                                                                : "Copy message"
-                                                        }
-                                                        title={
-                                                            copiedMessageId ===
-                                                            message.id
-                                                                ? "Đã copy"
-                                                                : "Copy message"
-                                                        }
-                                                    >
-                                                        {copiedMessageId ===
-                                                        message.id ? (
-                                                            <OaiCheck className="size-5 text-[var(--chat-text-muted)]" />
-                                                        ) : (
-                                                            <ClipboardCopy className="size-5 text-[var(--chat-text-muted)]" />
-                                                        )}
-                                                    </button>
-                                                ) : null}
                                                 {message.role === "ai" ? (
                                                     message.content ? (
                                                         <div className="prose prose-lg max-w-none overflow-x-auto prose-headings:mb-2 prose-headings:mt-6 prose-headings:text-[var(--chat-text)] prose-p:my-3 prose-p:font-semibold prose-p:leading-8 prose-p:text-[var(--chat-ai-text)] prose-strong:text-[var(--chat-text)] prose-li:my-1 prose-li:font-medium prose-li:text-[var(--chat-ai-text)] prose-code:text-[var(--chat-accent)]">
@@ -1405,8 +1373,34 @@ export default function AIChatSupport() {
                                                     </div>
                                                 )}
                                             </div>
-
+                                            {message.content && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        copyText(
+                                                            message.content,
+                                                            "message",
+                                                            message.id,
+                                                        )
+                                                    }
+                                                    className="absolute -bottom-6 left-0 text-[var(--chat-text-muted)] opacity-0 transition group-hover:opacity-100 hover:text-[var(--chat-accent)]"
+                                                    aria-label={
+                                                        copiedMessageId ===
+                                                        message.id
+                                                            ? "Đã copy"
+                                                            : "Copy message"
+                                                    }
+                                                >
+                                                    {copiedMessageId ===
+                                                    message.id ? (
+                                                        <OaiCheck className="size-5" />
+                                                    ) : (
+                                                        <Copy className="size-5" />
+                                                    )}
+                                                </button>
+                                            )}
                                         </div>
+
                                     </div>
                                 );
                             })}
