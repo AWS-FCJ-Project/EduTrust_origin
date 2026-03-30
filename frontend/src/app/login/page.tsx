@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft } from "lucide-react";
 import Cookies from "js-cookie";
 
 interface LoginResponse {
@@ -113,20 +113,26 @@ export default function LoginPage() {
     };
 
     return (
-        <main className="min-h-screen bg-[#5B0019] flex items-center justify-center p-4 font-sans text-white">
+        <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans text-white">
+            <a
+                href="/"
+                className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+            >
+                <ArrowLeft size={18} />
+                <span className="text-sm">Quay lại</span>
+            </a>
+
             <div className="w-full max-w-100 bg-[#420012] p-8 rounded-3xl shadow-2xl border border-white/5">
 
-                <div className="flex justify-center mb-6">
-                    <div className="flex items-center gap-2">
-                        <div className="bg-[#0D9488] p-1.5 rounded-lg">
-                            <span className="text-white font-bold text-xl">ET</span>
-                        </div>
-                        <span className="text-white text-2xl font-semibold tracking-[-0.05em]">EDUTRUST</span>
-                    </div>
+                <div className="flex justify-center mb-8">
+                    <img
+                        src="/edutrust.png"
+                        alt="EduTrust Logo"
+                        className="h-32 object-contain"
+                    />
                 </div>
 
                 <div className="text-center mb-8">
-                    <h1 className="text-white text-[2rem] leading-[1.1] font-semibold mb-2 tracking-[-0.05em]">Hệ thống học tập</h1>
                     <p className="text-gray-400 text-sm leading-relaxed tracking-[-0.015em] px-2">
                         Vui lòng đăng nhập để tiếp tục hành trình <br /> chinh phục tri thức của bạn
                     </p>
