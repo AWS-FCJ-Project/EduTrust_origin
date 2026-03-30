@@ -707,13 +707,13 @@ export default function AIChatSupport() {
                 createdAt: new Date().toISOString(),
             },
         ]);
-	        setThinkingByMessageId((previous) => ({
-	            ...previous,
-	            [optimisticAssistantMessageId]: {
-	                isStreaming: true,
-	                currentToolName: "Đang suy nghĩ",
-	            },
-	        }));
+        setThinkingByMessageId((previous) => ({
+            ...previous,
+            [optimisticAssistantMessageId]: {
+                isStreaming: true,
+                currentToolName: "Đang suy nghĩ",
+            },
+        }));
 
         try {
             const response = await fetch(`${API_URL}/unified-agent/ask/streaming`, {
@@ -733,125 +733,125 @@ export default function AIChatSupport() {
                 throw new Error("No response stream");
             }
 
-	            const reader = response.body.getReader();
-	            const decoder = new TextDecoder();
-	            let assistantContent = "";
-	            let pendingRenderBuffer = "";
-	            let leftoverBuffer = "";
-	            let typingTimer: ReturnType<typeof setInterval> | null = null;
-	            // Some models/providers leak tool-call arguments as leading JSON in the text stream.
-	            // Strip a single leading JSON object that looks like tool args (e.g. {"plan": "..."}).
-	            let leadingJsonDone = false;
-	            let leadingJsonActive = false;
-	            let leadingJsonBuf = "";
-	            let leadingJsonDepth = 0;
-	            let leadingJsonInString = false;
-	            let leadingJsonEscape = false;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let assistantContent = "";
+            let pendingRenderBuffer = "";
+            let leftoverBuffer = "";
+            let typingTimer: ReturnType<typeof setInterval> | null = null;
+            // Some models/providers leak tool-call arguments as leading JSON in the text stream.
+            // Strip a single leading JSON object that looks like tool args (e.g. {"plan": "..."}).
+            let leadingJsonDone = false;
+            let leadingJsonActive = false;
+            let leadingJsonBuf = "";
+            let leadingJsonDepth = 0;
+            let leadingJsonInString = false;
+            let leadingJsonEscape = false;
 
-	            const looksLikeToolArgsJson = (obj: unknown) => {
-	                if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-	                    return false;
-	                }
-	                const dict = obj as Record<string, unknown>;
-	                if ("tool_name" in dict && ("arguments" in dict || "args" in dict)) {
-	                    return true;
-	                }
-	                if ("plan" in dict && Object.keys(dict).length <= 3) {
-	                    return true;
-	                }
-	                return false;
-	            };
+            const looksLikeToolArgsJson = (obj: unknown) => {
+                if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+                    return false;
+                }
+                const dict = obj as Record<string, unknown>;
+                if ("tool_name" in dict && ("arguments" in dict || "args" in dict)) {
+                    return true;
+                }
+                if ("plan" in dict && Object.keys(dict).length <= 3) {
+                    return true;
+                }
+                return false;
+            };
 
-	            const resetLeadingJson = () => {
-	                leadingJsonDone = true;
-	                leadingJsonActive = false;
-	                leadingJsonBuf = "";
-	                leadingJsonDepth = 0;
-	                leadingJsonInString = false;
-	                leadingJsonEscape = false;
-	            };
+            const resetLeadingJson = () => {
+                leadingJsonDone = true;
+                leadingJsonActive = false;
+                leadingJsonBuf = "";
+                leadingJsonDepth = 0;
+                leadingJsonInString = false;
+                leadingJsonEscape = false;
+            };
 
-	            const stripLeadingToolJson = (fragment: string) => {
-	                if (!fragment) {
-	                    return "";
-	                }
-	                if (leadingJsonDone) {
-	                    return fragment;
-	                }
-	                if (assistantContent.trim() || pendingRenderBuffer.trim()) {
-	                    leadingJsonDone = true;
-	                    return fragment;
-	                }
+            const stripLeadingToolJson = (fragment: string) => {
+                if (!fragment) {
+                    return "";
+                }
+                if (leadingJsonDone) {
+                    return fragment;
+                }
+                if (assistantContent.trim() || pendingRenderBuffer.trim()) {
+                    leadingJsonDone = true;
+                    return fragment;
+                }
 
-	                if (!leadingJsonActive) {
-	                    if (fragment.trimStart().startsWith("{")) {
-	                        leadingJsonActive = true;
-	                    } else {
-	                        leadingJsonDone = true;
-	                        return fragment;
-	                    }
-	                }
+                if (!leadingJsonActive) {
+                    if (fragment.trimStart().startsWith("{")) {
+                        leadingJsonActive = true;
+                    } else {
+                        leadingJsonDone = true;
+                        return fragment;
+                    }
+                }
 
-	                leadingJsonBuf += fragment;
+                leadingJsonBuf += fragment;
 
-	                let endIdx: number | null = null;
-	                for (let i = 0; i < leadingJsonBuf.length; i += 1) {
-	                    const ch = leadingJsonBuf[i]!;
-	                    if (leadingJsonEscape) {
-	                        leadingJsonEscape = false;
-	                        continue;
-	                    }
-	                    if (ch === "\\" && leadingJsonInString) {
-	                        leadingJsonEscape = true;
-	                        continue;
-	                    }
-	                    if (ch === '"') {
-	                        leadingJsonInString = !leadingJsonInString;
-	                        continue;
-	                    }
-	                    if (leadingJsonInString) {
-	                        continue;
-	                    }
-	                    if (ch === "{") {
-	                        leadingJsonDepth += 1;
-	                    } else if (ch === "}") {
-	                        leadingJsonDepth -= 1;
-	                        if (leadingJsonDepth === 0) {
-	                            endIdx = i + 1;
-	                            break;
-	                        }
-	                    }
-	                }
+                let endIdx: number | null = null;
+                for (let i = 0; i < leadingJsonBuf.length; i += 1) {
+                    const ch = leadingJsonBuf[i]!;
+                    if (leadingJsonEscape) {
+                        leadingJsonEscape = false;
+                        continue;
+                    }
+                    if (ch === "\\" && leadingJsonInString) {
+                        leadingJsonEscape = true;
+                        continue;
+                    }
+                    if (ch === '"') {
+                        leadingJsonInString = !leadingJsonInString;
+                        continue;
+                    }
+                    if (leadingJsonInString) {
+                        continue;
+                    }
+                    if (ch === "{") {
+                        leadingJsonDepth += 1;
+                    } else if (ch === "}") {
+                        leadingJsonDepth -= 1;
+                        if (leadingJsonDepth === 0) {
+                            endIdx = i + 1;
+                            break;
+                        }
+                    }
+                }
 
-	                if (endIdx == null) {
-	                    if (leadingJsonBuf.length > 6000) {
-	                        const buf = leadingJsonBuf;
-	                        resetLeadingJson();
-	                        return buf;
-	                    }
-	                    return "";
-	                }
+                if (endIdx == null) {
+                    if (leadingJsonBuf.length > 6000) {
+                        const buf = leadingJsonBuf;
+                        resetLeadingJson();
+                        return buf;
+                    }
+                    return "";
+                }
 
-	                const candidate = leadingJsonBuf.slice(0, endIdx).trim();
-	                const tail = leadingJsonBuf.slice(endIdx);
-	                try {
-	                    const parsed = JSON.parse(candidate) as unknown;
-	                    if (looksLikeToolArgsJson(parsed)) {
-	                        resetLeadingJson();
-	                        return tail;
-	                    }
-	                } catch {
-	                    // Fall through and show it as normal text.
-	                }
+                const candidate = leadingJsonBuf.slice(0, endIdx).trim();
+                const tail = leadingJsonBuf.slice(endIdx);
+                try {
+                    const parsed = JSON.parse(candidate) as unknown;
+                    if (looksLikeToolArgsJson(parsed)) {
+                        resetLeadingJson();
+                        return tail;
+                    }
+                } catch {
+                    // Fall through and show it as normal text.
+                }
 
-	                const buf = leadingJsonBuf;
-	                resetLeadingJson();
-	                return buf;
-	            };
+                const buf = leadingJsonBuf;
+                resetLeadingJson();
+                return buf;
+            };
 
-	            const renderAssistantMessage = (content: string) => {
-	                setMessages((previous) =>
-	                    previous.map((message) =>
+            const renderAssistantMessage = (content: string) => {
+                setMessages((previous) =>
+                    previous.map((message) =>
                         message.id === optimisticAssistantMessageId
                             ? { ...message, content }
                             : message,
@@ -922,31 +922,31 @@ export default function AIChatSupport() {
                 });
             };
 
-	            const handleSseLine = (line: string) => {
-	                const trimmedLine = line.trim();
-	                if (!trimmedLine.startsWith("data: ")) {
-	                    return;
-	                }
+            const handleSseLine = (line: string) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine.startsWith("data: ")) {
+                    return;
+                }
 
                 const payload = trimmedLine.replace("data: ", "");
                 if (payload === "[DONE]") {
                     return;
                 }
 
-	                const parsed = JSON.parse(payload) as StreamEvent;
-	                if (parsed.type === "text_delta" && typeof parsed.content === "string") {
-	                    const cleaned = stripLeadingToolJson(parsed.content);
-	                    if (!cleaned) {
-	                        return;
-	                    }
-	                    pendingRenderBuffer += cleaned;
-	                    startTypingTimer();
-	                    return;
-	                }
-	                if (parsed.type === "complete") {
-	                    markThinkingStreaming(false);
-	                    return;
-	                }
+                const parsed = JSON.parse(payload) as StreamEvent;
+                if (parsed.type === "text_delta" && typeof parsed.content === "string") {
+                    const cleaned = stripLeadingToolJson(parsed.content);
+                    if (!cleaned) {
+                        return;
+                    }
+                    pendingRenderBuffer += cleaned;
+                    startTypingTimer();
+                    return;
+                }
+                if (parsed.type === "complete") {
+                    markThinkingStreaming(false);
+                    return;
+                }
                 if (parsed.type === "error") {
                     throw new Error(
                         typeof parsed.content === "string"
@@ -1007,10 +1007,10 @@ export default function AIChatSupport() {
                 previous.map((message) =>
                     message.id === optimisticAssistantMessageId
                         ? {
-                              ...message,
-                              content:
-                                  "Không thể nhận phản hồi lúc này. Vui lòng thử lại sau ít phút.",
-                          }
+                            ...message,
+                            content:
+                                "Không thể nhận phản hồi lúc này. Vui lòng thử lại sau ít phút.",
+                        }
                         : message,
                 ),
             );
@@ -1051,11 +1051,10 @@ export default function AIChatSupport() {
 
     return (
         <div
-            className={`relative grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-3xl border border-[var(--chat-border)] bg-[var(--chat-bg)] text-[var(--chat-text)] shadow-[0_20px_50px_var(--chat-shadow)] ${
-                isSidebarOpen
+            className={`relative grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-3xl border border-[var(--chat-border)] bg-[var(--chat-bg)] text-[var(--chat-text)] shadow-[0_20px_50px_var(--chat-shadow)] ${isSidebarOpen
                     ? "xl:grid-cols-[minmax(0,1fr)_336px]"
                     : "xl:grid-cols-[minmax(0,1fr)_72px]"
-            } transition-[grid-template-columns] duration-300 ease-in-out`}
+                } transition-[grid-template-columns] duration-300 ease-in-out`}
         >
             <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-[var(--chat-bg)]">
                 <div className="pointer-events-none absolute left-4 top-4 z-10">
@@ -1123,25 +1122,22 @@ export default function AIChatSupport() {
                                 return (
                                     <div
                                         key={message.id}
-                                        className={`flex ${
-                                            message.role === "user"
+                                        className={`flex ${message.role === "user"
                                                 ? "justify-end"
                                                 : "justify-start"
-                                        }`}
+                                            }`}
                                     >
                                         <div
-                                            className={`flex flex-col ${
-                                                message.role === "user"
+                                            className={`flex flex-col ${message.role === "user"
                                                     ? "max-w-[78%] items-end"
                                                     : "w-full max-w-[96%] items-start"
-                                            } group relative`}
+                                                } group relative`}
                                         >
                                             <div
-                                                className={`px-4 py-3 text-[1.08rem] leading-8 ${
-                                                    message.role === "user"
+                                                className={`px-4 py-3 text-[1.08rem] leading-8 ${message.role === "user"
                                                         ? "rounded-2xl bg-[var(--chat-user-bg)] font-medium text-[var(--chat-user-text)]"
                                                         : "font-medium text-[var(--chat-text)]"
-                                                } relative`}
+                                                    } relative`}
                                             >
                                                 {message.content ? (
                                                     <button
@@ -1156,19 +1152,19 @@ export default function AIChatSupport() {
                                                         className="pointer-events-auto absolute right-2 top-2 opacity-0 transition group-hover:opacity-100"
                                                         aria-label={
                                                             copiedMessageId ===
-                                                            message.id
+                                                                message.id
                                                                 ? "Đã copy"
                                                                 : "Copy message"
                                                         }
                                                         title={
                                                             copiedMessageId ===
-                                                            message.id
+                                                                message.id
                                                                 ? "Đã copy"
                                                                 : "Copy message"
                                                         }
                                                     >
                                                         {copiedMessageId ===
-                                                        message.id ? (
+                                                            message.id ? (
                                                             <OaiCheck className="size-5 text-[var(--chat-text-muted)]" />
                                                         ) : (
                                                             <ClipboardCopy className="size-5 text-[var(--chat-text-muted)]" />
@@ -1220,173 +1216,173 @@ export default function AIChatSupport() {
                                                                     }) => (
                                                                         <>{children}</>
                                                                     ),
-	                                                                    code: ({
-	                                                                        inline,
-	                                                                        className,
-	                                                                        children,
-	                                                                        ...props
-	                                                                    }: any) =>
-	                                                                        inline ? (
-	                                                                            <code
-	                                                                                className="rounded-md bg-[var(--chat-surface)] px-1.5 py-0.5 font-mono text-[0.9em] text-[var(--chat-accent)]"
-	                                                                                {...props}
-	                                                                            >
-	                                                                                {
-	                                                                                    children
-	                                                                                }
-	                                                                            </code>
-	                                                                        ) : (
-	                                                                            (() => {
-	                                                                                const codeText =
-	                                                                                    String(
-	                                                                                        children,
-	                                                                                    ).replace(
-	                                                                                        /\n$/,
-	                                                                                        "",
-	                                                                                    );
-	                                                                                const trimmed =
-	                                                                                    codeText.trim();
-	                                                                                const detectedLanguage =
-	                                                                                    detectCodeLanguage(
-	                                                                                        className,
-	                                                                                        codeText,
-	                                                                                    );
+                                                                    code: ({
+                                                                        inline,
+                                                                        className,
+                                                                        children,
+                                                                        ...props
+                                                                    }: any) =>
+                                                                        inline ? (
+                                                                            <code
+                                                                                className="rounded-md bg-[var(--chat-surface)] px-1.5 py-0.5 font-mono text-[0.9em] text-[var(--chat-accent)]"
+                                                                                {...props}
+                                                                            >
+                                                                                {
+                                                                                    children
+                                                                                }
+                                                                            </code>
+                                                                        ) : (
+                                                                            (() => {
+                                                                                const codeText =
+                                                                                    String(
+                                                                                        children,
+                                                                                    ).replace(
+                                                                                        /\n$/,
+                                                                                        "",
+                                                                                    );
+                                                                                const trimmed =
+                                                                                    codeText.trim();
+                                                                                const detectedLanguage =
+                                                                                    detectCodeLanguage(
+                                                                                        className,
+                                                                                        codeText,
+                                                                                    );
 
-	                                                                                // If the model emits a fenced code block that is actually
-	                                                                                // just a single token (dotfile/filename), render it like
-	                                                                                // inline code to avoid awkward big code boxes.
-	                                                                                const isSingleLine =
-	                                                                                    !trimmed.includes(
-	                                                                                        "\n",
-	                                                                                    );
-	                                                                                const isFilenameLike =
-	                                                                                    /^\.[a-z0-9_-]{1,20}$/i.test(
-	                                                                                        trimmed,
-	                                                                                    ) ||
-	                                                                                    /^[~./]?[a-z0-9_./-]{0,80}\.[a-z0-9_+-]{1,10}$/i.test(
-	                                                                                        trimmed,
-	                                                                                    );
-	                                                                                const hasLetter =
-	                                                                                    /[a-z]/i.test(
-	                                                                                        trimmed,
-	                                                                                    );
-	                                                                                const shouldInlineize =
-	                                                                                    isSingleLine &&
-	                                                                                    isFilenameLike &&
-	                                                                                    hasLetter &&
-	                                                                                    trimmed.length <=
-	                                                                                        64;
-	                                                                                if (
-	                                                                                    shouldInlineize
-	                                                                                ) {
-	                                                                                    return (
-	                                                                                        <code
-	                                                                                            className="rounded-md bg-[var(--chat-surface)] px-1.5 py-0.5 font-mono text-[0.9em] text-[var(--chat-accent)]"
-	                                                                                            {...props}
-	                                                                                        >
-	                                                                                            {
-	                                                                                                trimmed
-	                                                                                            }
-	                                                                                        </code>
-	                                                                                    );
-	                                                                                }
-	                                                                                const codeId = `${message.id}-${detectedLanguage.label}-${codeText.slice(
-	                                                                                    0,
-	                                                                                    18,
-	                                                                                )}`;
-	                                                                                const isCodeCopied =
-	                                                                                    copiedCodeId ===
-	                                                                                    codeId;
+                                                                                // If the model emits a fenced code block that is actually
+                                                                                // just a single token (dotfile/filename), render it like
+                                                                                // inline code to avoid awkward big code boxes.
+                                                                                const isSingleLine =
+                                                                                    !trimmed.includes(
+                                                                                        "\n",
+                                                                                    );
+                                                                                const isFilenameLike =
+                                                                                    /^\.[a-z0-9_-]{1,20}$/i.test(
+                                                                                        trimmed,
+                                                                                    ) ||
+                                                                                    /^[~./]?[a-z0-9_./-]{0,80}\.[a-z0-9_+-]{1,10}$/i.test(
+                                                                                        trimmed,
+                                                                                    );
+                                                                                const hasLetter =
+                                                                                    /[a-z]/i.test(
+                                                                                        trimmed,
+                                                                                    );
+                                                                                const shouldInlineize =
+                                                                                    isSingleLine &&
+                                                                                    isFilenameLike &&
+                                                                                    hasLetter &&
+                                                                                    trimmed.length <=
+                                                                                    64;
+                                                                                if (
+                                                                                    shouldInlineize
+                                                                                ) {
+                                                                                    return (
+                                                                                        <code
+                                                                                            className="rounded-md bg-[var(--chat-surface)] px-1.5 py-0.5 font-mono text-[0.9em] text-[var(--chat-accent)]"
+                                                                                            {...props}
+                                                                                        >
+                                                                                            {
+                                                                                                trimmed
+                                                                                            }
+                                                                                        </code>
+                                                                                    );
+                                                                                }
+                                                                                const codeId = `${message.id}-${detectedLanguage.label}-${codeText.slice(
+                                                                                    0,
+                                                                                    18,
+                                                                                )}`;
+                                                                                const isCodeCopied =
+                                                                                    copiedCodeId ===
+                                                                                    codeId;
 
-	                                                                                const syntaxTheme =
-	                                                                                    theme ===
-	                                                                                    "dark"
-	                                                                                        ? vscDarkPlus
-	                                                                                        : vs;
-	                                                                                const codeBlockBg =
-	                                                                                    theme ===
-	                                                                                    "dark"
-	                                                                                        ? "#0b0b0b"
-	                                                                                        : "#ffffff";
+                                                                                const syntaxTheme =
+                                                                                    theme ===
+                                                                                        "dark"
+                                                                                        ? vscDarkPlus
+                                                                                        : vs;
+                                                                                const codeBlockBg =
+                                                                                    theme ===
+                                                                                        "dark"
+                                                                                        ? "#0b0b0b"
+                                                                                        : "#ffffff";
 
-	                                                                                return (
-	                                                                                    <div
-	                                                                                        className="relative my-4 overflow-hidden rounded-xl border border-[var(--chat-border)] group"
-	                                                                                        style={{
-	                                                                                            backgroundColor:
-	                                                                                                codeBlockBg,
-	                                                                                        }}
-	                                                                                    >
-	                                                                                        <div className="pointer-events-none absolute left-4 top-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--chat-text-muted)]">
-	                                                                                            <span className="font-mono text-[0.95em]">
-	                                                                                                {"</>"}
-	                                                                                            </span>
-	                                                                                            <span>
-	                                                                                                {
-	                                                                                                    detectedLanguage.label
-	                                                                                                }
-	                                                                                            </span>
-	                                                                                        </div>
-	                                                                                        <button
-	                                                                                            type="button"
-	                                                                                            onClick={() =>
-	                                                                                                copyText(
-	                                                                                                    codeText,
-	                                                                                                    "code",
-	                                                                                                    codeId,
-	                                                                                                )
-	                                                                                            }
-	                                                                                            className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center text-[var(--chat-text-muted)] opacity-0 transition group-hover:opacity-100 hover:text-[var(--chat-text)]"
-	                                                                                            aria-label={
-	                                                                                                isCodeCopied
-	                                                                                                    ? "Đã copy"
-	                                                                                                    : "Copy code"
-	                                                                                            }
-	                                                                                            title={
-	                                                                                                isCodeCopied
-	                                                                                                    ? "Đã copy"
-	                                                                                                    : "Copy code"
-	                                                                                            }
-	                                                                                        >
-	                                                                                            {isCodeCopied ? (
-	                                                                                                <OaiCheck className="size-4" />
-	                                                                                            ) : (
-	                                                                                                <ClipboardCopy className="size-4" />
-	                                                                                            )}
-	                                                                                        </button>
-	                                                                                        <SyntaxHighlighter
-	                                                                                            language={
-	                                                                                                detectedLanguage.prism
-	                                                                                            }
-	                                                                                            style={
-	                                                                                                syntaxTheme
-	                                                                                            }
-	                                                                                            customStyle={{
-	                                                                                                margin: 0,
-	                                                                                                background:
-	                                                                                                    "transparent",
-	                                                                                                padding:
-	                                                                                                    "44px 16px 16px 16px",
-	                                                                                                fontSize:
-	                                                                                                    "0.95rem",
-	                                                                                                lineHeight:
-	                                                                                                    "1.75rem",
-	                                                                                            }}
-	                                                                                            codeTagProps={{
-	                                                                                                style: {
-	                                                                                                    fontFamily:
-	                                                                                                        "var(--font-app-mono)",
-	                                                                                                },
-	                                                                                            }}
-	                                                                                        >
-	                                                                                            {
-	                                                                                                codeText
-	                                                                                            }
-	                                                                                        </SyntaxHighlighter>
-	                                                                                    </div>
-	                                                                                );
-	                                                                            })()
-	                                                                        ),
+                                                                                return (
+                                                                                    <div
+                                                                                        className="relative my-4 overflow-hidden rounded-xl border border-[var(--chat-border)] group"
+                                                                                        style={{
+                                                                                            backgroundColor:
+                                                                                                codeBlockBg,
+                                                                                        }}
+                                                                                    >
+                                                                                        <div className="pointer-events-none absolute left-4 top-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--chat-text-muted)]">
+                                                                                            <span className="font-mono text-[0.95em]">
+                                                                                                {"</>"}
+                                                                                            </span>
+                                                                                            <span>
+                                                                                                {
+                                                                                                    detectedLanguage.label
+                                                                                                }
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                copyText(
+                                                                                                    codeText,
+                                                                                                    "code",
+                                                                                                    codeId,
+                                                                                                )
+                                                                                            }
+                                                                                            className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center text-[var(--chat-text-muted)] opacity-0 transition group-hover:opacity-100 hover:text-[var(--chat-text)]"
+                                                                                            aria-label={
+                                                                                                isCodeCopied
+                                                                                                    ? "Đã copy"
+                                                                                                    : "Copy code"
+                                                                                            }
+                                                                                            title={
+                                                                                                isCodeCopied
+                                                                                                    ? "Đã copy"
+                                                                                                    : "Copy code"
+                                                                                            }
+                                                                                        >
+                                                                                            {isCodeCopied ? (
+                                                                                                <OaiCheck className="size-4" />
+                                                                                            ) : (
+                                                                                                <ClipboardCopy className="size-4" />
+                                                                                            )}
+                                                                                        </button>
+                                                                                        <SyntaxHighlighter
+                                                                                            language={
+                                                                                                detectedLanguage.prism
+                                                                                            }
+                                                                                            style={
+                                                                                                syntaxTheme
+                                                                                            }
+                                                                                            customStyle={{
+                                                                                                margin: 0,
+                                                                                                background:
+                                                                                                    "transparent",
+                                                                                                padding:
+                                                                                                    "44px 16px 16px 16px",
+                                                                                                fontSize:
+                                                                                                    "0.95rem",
+                                                                                                lineHeight:
+                                                                                                    "1.75rem",
+                                                                                            }}
+                                                                                            codeTagProps={{
+                                                                                                style: {
+                                                                                                    fontFamily:
+                                                                                                        "var(--font-app-mono)",
+                                                                                                },
+                                                                                            }}
+                                                                                        >
+                                                                                            {
+                                                                                                codeText
+                                                                                            }
+                                                                                        </SyntaxHighlighter>
+                                                                                    </div>
+                                                                                );
+                                                                            })()
+                                                                        ),
                                                                 }}
                                                             >
                                                                 {formatLaTeX(
@@ -1425,10 +1421,10 @@ export default function AIChatSupport() {
                                     onChange={(event) => setInput(event.target.value)}
                                     onKeyDown={(event) => {
                                         if (event.key === "Enter" && !event.shiftKey) {
-                                        event.preventDefault();
-                                        handleSend();
-                                    }
-                                }}
+                                            event.preventDefault();
+                                            handleSend();
+                                        }
+                                    }}
                                     placeholder={isSending ? "EduTrust đang trả lời..." : "Hỏi bất kỳ điều gì"}
                                     className="max-h-40 min-h-[48px] flex-1 resize-none bg-transparent px-4 py-3 text-base leading-7 text-[var(--chat-input-text)] placeholder:text-[var(--chat-input-placeholder)] focus:outline-none"
                                 />
@@ -1452,9 +1448,8 @@ export default function AIChatSupport() {
 
             <aside className="flex min-h-0 flex-col overflow-hidden border-t border-[var(--chat-border)] bg-[var(--chat-sidebar-bg)] xl:border-t-0 xl:border-l">
                 <div
-                    className={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out ${
-                        isSidebarOpen ? "p-6" : "items-end px-3 py-6"
-                    }`}
+                    className={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? "p-6" : "items-end px-3 py-6"
+                        }`}
                 >
                     {isSidebarOpen ? (
                         <div className="mb-6 flex w-full items-center gap-4 transition-all duration-300 ease-in-out">
@@ -1540,12 +1535,11 @@ export default function AIChatSupport() {
                                                 onClick={() =>
                                                     handleSelectConversation(conversation.conversation_id)
                                                 }
-                                                className={`w-full rounded-[1.5rem] px-3 py-3 text-left transition ${
-                                                    isActive
+                                                className={`w-full rounded-[1.5rem] px-3 py-3 text-left transition ${isActive
                                                         ? "bg-[var(--chat-button-bg)]"
                                                         : "hover:bg-[var(--chat-surface)]"
-                                                }`}
-                                            > 
+                                                    }`}
+                                            >
                                                 <p className="line-clamp-1 text-[1.05rem] font-medium text-[var(--chat-sidebar-text)]">
                                                     {stripMarkdownForPreview(
                                                         normalizeConversationTitle(
@@ -1568,9 +1562,8 @@ export default function AIChatSupport() {
                     )}
 
                     <div
-                        className={`mt-auto flex w-full pt-6 ${
-                            isSidebarOpen ? "justify-end px-1" : "justify-end px-3"
-                        }`}
+                        className={`mt-auto flex w-full pt-6 ${isSidebarOpen ? "justify-end px-1" : "justify-end px-3"
+                            }`}
                     >
                         <button
                             type="button"

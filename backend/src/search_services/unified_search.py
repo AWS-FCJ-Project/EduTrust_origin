@@ -1,12 +1,12 @@
 from pydantic_ai import RunContext
 from src.app_config import app_config
-from src.search_services.tavily_search import TavilySearch
+from src.search_services.exa_search import ExaSearch
 
 
 class UnifiedSearch:
-    def __init__(self, tavily_api_key: str = None):
-        self.tavily_api_key = tavily_api_key or app_config.TAVILY_API_KEY
-        self.tavily_search = TavilySearch(self.tavily_api_key)
+    def __init__(self, exa_api_key: str = None):
+        self.exa_api_key = exa_api_key or app_config.EXA_API_KEY
+        self.exa_search = ExaSearch(self.exa_api_key)
 
     def get_search_tools(self):
         return [
@@ -29,7 +29,7 @@ class UnifiedSearch:
         Search the web for real-time information, news, and facts.
         Use this for general questions or finding specific information from the web.
         """
-        return await self.tavily_search.search(
+        return await self.exa_search.search(
             query=query,
             search_depth=search_depth,
             topic=topic,
@@ -49,7 +49,7 @@ class UnifiedSearch:
         Extract clean content and structured data from one or more URLs.
         Use this when you have specific links and want to read their full content.
         """
-        return await self.tavily_search.extract(
+        return await self.exa_search.extract(
             urls=urls,
             extract_depth=extract_depth,
             query=query,
@@ -64,11 +64,11 @@ class UnifiedSearch:
         This provides a comprehensive report instead of just snippets.
         It returns a request_id which must be used with get_research_task_result to see the final report.
         """
-        return await self.tavily_search.create_research_task(input=input, model=model)
+        return await self.exa_search.create_research_task(input=input, model=model)
 
     async def get_research_task_result(self, ctx: RunContext, request_id: str) -> str:
         """
         Retrieve the final results of a research task using its request_id.
         Call this after create_research_task and a short wait (15-30s).
         """
-        return await self.tavily_search.get_research_task_result(request_id=request_id)
+        return await self.exa_search.get_research_task_result(request_id=request_id)

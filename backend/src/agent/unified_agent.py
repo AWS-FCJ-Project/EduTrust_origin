@@ -52,7 +52,7 @@ class UnifiedAgent:
 
         self._sub_agents = self._create_sub_agents(sub_agent_model_name)
 
-        search_service = UnifiedSearch(tavily_api_key=app_config.TAVILY_API_KEY)
+        search_service = UnifiedSearch(exa_api_key=app_config.EXA_API_KEY)
         tools = AgentTools(sub_agents=self._sub_agents, search_service=search_service)
         main_agent.tool(tools.delegate_technical)
         main_agent.tool(tools.delegate_social)
