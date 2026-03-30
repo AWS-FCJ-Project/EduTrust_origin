@@ -308,14 +308,26 @@ async def get_all_results_summary(current_user: dict = Depends(get_current_user)
         query = {"class_id": {"$in": teacher_classes}}
 
     exams = await exams_collection.find(query).to_list(None)
+
+    # Batch load class info to avoid N+1 queries
+    class_object_ids = set()
+    for exam in exams:
+        cid = exam.get("class_id")
+        if cid and ObjectId.is_valid(cid):
+            class_object_ids.add(ObjectId(cid))
+
+    classes_by_id = {}
+    if class_object_ids:
+        classes_list = await classes_collection.find(
+            {"_id": {"$in": list(class_object_ids)}}
+        ).to_list(None)
+        classes_by_id = {str(c["_id"]): c for c in classes_list}
+
     summary = []
     for exam in exams:
         exam_id = str(exam["_id"])
         class_id = exam.get("class_id")
-
-        class_info = None
-        if class_id and ObjectId.is_valid(class_id):
-            class_info = await classes_collection.find_one({"_id": ObjectId(class_id)})
+        class_info = classes_by_id.get(str(class_id))
 
         pipeline = [
             {"$match": {"exam_id": exam_id}},
@@ -378,26 +390,40 @@ async def get_exam_submissions(
     if role == "teacher":
         class_id = exam.get("class_id")
         # Check if teacher is assigned to this class or created the exam
-        cls = await classes_collection.find_one(
-            {
-                "_id": ObjectId(class_id),
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ],
-            }
-        )
+        cls = None
+        if class_id and ObjectId.is_valid(class_id):
+            cls = await classes_collection.find_one(
+                {
+                    "_id": ObjectId(class_id),
+                    "$or": [
+                        {"homeroom_teacher_id": user_id},
+                        {"subject_teachers.teacher_id": user_id},
+                    ],
+                }
+            )
         if not cls and exam.get("teacher_id") != user_id:
             raise HTTPException(status_code=403, detail="Permission denied")
 
     submissions = await submissions_collection.find({"exam_id": exam_id}).to_list(None)
 
+    # Collect all valid student_ids to query users once, avoiding N+1 queries
+    student_object_ids = set()
+    for sub in submissions:
+        sid = sub.get("student_id")
+        if sid and ObjectId.is_valid(sid):
+            student_object_ids.add(ObjectId(sid))
+
+    students_by_id = {}
+    if student_object_ids:
+        students = await users_collection.find(
+            {"_id": {"$in": list(student_object_ids)}}
+        ).to_list(None)
+        students_by_id = {str(s["_id"]): s for s in students}
+
     results = []
     for sub in submissions:
         student_id = sub.get("student_id")
-        student = None
-        if student_id and ObjectId.is_valid(student_id):
-            student = await users_collection.find_one({"_id": ObjectId(student_id)})
+        student = students_by_id.get(str(student_id))
 
         results.append(
             {
