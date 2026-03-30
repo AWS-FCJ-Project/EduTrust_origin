@@ -340,7 +340,7 @@ const AdminsPage = () => {
             {/* Delete Modal */}
             {deletingAdmin && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="w-full max-md bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                    <div className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                         <div className="p-10 text-center space-y-6">
                             <div className="mx-auto w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center animate-bounce duration-1000">
                                 <AlertTriangle size={40} />
