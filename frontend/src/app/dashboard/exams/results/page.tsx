@@ -113,8 +113,9 @@ export default function StaffResultsPage() {
         return acc;
     }, {} as Record<string, { id: string, name: string, grade: ExamStat['grade'] | 'N/A', exams: ExamStat[] }>);
 
+    const collator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
     const classList = Object.values(groupedExams).sort((a, b) => {
-        if (a.grade !== b.grade) return String(a.grade).localeCompare(String(b.grade));
+        if (a.grade !== b.grade) return collator.compare(String(a.grade), String(b.grade));
         return a.name.localeCompare(b.name);
     });
 
@@ -168,9 +169,11 @@ export default function StaffResultsPage() {
                 ) : classList.map((cls) => (
                     <div key={cls.id} className="space-y-4">
                         {/* Class Header Row */}
-                        <div
+                        <button
                             onClick={() => toggleClass(cls.id)}
-                            className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+                            aria-expanded={expandedClasses[cls.id]}
+                            aria-controls={`class-exams-${cls.id}`}
+                            className="w-full text-left bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
                         >
                             <div className="flex items-center gap-6">
                                 <div className="w-2 h-12 bg-[#5B0019] rounded-full group-hover:scale-y-110 transition-transform" />
@@ -190,11 +193,11 @@ export default function StaffResultsPage() {
                             <div className={`p-4 rounded-2xl bg-gray-50 text-gray-400 group-hover:bg-[#5B0019] group-hover:text-white transition-all ${expandedClasses[cls.id] ? 'rotate-180' : ''}`}>
                                 <ChevronDown size={24} />
                             </div>
-                        </div>
+                        </button>
 
                         {/* Exams list for this class */}
                         {expandedClasses[cls.id] && (
-                            <div className="bg-white/50 rounded-[2.5rem] p-2 space-y-2 animate-in slide-in-from-top-2 duration-300">
+                            <div id={`class-exams-${cls.id}`} className="bg-white/50 rounded-[2.5rem] p-2 space-y-2 animate-in slide-in-from-top-2 duration-300">
                                 <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
@@ -210,8 +213,8 @@ export default function StaffResultsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-50">
-                                                {cls.exams.map((exam, idx) => (
-                                                    <tr key={idx} className="hover:bg-gray-50/70 transition-colors group">
+                                                {cls.exams.map((exam) => (
+                                                    <tr key={exam.id} className="hover:bg-gray-50/70 transition-colors group">
                                                         <td className="px-10 py-8">
                                                             <div className="flex items-center gap-5">
                                                                 <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center text-[#5B0019] group-hover:scale-110 group-hover:bg-[#5B0019] group-hover:text-white transition-all duration-300">
@@ -324,8 +327,8 @@ export default function StaffResultsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
-                                        {submissions.map((sub, i) => (
-                                            <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                                        {submissions.map((sub) => (
+                                            <tr key={`${sub.student_id}-${sub.submitted_at}`} className="hover:bg-gray-50/50 transition-colors">
                                                 <td className="px-6 py-5">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">

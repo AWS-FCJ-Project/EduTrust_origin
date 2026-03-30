@@ -305,7 +305,12 @@ async def get_all_results_summary(current_user: dict = Depends(get_current_user)
         ):
             teacher_classes.append(str(cls["_id"]))
 
-        query = {"class_id": {"$in": teacher_classes}}
+        query = {
+            "$or": [
+                {"class_id": {"$in": teacher_classes}},
+                {"teacher_id": user_id},
+            ]
+        }
 
     exams = await exams_collection.find(query).to_list(None)
 
