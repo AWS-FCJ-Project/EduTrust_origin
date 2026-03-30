@@ -114,13 +114,13 @@ export default function LoginPage() {
 
     return (
         <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans">
-            <a
+            <Link
                 href="/"
                 className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
             >
                 <ArrowLeft size={18} />
                 <span className="text-sm">Quay lại</span>
-            </a>
+            </Link>
 
             <div className="w-full max-w-100 bg-white p-10 rounded-[2.5rem] shadow-2xl border border-white/10">
 
