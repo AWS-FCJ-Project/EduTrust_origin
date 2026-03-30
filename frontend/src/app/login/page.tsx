@@ -112,15 +112,15 @@ export default function LoginPage() {
         }
     };
 
-    return (
-        <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans text-white">
-            <a
-                href="/"
-                className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-            >
-                <ArrowLeft size={18} />
-                <span className="text-sm">Quay lại</span>
-            </a>
+	    return (
+	        <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans text-white">
+	            <Link
+	                href="/"
+	                className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+	            >
+	                <ArrowLeft size={18} />
+	                <span className="text-sm">Quay lại</span>
+	            </Link>
 
             <div className="w-full max-w-100 bg-[#420012] p-8 rounded-3xl shadow-2xl border border-white/5">
 
