@@ -1,4 +1,5 @@
 "use client";
+import React from 'react';
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
@@ -48,11 +49,21 @@ export const Sidebar = ({ role }: { role: 'student' | 'admin' }) => {
     );
 };
 
-const SidebarItem = ({ icon, label, desc, path, isCollapsed }: any) => (
-    <Link href={path} className={`flex items-center p-3 rounded-xl hover:bg-white/10 transition-all group ${isCollapsed ? 'justify-center' : 'gap-4 px-4'}`}>
-        <div className="shrink-0 group-hover:scale-110 transition-all duration-300">
-            {icon}
-        </div>
+const SidebarItem = ({ icon, label, desc, path, isCollapsed }: any) => {
+    const resolvedIcon = React.isValidElement(icon)
+        ? React.cloneElement(icon as any, { size: 26 })
+        : icon;
+
+    return (
+        <Link
+            href={path}
+            className={`flex items-center rounded-xl hover:bg-white/10 transition-all group ${
+                isCollapsed ? 'justify-center px-3 py-3.5' : 'gap-4 px-4 py-3'
+            }`}
+        >
+            <div className="flex h-11 w-11 items-center justify-center shrink-0 group-hover:scale-110 transition-all duration-300">
+                {resolvedIcon}
+            </div>
         {!isCollapsed && (
             <div>
                 <span className="text-[0.95rem] font-medium tracking-[-0.025em] whitespace-nowrap opacity-100 block">
@@ -63,5 +74,6 @@ const SidebarItem = ({ icon, label, desc, path, isCollapsed }: any) => (
                 </p>
             </div>
         )}
-    </Link>
-);
+        </Link>
+    );
+};
