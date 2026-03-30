@@ -43,7 +43,7 @@ const CreateExamForm = () => {
         start_date: '',
         start_time: '',
         end_date: '',
-        end_time: '00:00',
+        end_time: '23:59',
         duration: '',
         secret_key: '',
         questions: [{ q: '', options: ['', '', '', ''], correct: 0 }]
@@ -106,7 +106,7 @@ const CreateExamForm = () => {
 
             let finalEnd = "";
             if (dataToSubmit.end_date) {
-                const timeStr = dataToSubmit.end_time || "00:00";
+                const timeStr = dataToSubmit.end_time || "23:59";
                 const localDate = new Date(`${dataToSubmit.end_date}T${timeStr}`);
                 finalEnd = localDate.toISOString();
             }

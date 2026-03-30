@@ -53,6 +53,12 @@ const TeacherExams: React.FC = () => {
     const [subjectSearch, setSubjectSearch] = useState('');
     const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
     const [lastExamId, setLastExamId] = useState<string | null>(null);
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 10000);
+        return () => clearInterval(timer);
+    }, []);
 
     const autoResize = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
         const element = e.currentTarget;
@@ -217,7 +223,7 @@ const TeacherExams: React.FC = () => {
             // Combine Date and Time for End - LOCAL time
             let finalEnd = "";
             const eDate = dataToUpdate.end_date || (dataToUpdate.end_time ? dataToUpdate.end_time.split('T')[0] : '');
-            const eTime = dataToUpdate.end_time_only || (dataToUpdate.end_time ? new Date(dataToUpdate.end_time).toLocaleTimeString('vi-VN', {hour12: false, hour: '2-digit', minute: '2-digit'}) : '00:00');
+            const eTime = dataToUpdate.end_time_only || (dataToUpdate.end_time ? new Date(dataToUpdate.end_time).toLocaleTimeString('vi-VN', {hour12: false, hour: '2-digit', minute: '2-digit'}) : '23:59');
             
             if (eDate) {
                 const localDate = new Date(`${eDate}T${eTime}`);
@@ -395,11 +401,23 @@ const TeacherExams: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* Actions Footer */}
                                                 <div className="mt-8 pt-6 border-t border-gray-50 flex items-center justify-between">
                                                     <div className="flex items-center gap-1">
-                                                        <CheckCircle2 size={14} className="text-green-500" />
-                                                        <span className="text-[10px] font-black uppercase text-green-600 tracking-tighter">Sẵn sàng</span>
+                                                        {(() => {
+                                                            const now = currentTime;
+                                                            const start = new Date(exam.start_time);
+                                                            const end = new Date(exam.end_time);
+                                                            
+                                                            if (now < start) return (
+                                                                <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-lg uppercase tracking-widest border border-blue-100">Sắp mở</span>
+                                                            );
+                                                            if (now > end) return (
+                                                                <span className="px-3 py-1 bg-gray-100 text-gray-400 text-[9px] font-black rounded-lg uppercase tracking-widest border border-gray-200">Đã đóng</span>
+                                                            );
+                                                            return (
+                                                                <span className="px-3 py-1 bg-green-50 text-green-600 text-[9px] font-black rounded-lg uppercase tracking-widest border border-green-100">Đang mở</span>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <button 
