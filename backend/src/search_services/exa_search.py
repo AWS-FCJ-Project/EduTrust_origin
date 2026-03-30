@@ -32,18 +32,20 @@ class ExaSearch:
                 query,
                 num_results=max_results,
                 type="auto",
-                contents={"text": True}
+                contents={"text": True},
             )
-            
+
             results = []
             for item in response.results:
-                results.append({
-                    "title": getattr(item, 'title', ''),
-                    "url": getattr(item, 'url', ''),
-                    "text": getattr(item, 'text', ''),
-                    "published_date": getattr(item, 'published_date', None),
-                    "author": getattr(item, 'author', None),
-                })
+                results.append(
+                    {
+                        "title": getattr(item, "title", ""),
+                        "url": getattr(item, "url", ""),
+                        "text": getattr(item, "text", ""),
+                        "published_date": getattr(item, "published_date", None),
+                        "author": getattr(item, "author", None),
+                    }
+                )
             return json.dumps({"results": results}, indent=2)
 
         except Exception as e:
@@ -61,19 +63,17 @@ class ExaSearch:
             if isinstance(urls, str):
                 urls = [urls]
 
-            response = await self._run_sync(
-                self.client.get_contents,
-                urls,
-                text=True
-            )
+            response = await self._run_sync(self.client.get_contents, urls, text=True)
 
             results = []
             for item in response.results:
-                results.append({
-                    "url": getattr(item, 'url', ''),
-                    "title": getattr(item, 'title', ''),
-                    "text": getattr(item, 'text', ''),
-                })
+                results.append(
+                    {
+                        "url": getattr(item, "url", ""),
+                        "title": getattr(item, "title", ""),
+                        "text": getattr(item, "text", ""),
+                    }
+                )
             return json.dumps({"results": results}, indent=2)
         except Exception as e:
             return f"Error performing Exa extract: {str(e)}"
@@ -86,17 +86,19 @@ class ExaSearch:
                 input,
                 num_results=10,
                 type="auto",
-                contents={"text": True}
+                contents={"text": True},
             )
 
             results = []
             for item in response.results:
-                results.append({
-                    "title": getattr(item, 'title', ''),
-                    "url": getattr(item, 'url', ''),
-                    "text": getattr(item, 'text', ''),
-                    "published_date": getattr(item, 'published_date', None),
-                })
+                results.append(
+                    {
+                        "title": getattr(item, "title", ""),
+                        "url": getattr(item, "url", ""),
+                        "text": getattr(item, "text", ""),
+                        "published_date": getattr(item, "published_date", None),
+                    }
+                )
 
             request_id = hashlib.md5(f"{input}{time.time()}".encode()).hexdigest()
 
