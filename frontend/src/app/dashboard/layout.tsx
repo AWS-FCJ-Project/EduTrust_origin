@@ -5,12 +5,16 @@ import Image from 'next/image';
 import study from '../../../public/study.png';
 import { LogOut } from 'lucide-react';
 import Cookies from 'js-cookie';
+import { ThemeProvider } from '@/components/providers/ThemeProvider';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const pathname = usePathname();
+    const isChatPage = pathname?.startsWith('/dashboard/chat_ai');
 
     useEffect(() => {
         const fetchUserInfo = async () => {
@@ -66,7 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         fetchUserInfo();
     }, []);
 
-    if (loading) return <div className="flex h-screen w-full items-center justify-center bg-[#F0F2F5] text-sm font-medium text-slate-500">Loading...</div>;
+    if (loading) return <div className="flex h-screen w-full items-center justify-center bg-[#F0F2F5] text-sm font-medium text-slate-500">Đang tải...</div>;
     if (!user) return null;
 
     const role = user.role;
@@ -90,7 +94,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
     };
     return (
-        <div className="flex h-screen w-full bg-[#F0F2F5] overflow-hidden">
+        <>
+            <script
+                dangerouslySetInnerHTML={{
+                    __html: `
+                        (function() {
+                            var theme = document.cookie.match(/chat_theme=(light|dark)/);
+                            if (theme) {
+                                document.documentElement.setAttribute('data-theme', theme[1]);
+                            }
+                        })();
+                    `,
+                }}
+            />
+            <div className="flex h-screen w-full bg-[#F0F2F5] overflow-hidden">
             <Sidebar role={role} />
 
             <main className="flex-1 flex flex-col min-w-0">
@@ -116,10 +133,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-                    {children}
+                <div
+                    className={`flex-1 min-h-0 ${
+                        isChatPage ? 'p-3 md:p-5 overflow-hidden' : 'p-4 md:p-8 overflow-y-auto custom-scrollbar'
+                    }`}
+                >
+                    <ThemeProvider>
+                        {children}
+                    </ThemeProvider>
                 </div>
             </main>
         </div>
+        </>
     );
 }

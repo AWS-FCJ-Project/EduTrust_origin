@@ -9,14 +9,12 @@ import React, {
 } from "react";
 import {
     ArrowUp,
-    CircleUserRound,
     PenLine,
     Loader2,
     MessageSquareText,
-    PanelRightClose,
-    PanelRightOpen,
     Search,
-    Sparkles,
+    Sun,
+    Moon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -24,6 +22,7 @@ import rehypeKatex from "rehype-katex";
 import Cookies from "js-cookie";
 
 import "katex/dist/katex.min.css";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 type UserInfo = {
     id: string;
@@ -64,6 +63,51 @@ type Message = {
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const VIETNAM_TIMEZONE = "Asia/Ho_Chi_Minh";
 const EMPTY_STATE_ROTATION_MS = 10000;
+const DEFAULT_CONVERSATION_TITLE_VI = "Hội thoại mới";
+const DEFAULT_CONVERSATION_TITLE_EN = "New Chat";
+
+const stripMarkdownForPreview = (value?: string | null) => {
+    const text = (value || "").trim();
+    if (!text) {
+        return "";
+    }
+
+    return (
+        text
+            // code fences
+            .replace(/```[\s\S]*?```/g, "")
+            // inline code
+            .replace(/`([^`]+)`/g, "$1")
+            // images: ![alt](url) -> alt
+            .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+            // links: [text](url) -> text
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+            // bold/italic/strike markers
+            .replace(/(\*\*|__)(.*?)\1/g, "$2")
+            .replace(/(\*|_)(.*?)\1/g, "$2")
+            .replace(/~~(.*?)~~/g, "$1")
+            // headings/quotes/list bullets
+            .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+            .replace(/^\s{0,3}>\s?/gm, "")
+            .replace(/^\s*[-*+]\s+/gm, "")
+            .replace(/^\s*\d+\.\s+/gm, "")
+            // collapse whitespace/newlines
+            .replace(/\s+/g, " ")
+            .trim()
+    );
+};
+
+const isDefaultConversationTitle = (title?: string | null) => {
+    const normalized = (title || "").trim();
+    if (!normalized) {
+        return true;
+    }
+    return (
+        normalized === DEFAULT_CONVERSATION_TITLE_VI ||
+        normalized === DEFAULT_CONVERSATION_TITLE_EN
+    );
+};
+
 const mapApiMessage = (message: ApiMessage, index: number): Message => ({
     id: `${message.created_at || "message"}-${index}`,
     role: message.role === "assistant" ? "ai" : "user",
@@ -74,9 +118,10 @@ const mapApiMessage = (message: ApiMessage, index: number): Message => ({
 const formatTitleFromInput = (value: string) => {
     const normalized = value.trim().replace(/\s+/g, " ");
     if (!normalized) {
-        return "New Chat";
+        return DEFAULT_CONVERSATION_TITLE_VI;
     }
-    return normalized.length > 60 ? `${normalized.slice(0, 57)}...` : normalized;
+    const sanitized = stripMarkdownForPreview(normalized);
+    return sanitized.length > 60 ? `${sanitized.slice(0, 57)}...` : sanitized;
 };
 
 const formatLaTeX = (text: string) => {
@@ -149,6 +194,31 @@ export default function AIChatSupport() {
         buildWelcomePrompts(),
     );
     const scrollRef = useRef<HTMLDivElement>(null);
+    const { theme, toggleTheme } = useTheme();
+
+    const SidebarMenuMobileIcon = ({ size = 20 }: { size?: number }) => (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+        >
+            <path
+                d="M6 9H14"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+            />
+            <path
+                d="M6 15H18"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
 
     const deferredSearch = useDeferredValue(search);
 
@@ -313,7 +383,7 @@ export default function AIChatSupport() {
             const conversation = (await response.json()) as ApiConversation;
             const summary: ConversationSummary = {
                 conversation_id: conversation.conversation_id,
-                title: conversation.title || "New Chat",
+                title: conversation.title || DEFAULT_CONVERSATION_TITLE_VI,
                 preview: "",
                 created_at: conversation.created_at,
                 updated_at: conversation.updated_at,
@@ -407,7 +477,9 @@ export default function AIChatSupport() {
                 {
                     ...existing,
                     title:
-                        existing.title === "New Chat" ? optimisticTitle : existing.title,
+                        isDefaultConversationTitle(existing.title)
+                            ? optimisticTitle
+                            : existing.title,
                     preview: prompt,
                     updated_at: new Date().toISOString(),
                     message_count: Math.max(existing.message_count, 0) + 1,
@@ -527,8 +599,8 @@ export default function AIChatSupport() {
 
     if (isPageLoading) {
         return (
-            <div className="flex h-[calc(100vh-120px)] items-center justify-center border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)]">
-                <Loader2 className="animate-spin text-[#B8976A]" size={40} />
+            <div className="flex h-full min-h-0 items-center justify-center border border-[var(--chat-border)] bg-[var(--chat-bg)] text-[var(--chat-text)] shadow-[0_20px_50px_var(--chat-shadow)]">
+                <Loader2 className="animate-spin text-[var(--chat-accent)]" size={40} />
             </div>
         );
     }
@@ -537,40 +609,53 @@ export default function AIChatSupport() {
 
     return (
         <div
-            className={`grid h-[calc(100vh-120px)] grid-cols-1 overflow-hidden rounded-3xl border border-[#D4D0CA] bg-[#F5F3F0] text-[#2D2A26] shadow-[0_20px_50px_rgba(45,42,38,0.08)] ${
-                isSidebarOpen ? "xl:grid-cols-[minmax(0,1fr)_336px]" : "xl:grid-cols-[minmax(0,1fr)_88px]"
+            className={`relative grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-3xl border border-[var(--chat-border)] bg-[var(--chat-bg)] text-[var(--chat-text)] shadow-[0_20px_50px_var(--chat-shadow)] ${
+                isSidebarOpen
+                    ? "xl:grid-cols-[minmax(0,1fr)_336px]"
+                    : "xl:grid-cols-[minmax(0,1fr)_72px]"
             } transition-[grid-template-columns] duration-300 ease-in-out`}
         >
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-[#F5F3F0]">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-[var(--chat-bg)]">
+                <div className="pointer-events-none absolute left-4 top-4 z-10">
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text)] transition hover:bg-[var(--chat-sidebar-bg)]"
+                        aria-label="Toggle theme"
+                    >
+                        {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+                    </button>
+                </div>
+
                 {error ? (
-                    <div className="mx-8 mt-5 rounded-[1.5rem] border border-[#E1C8B5] bg-[#F1E7DB] px-4 py-3 text-sm text-[#7A5948]">
+                    <div className="mx-auto w-full max-w-4xl rounded-[1.5rem] border border-[var(--chat-border)] bg-[var(--chat-surface)] px-4 py-3 text-sm text-[var(--chat-text-muted)]">
                         {error}
                     </div>
                 ) : null}
 
                 <div
                     ref={scrollRef}
-                    className="flex-1 overflow-y-auto px-8 py-8"
+                    className="flex-1 overflow-y-auto px-4 py-8"
                 >
                     {isConversationLoading ? (
                         <div className="flex h-full items-center justify-center">
-                            <Loader2 className="animate-spin text-[#B8976A]" size={34} />
+                            <Loader2 className="animate-spin text-[var(--chat-accent)]" size={34} />
                         </div>
                     ) : messages.length === 0 ? (
                         <div className="flex h-full items-center justify-center">
                             <div className="flex w-full max-w-4xl flex-col items-center text-center">
-                                <div className="mx-auto mb-10 flex h-16 w-16 items-center justify-center rounded-full border border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A] shadow-[0_16px_30px_rgba(184,151,106,0.12)]">
+                                <div className="mx-auto mb-10 flex h-16 w-16 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-accent)] shadow-[0_16px_30px_var(--chat-shadow)]">
                                     <MessageSquareText size={28} />
                                 </div>
                                 {showCenteredComposer ? (
                                     <div className="mx-auto mb-8 max-w-4xl px-6 text-center">
-                                        <p className="whitespace-nowrap font-serif text-[clamp(1.75rem,2.2vw,2.8rem)] leading-none text-[#2D2A26] transition-opacity duration-500">
+                                        <p className="whitespace-nowrap text-[clamp(1.85rem,2.4vw,3rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--chat-text)] transition-opacity duration-500">
                                             {welcomePrompts[welcomeIndex]}
                                         </p>
                                     </div>
                                 ) : null}
                                 {showCenteredComposer ? (
-                                    <div className="mx-auto w-full max-w-3xl rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] px-4 py-2.5 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
+                                    <div className="mx-auto w-full max-w-4xl rounded-[2rem] border border-[var(--chat-border)] bg-[var(--chat-surface)] px-4 py-2.5 shadow-[0_12px_30px_var(--chat-shadow)]">
                                         <div className="flex items-center gap-3">
                                             <textarea
                                                 value={input}
@@ -584,7 +669,7 @@ export default function AIChatSupport() {
                                                     }
                                                 }}
                                                 placeholder="Hỏi bất kỳ điều gì"
-                                                className="max-h-32 min-h-[52px] flex-1 resize-none bg-transparent px-4 py-2.5 text-base leading-7 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
+                                                className="max-h-32 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-base leading-7 text-[var(--chat-text)] placeholder:text-[var(--chat-input-placeholder)] focus:outline-none"
                                             />
                                         </div>
                                     </div>
@@ -592,7 +677,7 @@ export default function AIChatSupport() {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-6">
+                        <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
                             {messages.map((message) => (
                                 <div
                                     key={message.id}
@@ -603,45 +688,34 @@ export default function AIChatSupport() {
                                     }`}
                                 >
                                     <div
-                                        className={`flex max-w-[88%] gap-3 ${
+                                        className={`flex flex-col ${
                                             message.role === "user"
-                                                ? "flex-row-reverse"
-                                                : "flex-row"
+                                                ? "max-w-[78%] items-end"
+                                                : "w-full items-start"
                                         }`}
                                     >
                                         <div
-                                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
+                                            className={`px-4 py-3 text-base leading-7 ${
                                                 message.role === "user"
-                                                    ? "border-[#2D2A26] bg-[#2D2A26] text-[#F5F3F0]"
-                                                    : "border-[#D4D0CA] bg-[#FFFDFC] text-[#B8976A]"
-                                            }`}
-                                        >
-                                            {message.role === "user" ? (
-                                                <CircleUserRound size={18} />
-                                            ) : (
-                                                <Sparkles size={16} />
-                                            )}
-                                        </div>
-
-                                        <div
-                                            className={`rounded-[1.75rem] px-5 py-4 text-sm leading-7 ${
-                                                message.role === "user"
-                                                    ? "rounded-tr-md bg-[#2D2A26] text-[#F5F3F0]"
-                                                    : "rounded-tl-md border border-[#D4D0CA] bg-[#FFFDFC] text-[#2D2A26]"
+                                                    ? "rounded-2xl bg-[var(--chat-user-bg)] font-medium text-[var(--chat-user-text)]"
+                                                    : "text-[var(--chat-text)]"
                                             }`}
                                         >
                                             {message.role === "ai" ? (
                                                 message.content ? (
-                                                    <div className="prose prose-sm max-w-none overflow-x-auto prose-headings:text-[#2D2A26] prose-p:text-[#4F4A44] prose-strong:text-[#2D2A26] prose-li:text-[#4F4A44] prose-code:text-[#B8976A]">
+                                                    <div className="prose prose-base max-w-none overflow-x-auto prose-headings:mb-2 prose-headings:mt-6 prose-headings:text-[var(--chat-text)] prose-p:my-3 prose-p:font-medium prose-p:leading-7 prose-p:text-[var(--chat-ai-text)] prose-strong:text-[var(--chat-text)] prose-ul:my-3 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-3 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1 prose-li:font-medium prose-li:text-[var(--chat-ai-text)] prose-code:text-[var(--chat-accent)]">
                                                         <ReactMarkdown
                                                             remarkPlugins={[remarkMath]}
                                                             rehypePlugins={[rehypeKatex]}
+                                                            components={{
+                                                                hr: () => null,
+                                                            }}
                                                         >
                                                             {formatLaTeX(message.content)}
                                                         </ReactMarkdown>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex items-center gap-3 text-[#8E867B]">
+                                                    <div className="flex items-center gap-3 text-base font-medium text-[var(--chat-text-muted)]">
                                                         <Loader2
                                                             size={16}
                                                             className="animate-spin"
@@ -663,8 +737,8 @@ export default function AIChatSupport() {
                 </div>
 
                 {!showCenteredComposer ? (
-                    <div className="bg-[#F7F5F2] px-8 py-5">
-                        <div className="rounded-[2rem] border border-[#D4D0CA] bg-[#FFFDFC] p-3 shadow-[0_12px_30px_rgba(45,42,38,0.05)]">
+                    <div className="bg-[var(--chat-bg)] px-4 py-5">
+                        <div className="mx-auto w-full max-w-4xl rounded-[2rem] border border-[var(--chat-input-border)] bg-[var(--chat-input-bg)] p-2.5 shadow-[0_12px_30px_var(--chat-shadow)]">
                             <div className="flex items-center gap-3">
                                 <textarea
                                     value={input}
@@ -678,13 +752,13 @@ export default function AIChatSupport() {
                                     }
                                 }}
                                     placeholder={isSending ? "EduTrust đang trả lời..." : "Hỏi bất kỳ điều gì"}
-                                    className="max-h-40 min-h-[64px] flex-1 resize-none bg-transparent px-5 py-4 text-base leading-8 text-[#2D2A26] placeholder:text-[#8E867B] focus:outline-none"
+                                    className="max-h-40 min-h-[48px] flex-1 resize-none bg-transparent px-4 py-3 text-base leading-7 text-[var(--chat-input-text)] placeholder:text-[var(--chat-input-placeholder)] focus:outline-none"
                                 />
                                 <button
                                     type="button"
                                     onClick={handleSend}
                                     disabled={isSending || !input.trim()}
-                                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#DDD5CA] text-[#F5F3F0] transition hover:bg-[#2D2A26] disabled:cursor-not-allowed disabled:bg-[#CFC8BF]"
+                                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--chat-button-bg)] text-[var(--chat-button-text)] transition hover:bg-[var(--chat-button-hover)] disabled:cursor-not-allowed disabled:bg-[var(--chat-button-disabled)]"
                                 >
                                     {isSending ? (
                                         <Loader2 size={18} className="animate-spin" />
@@ -698,27 +772,47 @@ export default function AIChatSupport() {
                 ) : null}
             </section>
 
-            <aside className="flex min-h-0 flex-col overflow-hidden border-t border-[#D4D0CA] bg-[#F7F5F2] xl:border-t-0 xl:border-l">
-                <div className={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? "p-6" : "items-center py-6"}`}>
-                    <div className={`mb-6 flex transition-all duration-300 ease-in-out ${isSidebarOpen ? "items-center justify-between gap-3" : "flex-col gap-4"}`}>
-                        <button
-                            type="button"
-                            onClick={() => setIsSidebarOpen((value) => !value)}
-                            className="flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-[#2D2A26] text-[#F5F3F0] shadow-[0_10px_20px_rgba(45,42,38,0.12)]"
-                            aria-label={isSidebarOpen ? "Đóng danh sách hội thoại" : "Mở danh sách hội thoại"}
-                        >
-                            {isSidebarOpen ? <PanelRightClose size={24} /> : <PanelRightOpen size={24} />}
-                        </button>
+            <aside className="flex min-h-0 flex-col overflow-hidden border-t border-[var(--chat-border)] bg-[var(--chat-sidebar-bg)] xl:border-t-0 xl:border-l">
+                <div
+                    className={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out ${
+                        isSidebarOpen ? "p-6" : "items-end px-3 py-6"
+                    }`}
+                >
+                    {isSidebarOpen ? (
+                        <div className="mb-6 flex w-full items-center gap-4 transition-all duration-300 ease-in-out">
+                            <div className="flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-[var(--chat-button-bg)] text-[var(--chat-button-text)] shadow-[0_10px_20px_var(--chat-shadow)]">
+                                <MessageSquareText size={26} strokeWidth={2.5} />
+                            </div>
 
-                        {isSidebarOpen ? (
                             <div className="min-w-0 flex-1 origin-right transition-all duration-300 ease-in-out">
-                                <p className="font-serif text-2xl text-[#2D2A26]">EduTrust AI</p>
-                                <p className="text-xs uppercase tracking-[0.28em] text-[#B8976A]">
-                                    Your chats
+                                <p className="text-xl font-semibold tracking-[-0.03em] text-[var(--chat-sidebar-text)]">
+                                    EduTrust AI
+                                </p>
+                                <p className="type-label mt-1 text-[var(--chat-accent)]">
+                                    Hội thoại
                                 </p>
                             </div>
-                        ) : null}
-                    </div>
+                        </div>
+                    ) : (
+                        <div className="mb-6 flex w-full flex-col items-end gap-5 pt-2">
+                            <button
+                                type="button"
+                                onClick={handleCreateConversation}
+                                className="flex h-11 w-11 items-center justify-center rounded-md bg-transparent text-[var(--chat-text)] opacity-75 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--chat-border)]"
+                                aria-label="Tạo hội thoại mới"
+                            >
+                                <PenLine size={24} strokeWidth={2.75} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsSidebarOpen(true)}
+                                className="flex h-11 w-11 items-center justify-center rounded-md bg-transparent text-[var(--chat-text)] opacity-75 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--chat-border)]"
+                                aria-label="Mở danh sách hội thoại"
+                            >
+                                <Search size={24} strokeWidth={2.75} />
+                            </button>
+                        </div>
+                    )}
 
                     {isSidebarOpen ? (
                         <div className="flex min-h-0 flex-1 flex-col origin-right animate-in fade-in slide-in-from-right-4 duration-300">
@@ -726,41 +820,33 @@ export default function AIChatSupport() {
                                 type="button"
                                 onClick={handleCreateConversation}
                                 disabled={isCreatingConversation || isSending}
-                                className="mb-3 flex items-center gap-3 px-1 py-2 text-left text-[#2D2A26] transition hover:text-[#B8976A] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="mb-3 flex items-center gap-3 px-1 py-2 text-left text-[var(--chat-sidebar-text)] transition hover:text-[var(--chat-accent)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {isCreatingConversation ? (
                                     <Loader2 size={22} className="animate-spin" />
                                 ) : (
-                                    <PenLine size={22} />
+                                    <PenLine size={24} strokeWidth={2.5} />
                                 )}
-                                <span className="text-[1.05rem]">New chat</span>
+                                <span className="text-[1.05rem]">Tạo hội thoại mới</span>
                             </button>
 
-                            <label className="mb-6 flex items-center gap-3 px-1 py-2 text-[#2D2A26]">
-                                <Search size={22} />
+                            <label className="mb-6 flex items-center gap-3 px-1 py-2 text-[var(--chat-sidebar-text)]">
+                                <Search size={24} strokeWidth={2.5} />
                                 <input
                                     value={search}
                                     onChange={(event) => setSearch(event.target.value)}
-                                    placeholder="Search chats"
-                                    className="w-full bg-transparent text-[1.05rem] placeholder:text-[#8E867B] focus:outline-none"
+                                    placeholder="Tìm hội thoại"
+                                    className="w-full bg-transparent text-[1.05rem] placeholder:text-[var(--chat-text-muted)] focus:outline-none"
                                 />
                             </label>
 
                             <div className="mb-4 flex items-center justify-between">
-                                <p className="text-sm font-medium text-[#8E867B]">Your chats</p>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsSidebarOpen(false)}
-                                    className="text-[#8E867B] transition hover:text-[#B8976A]"
-                                    aria-label="Thu gọn danh sách hội thoại"
-                                >
-                                    <PanelRightClose size={22} />
-                                </button>
+                                <p className="text-sm font-medium text-[var(--chat-text-muted)]">Hội thoại của bạn</p>
                             </div>
 
                             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                                 {filteredConversations.length === 0 ? (
-                                    <div className="px-3 py-4 text-sm leading-7 text-[#8E867B]">
+                                    <div className="px-3 py-4 text-sm leading-7 text-[var(--chat-text-muted)]">
                                         {conversations.length === 0
                                             ? "Chưa có lịch sử trò chuyện."
                                             : "Không tìm thấy hội thoại phù hợp."}
@@ -779,15 +865,18 @@ export default function AIChatSupport() {
                                                 }
                                                 className={`w-full rounded-[1.5rem] px-3 py-3 text-left transition ${
                                                     isActive
-                                                        ? "bg-[#EAE4DB]"
-                                                        : "hover:bg-[#FBFAF7]"
+                                                        ? "bg-[var(--chat-button-bg)]"
+                                                        : "hover:bg-[var(--chat-surface)]"
                                                 }`}
-                                            >
-                                                <p className="line-clamp-1 text-[1.05rem] font-medium text-[#2D2A26]">
-                                                    {conversation.title || "New Chat"}
+                                            > 
+                                                <p className="line-clamp-1 text-[1.05rem] font-medium text-[var(--chat-sidebar-text)]">
+                                                    {stripMarkdownForPreview(
+                                                        conversation.title || DEFAULT_CONVERSATION_TITLE_VI,
+                                                    )}
                                                 </p>
-                                                <p className="mt-1 line-clamp-1 text-sm text-[#8E867B]">
-                                                    {conversation.preview || "Chưa có tin nhắn"}
+                                                <p className="mt-1 line-clamp-1 text-sm text-[var(--chat-text-muted)]">
+                                                    {stripMarkdownForPreview(conversation.preview) ||
+                                                        "Chưa có tin nhắn"}
                                                 </p>
                                             </button>
                                         );
@@ -796,25 +885,25 @@ export default function AIChatSupport() {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-1 flex-col items-center gap-4 animate-in fade-in slide-in-from-right-2 duration-200">
-                            <button
-                                type="button"
-                                onClick={handleCreateConversation}
-                                className="text-[#2D2A26] transition hover:text-[#B8976A]"
-                                aria-label="Tạo cuộc trò chuyện mới"
-                            >
-                                <PenLine size={24} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setIsSidebarOpen(true)}
-                                className="text-[#2D2A26] transition hover:text-[#B8976A]"
-                                aria-label="Mở tìm kiếm hội thoại"
-                            >
-                                <Search size={24} />
-                            </button>
-                        </div>
+                        <div className="flex flex-1 flex-col" />
                     )}
+
+                    <div
+                        className={`mt-auto flex w-full pt-6 ${
+                            isSidebarOpen ? "justify-end px-1" : "justify-end px-3"
+                        }`}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setIsSidebarOpen((value) => !value)}
+                            className="flex h-11 w-11 items-center justify-center rounded-md bg-transparent text-[var(--chat-text)] opacity-75 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--chat-border)]"
+                            aria-label={
+                                isSidebarOpen ? "Thu gọn thanh bên" : "Mở rộng thanh bên"
+                            }
+                        >
+                            <SidebarMenuMobileIcon size={24} />
+                        </button>
+                    </div>
                 </div>
             </aside>
         </div>
