@@ -17,7 +17,7 @@ interface TimePickerProps {
 }
 
 const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-const minutes = ['00', '10', '20', '30', '40', '50'];
+const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 
 const TimePicker: React.FC<TimePickerProps> = ({ value, onChange, placeholder = "00:00", className }) => {
     const [isOpen, setIsOpen] = useState(false);

@@ -30,6 +30,7 @@ def exam_helper(exam, include_secret: bool = False) -> dict:
         "title": exam["title"],
         "description": exam.get("description"),
         "subject": exam["subject"],
+        "exam_type": exam.get("exam_type", "15-minute quiz"),
         "teacher_id": exam["teacher_id"],
         "class_id": exam["class_id"],
         "start_time": exam["start_time"],
