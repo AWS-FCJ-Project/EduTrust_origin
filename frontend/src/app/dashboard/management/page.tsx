@@ -5,8 +5,9 @@ import { UserPlus, Users, FileSpreadsheet, Download, Upload, Save, CheckCircle2,
 import Cookies from 'js-cookie';
 import * as XLSX from 'xlsx';
 import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
-const ManagementPage = () => {
+const ManagementPageContent = () => {
     const searchParams = useSearchParams();
     const initialRole = searchParams.get('role') || 'student';
     
@@ -326,6 +327,18 @@ const ManagementPage = () => {
                 )}
             </div>
         </div>
+    );
+};
+
+const ManagementPage = () => {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="animate-spin text-[#5B0019]" size={32} />
+            </div>
+        }>
+            <ManagementPageContent />
+        </Suspense>
     );
 };
 
