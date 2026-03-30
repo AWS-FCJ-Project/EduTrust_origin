@@ -48,6 +48,7 @@ class ExamCreate(BaseModel):
     start_time: datetime
     end_time: datetime
     duration: int = 60  # Default to 60 minutes
+    secret_key: Optional[str] = None
     questions: List[dict] = []  # Keeping it flexible for now
 
 
@@ -67,6 +68,7 @@ class ExamUpdate(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration: Optional[int] = None
+    secret_key: Optional[str] = None
     questions: Optional[List[dict]] = None
 
 
@@ -81,3 +83,7 @@ class ExamStatusResponse(BaseModel):
     status: Optional[str] = None  # "completed", "failed", or None
     submitted_at: Optional[datetime] = None
     violation_count: int = 0
+
+
+class ExamKeyVerify(BaseModel):
+    key: str

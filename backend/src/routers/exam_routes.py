@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -13,6 +14,7 @@ from src.database import (
 )
 from src.schemas.school_schemas import (
     ExamCreate,
+    ExamKeyVerify,
     ExamResponse,
     ExamStatusResponse,
     ExamSubmission,
@@ -22,8 +24,8 @@ from src.schemas.school_schemas import (
 router = APIRouter(prefix="/exams", tags=["Exams"])
 
 
-def exam_helper(exam) -> dict:
-    return {
+def exam_helper(exam, include_secret: bool = False) -> dict:
+    result = {
         "id": str(exam["_id"]),
         "title": exam["title"],
         "description": exam.get("description"),
@@ -33,8 +35,12 @@ def exam_helper(exam) -> dict:
         "start_time": exam["start_time"],
         "end_time": exam["end_time"],
         "duration": exam.get("duration", 60),
+        "has_secret_key": bool(exam.get("secret_key")),
         "questions": exam.get("questions", []),
     }
+    if include_secret:
+        result["secret_key"] = exam.get("secret_key")
+    return result
 
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
@@ -67,8 +73,16 @@ async def create_exam(
 
     new_exam = exam_data.model_dump()
     new_exam["teacher_id"] = user_id
+    if new_exam.get("secret_key"):
+        new_exam["secret_key"] = str(new_exam["secret_key"]).strip().upper()
+    else:
+        new_exam["secret_key"] = secrets.token_hex(3).upper()
     result = await exams_collection.insert_one(new_exam)
-    return {"id": str(result.inserted_id), "message": "Exam created successfully"}
+    return {
+        "id": str(result.inserted_id),
+        "secret_key": new_exam["secret_key"],
+        "message": "Exam created successfully",
+    }
 
 
 @router.get("", response_model=List[dict])
@@ -118,6 +132,38 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
     return exams
 
 
+@router.post("/{exam_id}/verify-key", response_model=dict)
+async def verify_exam_key(
+    exam_id: str,
+    body: ExamKeyVerify,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("role") != "student":
+        raise HTTPException(
+            status_code=403, detail="Only students can verify exam keys"
+        )
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    stored_key = (exam.get("secret_key") or "").strip().upper()
+    provided_key = (body.key or "").strip().upper()
+
+    if not stored_key:
+        return {"valid": True}
+
+    if provided_key != stored_key:
+        raise HTTPException(
+            status_code=400, detail="Invalid exam key. Please check and try again."
+        )
+
+    return {"valid": True}
+
+
 @router.get("/{exam_id}/status", response_model=ExamStatusResponse)
 async def get_exam_status(exam_id: str, current_user: dict = Depends(get_current_user)):
     if not ObjectId.is_valid(exam_id):
@@ -161,6 +207,26 @@ async def submit_exam(
     new_submission["student_id"] = str(current_user["_id"])
     new_submission["submitted_at"] = datetime.now(timezone.utc)
 
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    questions = exam.get("questions", [])
+    total_questions = len(questions)
+    correct_count = 0
+    student_answers = submission_data.answers or {}
+    for i, q in enumerate(questions):
+        selected = student_answers.get(str(i))
+        if selected is None:
+            selected = student_answers.get(i)
+        if selected is not None and selected == q.get("correct"):
+            correct_count += 1
+
+    score = (correct_count / total_questions) * 10 if total_questions > 0 else 0
+    new_submission["score"] = score
+    new_submission["correct_count"] = correct_count
+    new_submission["total_questions"] = total_questions
+
     await submissions_collection.insert_one(new_submission)
 
     if new_submission["status"] == "completed":
@@ -169,6 +235,92 @@ async def submit_exam(
         )
 
     return {"message": "Exam submitted successfully"}
+
+
+@router.get("/results/my", response_model=List[dict])
+async def get_my_results(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "student":
+        raise HTTPException(
+            status_code=403, detail="Only students can view their results"
+        )
+
+    student_id = str(current_user["_id"])
+    submissions = await submissions_collection.find({"student_id": student_id}).to_list(
+        None
+    )
+
+    results = []
+    for sub in submissions:
+        raw_exam_id = str(sub.get("exam_id", "")).strip()
+        if not ObjectId.is_valid(raw_exam_id):
+            continue
+        exam = await exams_collection.find_one({"_id": ObjectId(raw_exam_id)})
+        if not exam:
+            continue
+        results.append(
+            {
+                "exam_id": raw_exam_id,
+                "exam_title": exam["title"],
+                "subject": exam["subject"],
+                "score": sub.get("score", 0),
+                "correct_count": sub.get("correct_count", 0),
+                "total_questions": sub.get("total_questions", 0),
+                "status": sub.get("status"),
+                "submitted_at": sub.get("submitted_at"),
+            }
+        )
+
+    results.sort(
+        key=lambda x: x["submitted_at"] if x["submitted_at"] else datetime.min,
+        reverse=True,
+    )
+    return results
+
+
+@router.get("/all-results/summary", response_model=List[dict])
+async def get_all_results_summary(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "teacher"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    exams = await exams_collection.find().to_list(None)
+    summary = []
+    for exam in exams:
+        exam_id = str(exam["_id"])
+        pipeline = [
+            {"$match": {"exam_id": exam_id}},
+            {
+                "$group": {
+                    "_id": "$exam_id",
+                    "total_submissions": {"$sum": 1},
+                    "average_score": {"$avg": "$score"},
+                    "highest_score": {"$max": "$score"},
+                    "violations_sum": {"$sum": "$violation_count"},
+                }
+            },
+        ]
+        stats_list = await submissions_collection.aggregate(pipeline).to_list(length=1)
+        stats = (
+            stats_list[0]
+            if stats_list
+            else {
+                "total_submissions": 0,
+                "average_score": 0,
+                "highest_score": 0,
+                "violations_sum": 0,
+            }
+        )
+        summary.append(
+            {
+                "id": exam_id,
+                "title": exam["title"],
+                "subject": exam["subject"],
+                "total_submissions": stats["total_submissions"],
+                "average_score": stats["average_score"] or 0,
+                "highest_score": stats["highest_score"] or 0,
+                "violations_count": stats["violations_sum"] or 0,
+            }
+        )
+    return summary
 
 
 @router.get("/{exam_id}", response_model=dict)
@@ -246,7 +398,8 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
     if not has_permission:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    return exam_helper(exam)
+    include_secret = role in ["teacher", "admin"]
+    return exam_helper(exam, include_secret=include_secret)
 
 
 @router.patch("/{exam_id}", response_model=dict)
@@ -321,6 +474,60 @@ async def delete_exam(exam_id: str, current_user: dict = Depends(get_current_use
 
     await exams_collection.delete_one({"_id": ObjectId(exam_id)})
     return {"message": "Exam deleted successfully"}
+
+
+@router.get("/{exam_id}/secret-key", response_model=dict)
+async def get_exam_secret_key(
+    exam_id: str, current_user: dict = Depends(get_current_user)
+):
+    role = current_user.get("role")
+    if role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    user_id = str(current_user["_id"])
+    if role == "teacher" and exam["teacher_id"] != user_id:
+        cls = await classes_collection.find_one(
+            {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+        )
+        if not cls:
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+    return {"secret_key": exam.get("secret_key")}
+
+
+@router.post("/{exam_id}/regenerate-key", response_model=dict)
+async def regenerate_exam_secret_key(
+    exam_id: str, current_user: dict = Depends(get_current_user)
+):
+    role = current_user.get("role")
+    if role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    user_id = str(current_user["_id"])
+    if role == "teacher" and exam["teacher_id"] != user_id:
+        cls = await classes_collection.find_one(
+            {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+        )
+        if not cls:
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+    new_key = secrets.token_hex(3).upper()
+    await exams_collection.update_one(
+        {"_id": ObjectId(exam_id)}, {"$set": {"secret_key": new_key}}
+    )
+    return {"secret_key": new_key, "message": "Secret key regenerated successfully"}
 
 
 @router.get("/violations/all", response_model=List[dict])
