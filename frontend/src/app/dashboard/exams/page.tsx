@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Edit, Trash2, Plus, Clock, FileText, CheckCircle2, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen } from 'lucide-react';
+import { Edit, Trash2, Plus, Clock, FileText, CheckCircle2, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen, KeyRound, RefreshCw, Copy, Check } from 'lucide-react';
 import TimePicker from '@/components/ui/TimePicker';
 import Link from 'next/link';
 import Cookies from 'js-cookie';
@@ -16,6 +16,8 @@ interface ExamItem {
     end_time: string;
     duration?: number | string;
     questions: any[];
+    has_secret_key?: boolean;
+    secret_key?: string;
     // Temp fields for editing
     start_date?: string;
     start_time_only?: string;
@@ -32,6 +34,10 @@ const TeacherExams: React.FC = () => {
     // Modals state
     const [editingExam, setEditingExam] = useState<ExamItem | null>(null);
     const [deletingExam, setDeletingExam] = useState<ExamItem | null>(null);
+    const [secretKeyExam, setSecretKeyExam] = useState<ExamItem | null>(null);
+    const [secretKeyValue, setSecretKeyValue] = useState<string | null>(null);
+    const [secretKeyCopied, setSecretKeyCopied] = useState(false);
+    const [secretKeyLoading, setSecretKeyLoading] = useState(false);
     const [isActionLoading, setIsActionLoading] = useState(false);
 
     const fetchData = async () => {
@@ -72,6 +78,54 @@ const TeacherExams: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, []);
+
+    const openSecretKeyPanel = async (exam: ExamItem) => {
+        setSecretKeyExam(exam);
+        setSecretKeyValue(null);
+        setSecretKeyLoading(true);
+        try {
+            const token = Cookies.get('auth_token');
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${exam.id}/secret-key`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSecretKeyValue(data.secret_key);
+            }
+        } catch (error) {
+            console.error("Error loading secret key:", error);
+        } finally {
+            setSecretKeyLoading(false);
+        }
+    };
+
+    const handleRegenerateKey = async () => {
+        if (!secretKeyExam) return;
+        setSecretKeyLoading(true);
+        try {
+            const token = Cookies.get('auth_token');
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${secretKeyExam.id}/regenerate-key`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSecretKeyValue(data.secret_key);
+                setSecretKeyCopied(false);
+            }
+        } catch (error) {
+            console.error("Error regenerating key:", error);
+        } finally {
+            setSecretKeyLoading(false);
+        }
+    };
+
+    const handleCopySecretKey = () => {
+        if (!secretKeyValue) return;
+        navigator.clipboard.writeText(secretKeyValue);
+        setSecretKeyCopied(true);
+        setTimeout(() => setSecretKeyCopied(false), 2000);
+    };
 
     const handleDeleteExam = async () => {
         if (!deletingExam) return;
@@ -292,6 +346,13 @@ const TeacherExams: React.FC = () => {
                                                         <span className="text-[10px] font-black uppercase text-green-600 tracking-tighter">Sẵn sàng</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
+                                                        <button 
+                                                            onClick={() => openSecretKeyPanel(exam)}
+                                                            className="p-3 bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white rounded-xl transition-all"
+                                                            title="Xem mã đề thi"
+                                                        >
+                                                            <KeyRound size={18} />
+                                                        </button>
                                                         <button 
                                                             onClick={() => setEditingExam(exam)}
                                                             className="p-3 bg-gray-50 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-all"
@@ -547,6 +608,64 @@ const TeacherExams: React.FC = () => {
                                 {isActionLoading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
                                 Lưu thay đổi
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {secretKeyExam && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="p-8 border-b bg-amber-50/50 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-amber-500 text-white rounded-2xl">
+                                    <KeyRound size={22} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-black text-gray-800 tracking-tight">Mã Đề Thi</h2>
+                                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-0.5 line-clamp-1">{secretKeyExam.title}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setSecretKeyExam(null)} className="p-2 hover:bg-gray-200 rounded-xl transition-all">
+                                <X size={22} className="text-gray-400" />
+                            </button>
+                        </div>
+
+                        <div className="p-10 text-center space-y-8">
+                            <div className="bg-[#5B0019]/5 border-2 border-[#5B0019]/15 rounded-3xl p-8 space-y-4">
+                                <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Mã Bí Mật</p>
+                                {secretKeyLoading ? (
+                                    <div className="flex justify-center py-4"><Loader2 className="animate-spin text-[#5B0019]" size={36} /></div>
+                                ) : (
+                                    <div className="flex items-center justify-center gap-4">
+                                        <span className="text-5xl font-black text-[#5B0019] tracking-[0.35em] font-mono">
+                                            {secretKeyValue || '------'}
+                                        </span>
+                                        <button
+                                            onClick={handleCopySecretKey}
+                                            disabled={!secretKeyValue}
+                                            className={`p-3 rounded-2xl transition-all ${
+                                                secretKeyCopied 
+                                                    ? 'bg-green-500 text-white'
+                                                    : 'bg-white border border-gray-200 text-gray-400 hover:text-[#5B0019] hover:border-[#5B0019] disabled:opacity-40'
+                                            }`}
+                                        >
+                                            {secretKeyCopied ? <Check size={20} /> : <Copy size={20} />}
+                                        </button>
+                                    </div>
+                                )}
+                                <p className="text-xs text-gray-400 font-medium">Học sinh nhập mã này trước khi vào thi</p>
+                            </div>
+
+                            <button
+                                onClick={handleRegenerateKey}
+                                disabled={secretKeyLoading}
+                                className="w-full py-4 bg-amber-500 text-white rounded-2xl font-black hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/20 active:scale-95 uppercase tracking-widest text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {secretKeyLoading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+                                Tạo Mã Mới
+                            </button>
+                            <p className="text-[10px] text-gray-400 font-medium -mt-4">Tạo mã mới sẽ vô hiệu hóa mã cũ ngay lập tức</p>
                         </div>
                     </div>
                 </div>
