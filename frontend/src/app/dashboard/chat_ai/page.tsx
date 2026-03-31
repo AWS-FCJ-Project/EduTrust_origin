@@ -1319,7 +1319,7 @@ export default function AIChatSupport() {
 	                                                                                            {isCodeCopied ? (
 	                                                                                                <OaiCheck className="size-4" />
 	                                                                                            ) : (
-	                                                                                                <ClipboardCopy className="size-4" />
+	                                                                                                <Copy className="size-4" />
 	                                                                                            )}
 	                                                                                        </button>
 	                                                                                        <SyntaxHighlighter
