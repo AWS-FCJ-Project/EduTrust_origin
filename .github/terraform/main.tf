@@ -1010,14 +1010,20 @@ resource "aws_launch_template" "backend" {
     http_put_response_hop_limit = 1
   }
 
-  # NOTE: Keep the script unindented. Cloud-init can fail to detect a shell script
-  # when the first line (shebang) is preceded by spaces.
-  user_data = base64encode(<<EOF
-#!/bin/bash
+  # NOTE:
+  # 1. This repo is often edited on Windows, which can introduce CRLF (\r\n). If that
+  #    reaches EC2 user-data, the shebang can become "/bin/bash\r" and cloud-init
+  #    will fail to execute the script. We strip '\r' defensively.
+  # 2. The script is responsible for bootstrapping the instance (Docker, ECR login,
+  #    pull/run container). If it doesn't run, ALB health checks will fail and ASG
+  #    instance refreshes will stall.
+  user_data = base64encode(replace((<<EOF
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Persist user-data logs for debugging (SSM into instance -> read this file).
 exec > >(tee -a /var/log/user-data.log) 2>&1
+set -x
 
 retry() {
   local max=8
@@ -1038,8 +1044,44 @@ retry() {
 # Environment variables
 REGION="${var.aws_region}"
 ECR_URL="${aws_ecr_repository.backend.repository_url}"
-TARGET_DIR="/home/ubuntu/app"
+TARGET_DIR="/opt/edutrust"
 mkdir -p "$TARGET_DIR"
+
+echo "Bootstrapping instance..."
+echo "REGION=$REGION"
+echo "ECR_URL=$ECR_URL"
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo "AWS CLI not found; installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends awscli ca-certificates curl
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y awscli curl ca-certificates
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y awscli curl ca-certificates
+  else
+    echo "No supported package manager found to install AWS CLI" >&2
+    exit 1
+  fi
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker not found; installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends docker.io
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y docker
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y docker
+  else
+    echo "No supported package manager found to install Docker" >&2
+    exit 1
+  fi
+fi
 
 echo "Ensuring Docker is running..."
 systemctl enable --now docker || true
@@ -1083,6 +1125,16 @@ if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then
       "files": {
         "collect_list": [
           {
+            "file_path": "/var/log/user-data.log",
+            "log_group_name": "/edutrust/user-data",
+            "log_stream_name": "{instance_id}"
+          },
+          {
+            "file_path": "/var/log/cloud-init-output.log",
+            "log_group_name": "/edutrust/cloud-init",
+            "log_stream_name": "{instance_id}"
+          },
+          {
             "file_path": "/var/lib/docker/containers/*/*.log",
             "log_group_name": "/edutrust/container-logs",
             "log_stream_name": "{instance_id}"
@@ -1096,7 +1148,7 @@ CW_EOF
   /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 fi
 EOF
-  )
+  ), "\r", ""))
 
   tag_specifications {
     resource_type = "instance"
