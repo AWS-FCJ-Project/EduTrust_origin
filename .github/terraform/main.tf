@@ -817,7 +817,6 @@ resource "aws_launch_template" "backend" {
   name_prefix   = "${var.ec2_instance_name}-lt-"
   image_id      = data.aws_ami.base_ami.id
   instance_type = var.ec2_instance_type
-  key_name      = var.ec2_key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.backend.name

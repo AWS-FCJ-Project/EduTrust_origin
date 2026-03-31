@@ -28,11 +28,6 @@ variable "ec2_instance_name" {
   type        = string
 }
 
-variable "ec2_key_name" {
-  description = "EC2 key pair name for SSH access (optional, for debug/testing)"
-  type        = string
-}
-
 variable "ecr_repository_name" {
   description = "ECR repository name for backend image"
   type        = string
