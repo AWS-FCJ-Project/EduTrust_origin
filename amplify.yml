@@ -4,10 +4,10 @@ frontend:
     preBuild:
       commands:
         - nvm use 20
-        - cd frontend && npm ci
+        - (cd frontend && npm ci)
     build:
       commands:
-        - cd frontend && npm run build
+        - (cd frontend && npm run build)
   artifacts:
     baseDirectory: frontend/.next
     files:
