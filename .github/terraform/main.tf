@@ -678,6 +678,29 @@ resource "aws_wafv2_web_acl" "frontend" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "frontend_waf" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  # AWS WAF requires the log group name to start with "aws-waf-logs-".
+  # checkov:skip=CKV_AWS_158: KMS encryption is optional for this project's WAF logs; can be enabled later if required.
+  # checkov:skip=CKV_AWS_338: 30 days retention is sufficient for this project.
+  name              = "aws-waf-logs-${var.ec2_instance_name}-frontend"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${var.ec2_instance_name}-frontend-waf-logs"
+  }
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "frontend" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  resource_arn            = aws_wafv2_web_acl.frontend[0].arn
+  log_destination_configs = [aws_cloudwatch_log_group.frontend_waf[0].arn]
+}
+
 resource "aws_wafv2_web_acl_association" "frontend" {
   count    = var.enable_frontend_waf && length(local.frontend_distribution_arn) > 0 ? 1 : 0
   provider = aws.us_east_1
