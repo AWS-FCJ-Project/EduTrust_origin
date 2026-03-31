@@ -861,7 +861,7 @@ resource "aws_autoscaling_group" "backend" {
   }
 
   # Use ALB Target Group health checks to decide instance health (better signal than EC2 status checks).
-  health_check_type         = "ELB"
+  health_check_type = "ELB"
   # Give instances time to pull the container image + start the app before ASG considers them unhealthy.
   health_check_grace_period = 600
   wait_for_capacity_timeout = "0"
