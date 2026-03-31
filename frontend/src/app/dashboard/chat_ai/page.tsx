@@ -1,6 +1,7 @@
 "use client";
 
 import React, {
+    useCallback,
     useDeferredValue,
     useEffect,
     useMemo,
@@ -9,6 +10,7 @@ import React, {
 } from "react";
 import {
     ArrowUp,
+    ClipboardCopy,
     PenLine,
     Loader2,
     Search,
@@ -25,6 +27,7 @@ import "katex/dist/katex.min.css";
 import {
     Check as OaiCheck,
     Copy,
+    Delete,
 } from "@openai/apps-sdk-ui/components/Icon";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -126,6 +129,11 @@ type StreamEvent = {
 type ThinkingMessageState = {
     isStreaming: boolean;
     currentToolName: string;
+};
+
+type PendingDeleteConversation = {
+    id: string;
+    title: string;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -362,6 +370,9 @@ export default function AIChatSupport() {
     const [activeConversationId, setActiveConversationId] = useState<string | null>(
         null,
     );
+    const [pendingDeleteConversation, setPendingDeleteConversation] =
+        useState<PendingDeleteConversation | null>(null);
+    const [isDeletingConversation, setIsDeletingConversation] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [search, setSearch] = useState("");
@@ -637,6 +648,83 @@ export default function AIChatSupport() {
         setThinkingByMessageId({});
         setInput("");
         setError("");
+    };
+
+    const closeDeleteModal = useCallback(() => {
+        if (isDeletingConversation) {
+            return;
+        }
+        setPendingDeleteConversation(null);
+    }, [isDeletingConversation]);
+
+    useEffect(() => {
+        if (!pendingDeleteConversation) {
+            return;
+        }
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") {
+                return;
+            }
+            event.preventDefault();
+            closeDeleteModal();
+        };
+
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [pendingDeleteConversation, closeDeleteModal]);
+
+    const deleteConversation = async (conversationId: string) => {
+        const token = Cookies.get("auth_token");
+        const response = await fetch(
+            `${API_URL}/unified-agent/conversations/${conversationId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        );
+
+        if (response.status === 204) {
+            return;
+        }
+
+        if (response.status === 404) {
+            throw new Error("Conversation not found");
+        }
+
+        throw new Error("Unable to delete conversation");
+    };
+
+    const handleConfirmDeleteConversation = async () => {
+        if (!pendingDeleteConversation || isDeletingConversation) {
+            return;
+        }
+
+        setIsDeletingConversation(true);
+        setError("");
+
+        try {
+            await deleteConversation(pendingDeleteConversation.id);
+            setConversations((previous) =>
+                previous.filter(
+                    (conversation) =>
+                        conversation.conversation_id !== pendingDeleteConversation.id,
+                ),
+            );
+
+            if (activeConversationId === pendingDeleteConversation.id) {
+                await handleCreateConversation();
+            }
+
+            setPendingDeleteConversation(null);
+        } catch (deleteError) {
+            console.error(deleteError);
+            setError("Không thể xóa hội thoại. Vui lòng thử lại.");
+        } finally {
+            setIsDeletingConversation(false);
+        }
     };
 
     const handleSelectConversation = async (conversationId: string) => {
@@ -1063,6 +1151,51 @@ export default function AIChatSupport() {
                     : "xl:grid-cols-[minmax(0,1fr)_72px]"
             } transition-[grid-template-columns] duration-300 ease-in-out`}
         >
+            {pendingDeleteConversation ? (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Xác nhận xóa hội thoại"
+                    onClick={closeDeleteModal}
+                >
+                    <div
+                        className="w-full max-w-md rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.4)]"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <h2 className="text-lg font-semibold text-[var(--chat-text)]">
+                            Xóa hội thoại?
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-[var(--chat-text-muted)]">
+                            Bạn có chắc muốn xóa{" "}
+                            <span className="font-medium text-[var(--chat-text)]">
+                                {stripMarkdownForPreview(
+                                    pendingDeleteConversation.title,
+                                ) || DEFAULT_CONVERSATION_TITLE_VI}
+                            </span>
+                            ? Thao tác này không thể hoàn tác.
+                        </p>
+                        <div className="mt-5 flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={closeDeleteModal}
+                                disabled={isDeletingConversation}
+                                className="rounded-xl border border-[var(--chat-border)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--chat-text)] transition hover:bg-[var(--chat-button-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmDeleteConversation}
+                                disabled={isDeletingConversation}
+                                className="rounded-xl bg-[var(--chat-text)] px-4 py-2 text-sm font-semibold text-[var(--chat-surface)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isDeletingConversation ? "Đang xóa..." : "Xóa"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-[var(--chat-bg)]">
                 <div className="pointer-events-none absolute left-4 top-4 z-10">
                     <button
@@ -1534,30 +1667,55 @@ export default function AIChatSupport() {
                                             conversation.conversation_id === activeConversationId;
 
                                         return (
-                                            <button
+                                            <div
                                                 key={conversation.conversation_id}
-                                                type="button"
-                                                onClick={() =>
-                                                    handleSelectConversation(conversation.conversation_id)
-                                                }
-                                                className={`w-full rounded-[1.5rem] px-3 py-3 text-left transition ${
+                                                className={`group relative w-full rounded-[1.5rem] transition ${
                                                     isActive
                                                         ? "bg-[var(--chat-button-bg)]"
                                                         : "hover:bg-[var(--chat-surface)]"
                                                 }`}
-                                            > 
-                                                <p className="line-clamp-1 text-[1.05rem] font-medium text-[var(--chat-sidebar-text)]">
-                                                    {stripMarkdownForPreview(
-                                                        normalizeConversationTitle(
-                                                            conversation.title,
-                                                        ),
-                                                    )}
-                                                </p>
-                                                <p className="mt-1 line-clamp-1 text-sm text-[var(--chat-text-muted)]">
-                                                    {stripMarkdownForPreview(conversation.preview) ||
-                                                        "Chưa có tin nhắn"}
-                                                </p>
-                                            </button>
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        handleSelectConversation(
+                                                            conversation.conversation_id,
+                                                        )
+                                                    }
+                                                    className="w-full rounded-[1.5rem] px-3 py-3 pr-10 text-left"
+                                                >
+                                                    <p className="line-clamp-1 text-[1.05rem] font-medium text-[var(--chat-sidebar-text)]">
+                                                        {stripMarkdownForPreview(
+                                                            normalizeConversationTitle(
+                                                                conversation.title,
+                                                            ),
+                                                        )}
+                                                    </p>
+                                                    <p className="mt-1 line-clamp-1 text-sm text-[var(--chat-text-muted)]">
+                                                        {stripMarkdownForPreview(
+                                                            conversation.preview,
+                                                        ) || "Chưa có tin nhắn"}
+                                                    </p>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        setPendingDeleteConversation(
+                                                            {
+                                                                id: conversation.conversation_id,
+                                                                title: conversation.title,
+                                                            },
+                                                        );
+                                                    }}
+                                                    className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-[var(--chat-text-muted)] opacity-0 transition hover:text-[var(--chat-text)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--chat-border)]"
+                                                    aria-label="Xóa hội thoại"
+                                                    title="Xóa hội thoại"
+                                                >
+                                                    <Delete className="size-4" />
+                                                </button>
+                                            </div>
                                         );
                                     })
                                 )}
