@@ -1001,10 +1001,10 @@ resource "aws_launch_template" "backend" {
       until "$@"; do
         n=$((n + 1))
         if [ "$n" -ge "$max" ]; then
-          echo "Command failed after ${n} attempts: $*"
+          echo "Command failed after $${n} attempts: $*"
           return 1
         fi
-        echo "Retry ${n}/${max} (sleep ${delay}s): $*"
+        echo "Retry $${n}/$${max} (sleep $${delay}s): $*"
         sleep "$delay"
         delay=$((delay * 2))
       done
