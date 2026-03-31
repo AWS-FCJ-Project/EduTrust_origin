@@ -1010,62 +1010,64 @@ resource "aws_launch_template" "backend" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -euo pipefail
+  # NOTE: Keep the script unindented. Cloud-init can fail to detect a shell script
+  # when the first line (shebang) is preceded by spaces.
+  user_data = base64encode(<<EOF
+#!/bin/bash
+set -euo pipefail
 
-    # Persist user-data logs for debugging (SSM into instance -> read this file).
-    exec > >(tee -a /var/log/user-data.log) 2>&1
+# Persist user-data logs for debugging (SSM into instance -> read this file).
+exec > >(tee -a /var/log/user-data.log) 2>&1
 
-    retry() {
-      local max=8
-      local delay=5
-      local n=0
-      until "$@"; do
-        n=$((n + 1))
-        if [ "$n" -ge "$max" ]; then
-          echo "Command failed after $${n} attempts: $*"
-          return 1
-        fi
-        echo "Retry $${n}/$${max} (sleep $${delay}s): $*"
-        sleep "$delay"
-        delay=$((delay * 2))
-      done
-    }
+retry() {
+  local max=8
+  local delay=5
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    if [ "$n" -ge "$max" ]; then
+      echo "Command failed after $${n} attempts: $*"
+      return 1
+    fi
+    echo "Retry $${n}/$${max} (sleep $${delay}s): $*"
+    sleep "$delay"
+    delay=$((delay * 2))
+  done
+}
 
-    # Environment variables
-    REGION="${var.aws_region}"
-    ECR_URL="${aws_ecr_repository.backend.repository_url}"
-    TARGET_DIR="/home/ubuntu/app"
-    mkdir -p "$TARGET_DIR"
+# Environment variables
+REGION="${var.aws_region}"
+ECR_URL="${aws_ecr_repository.backend.repository_url}"
+TARGET_DIR="/home/ubuntu/app"
+mkdir -p "$TARGET_DIR"
 
-    echo "Ensuring Docker is running..."
-    systemctl enable --now docker || true
-    retry systemctl is-active --quiet docker
+echo "Ensuring Docker is running..."
+systemctl enable --now docker || true
+retry systemctl is-active --quiet docker
 
-    # ECR Login & Image Pull
-    # Use a safer way to extract ECR URL fragments
-    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    retry bash -lc "aws ecr get-login-password --region \"$REGION\" | docker login --username AWS --password-stdin \"$ECR_REGISTRY\""
+# ECR Login & Image Pull
+ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+retry bash -lc "aws ecr get-login-password --region \"$REGION\" | docker login --username AWS --password-stdin \"$ECR_REGISTRY\""
 
-    # Retrieve env from SSM
-    retry bash -lc "aws ssm get-parameter --name \"/edutrust/backend/env\" --with-decryption --region \"$REGION\" --query \"Parameter.Value\" --output text > \"$TARGET_DIR/.env\""
+# Retrieve env from SSM
+retry bash -lc "aws ssm get-parameter --name \"/edutrust/backend/env\" --with-decryption --region \"$REGION\" --query \"Parameter.Value\" --output text > \"$TARGET_DIR/.env\""
 
-    # Run Container
-    IMAGE="$ECR_URL:${var.backend_image_tag}"
-    echo "Pulling image: $IMAGE"
-    retry docker pull "$IMAGE"
-    docker stop aws-fcj-backend || true
-    docker rm aws-fcj-backend || true
-    docker run -d --name aws-fcj-backend \
-      --restart unless-stopped \
-      -p ${var.backend_port}:${var.backend_port} \
-      --env-file $TARGET_DIR/.env \
-      $IMAGE
+# Run Container
+IMAGE="$ECR_URL:${var.backend_image_tag}"
+echo "Pulling image: $IMAGE"
+retry docker pull "$IMAGE"
+docker stop aws-fcj-backend || true
+docker rm aws-fcj-backend || true
+docker run -d --name aws-fcj-backend \
+  --restart unless-stopped \
+  -p ${var.backend_port}:${var.backend_port} \
+  --env-file "$TARGET_DIR/.env" \
+  "$IMAGE"
 
-    # CloudWatch Agent Configuration
-    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
-    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+# CloudWatch Agent Configuration (optional)
+if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then
+  mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+  cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
 {
   "metrics": {
     "namespace": "EduTrust/Container",
@@ -1091,8 +1093,9 @@ resource "aws_launch_template" "backend" {
   }
 }
 CW_EOF
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-  EOF
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+fi
+EOF
   )
 
   tag_specifications {
