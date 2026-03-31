@@ -630,13 +630,10 @@ export default function AIChatSupport() {
     };
 
     const handleCreateConversation = async () => {
-        // Like ChatGPT: "New Chat" just resets to empty state.
-        // The conversation is only created when the user sends the first message.
-        setActiveConversationId(null);
-        setMessages([]);
-        setThinkingByMessageId({});
-        setInput("");
-        setError("");
+        if (isCreatingConversation || isSending) {
+            return;
+        }
+        await createConversation();
     };
 
     const handleSelectConversation = async (conversationId: string) => {
