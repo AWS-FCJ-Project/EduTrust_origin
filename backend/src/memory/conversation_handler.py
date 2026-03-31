@@ -323,6 +323,16 @@ class ConversationHandler:
         )
         return str(doc["_id"]) if doc else None
 
+    def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
+        """Delete a conversation document for a user (hard delete)."""
+        collection = self._require_collection()
+        result = collection.delete_one({"_id": conversation_id, "user_id": user_id})
+
+        if self._conversation_cache:
+            self._conversation_cache.invalidate_conversation(conversation_id)
+
+        return bool(result.deleted_count)
+
     def _update_title_from_first_message(
         self, conversation_id: str, content: str
     ) -> None:
