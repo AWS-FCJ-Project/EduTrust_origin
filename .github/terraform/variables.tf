@@ -162,3 +162,21 @@ variable "camera_detect_bucket_name" {
     error_message = "camera_detect_bucket_name must be a non-empty S3 bucket name."
   }
 }
+
+variable "enable_frontend_waf" {
+  description = "When true, create a WAFv2 Web ACL for the Amplify (CloudFront) frontend and optionally associate it to a distribution."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_cloudfront_distribution_id" {
+  description = "Amplify-managed CloudFront distribution ID to attach the WAF to (optional). If empty, Terraform creates the Web ACL but does not associate it."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_waf_rate_limit" {
+  description = "Rate limit (requests per 5 minutes per IP) for the frontend WAF."
+  type        = number
+  default     = 2000
+}

@@ -428,51 +428,109 @@ jobs:
 
       - name: Start ASG Instance Refresh
         run: |
-          echo "Checking for in-progress instance refresh for ASG: $ASG_NAME"
-          CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --query "InstanceRefreshes[?Status=='InProgress'].InstanceRefreshId" \
-            --output text)
+          set -euo pipefail
 
-          if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
-            echo "A refresh ($CURRENT_REFRESH_ID) is already in progress. Cancelling it..."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME"
+          asg="${ASG_NAME}"
+
+          inprogress_id() {
+            aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --query "InstanceRefreshes[?Status=='InProgress'] | [0].InstanceRefreshId" \
+              --output text 2>/dev/null || true
+          }
+
+          echo "Checking for in-progress instance refresh for ASG: ${asg}"
+          current_refresh_id="$(inprogress_id)"
+          if [ -n "${current_refresh_id}" ] && [ "${current_refresh_id}" != "None" ]; then
+            echo "A refresh (${current_refresh_id}) is already in progress. Cancelling it..."
+            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "${asg}" || true
             echo "Waiting for cancellation to process..."
-            sleep 30
+            for _ in $(seq 1 20); do
+              sleep 15
+              still="$(inprogress_id)"
+              if [ -z "${still}" ] || [ "${still}" = "None" ]; then
+                echo "No in-progress refresh detected."
+                break
+              fi
+              echo "Still in progress: ${still}"
+            done
           fi
 
-          echo "Starting new instance refresh for ASG: $ASG_NAME"
-          # TIMEOUT removed as requested
-          REFRESH_ID=$(aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name "$ASG_NAME" \
+          echo "Starting new instance refresh for ASG: ${asg}"
+          refresh_id="$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "${asg}" \
             --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
             --query "InstanceRefreshId" \
-            --output text)
-          echo "Instance Refresh ID: $REFRESH_ID"
+            --output text)"
+          echo "Instance Refresh ID: ${refresh_id}"
+
+          started_at="$(date +%s)"
+          last_pct=""
+          last_change_at="${started_at}"
+
+          # Avoid infinite loops: if ASG/ALB health is slow, we'll proceed to the rollout verification step,
+          # which checks target group health + /health end-to-end.
+          max_wait_seconds=$((60 * 60))       # 60 minutes
+          stuck_100_seconds=$((10 * 60))      # 10 minutes at 100% but still InProgress
+
           while true; do
-            STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "$ASG_NAME" \
-              --instance-refresh-ids "$REFRESH_ID" \
+            status="$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].Status" \
-              --output text)
-            PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "$ASG_NAME" \
-              --instance-refresh-ids "$REFRESH_ID" \
+              --output text)"
+
+            pct="$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].PercentageComplete" \
-              --output text)
-            echo "Status: $STATUS ($PERCENTAGE% complete)..."
-            case "$STATUS" in
-              Successful) echo "Deployment successful!"; break ;;
+              --output text)"
+
+            now="$(date +%s)"
+            if [ "${pct}" != "${last_pct}" ]; then
+              last_pct="${pct}"
+              last_change_at="${now}"
+            fi
+
+            echo "Refresh status: ${status} (${pct}% complete)"
+
+            case "${status}" in
+              Successful)
+                echo "Instance refresh successful."
+                break
+                ;;
               Failed|Cancelled|TimedOut)
-                echo "Deployment $STATUS!"
-                REASON=$(aws autoscaling describe-instance-refreshes \
-                  --auto-scaling-group-name "$ASG_NAME" \
-                  --instance-refresh-ids "$REFRESH_ID" \
+                echo "Instance refresh ${status}."
+                reason="$(aws autoscaling describe-instance-refreshes \
+                  --auto-scaling-group-name "${asg}" \
+                  --instance-refresh-ids "${refresh_id}" \
                   --query "InstanceRefreshes[0].StatusReason" \
-                  --output text)
-                echo "Reason: $REASON"
-                exit 1 ;;
-              *) sleep 30 ;;
+                  --output text || true)"
+                echo "Reason: ${reason}"
+                exit 1
+                ;;
+              InProgress|Pending)
+                # If AWS reports 100% complete but doesn't flip to Successful, don't spam logs forever.
+                if [ "${pct}" = "100" ] && [ $((now - last_change_at)) -ge ${stuck_100_seconds} ]; then
+                  echo "Refresh is stuck at 100% InProgress for >=10m; proceeding to rollout verification."
+                  break
+                fi
+
+                if [ $((now - started_at)) -ge ${max_wait_seconds} ]; then
+                  echo "Timed out waiting for instance refresh after ${max_wait_seconds}s; proceeding to rollout verification."
+                  aws autoscaling describe-instance-refreshes \
+                    --auto-scaling-group-name "${asg}" \
+                    --instance-refresh-ids "${refresh_id}" \
+                    --output table || true
+                  break
+                fi
+
+                sleep 30
+                ;;
+              *)
+                echo "Unknown refresh status: ${status}. Proceeding to rollout verification."
+                break
+                ;;
             esac
           done
 

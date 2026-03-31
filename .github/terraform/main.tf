@@ -18,6 +18,12 @@ provider "aws" {
   region = var.aws_region
 }
 
+# CloudFront-scope WAF resources must be created via us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 # --- VPC & Network Configuration ---
 
 resource "aws_vpc" "main" {
@@ -345,6 +351,10 @@ resource "aws_iam_instance_profile" "backend" {
 # --- Encryption ---
 data "aws_caller_identity" "current" {}
 
+locals {
+  frontend_distribution_arn = length(trimspace(var.frontend_cloudfront_distribution_id)) > 0 ? "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/${trimspace(var.frontend_cloudfront_distribution_id)}" : ""
+}
+
 data "aws_iam_policy_document" "kms_secrets_policy" {
   # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
   # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
@@ -537,6 +547,143 @@ data "aws_iam_policy_document" "alb_logs" {
 resource "aws_s3_bucket_policy" "alb_logs" {
   bucket = aws_s3_bucket.alb_logs.id
   policy = data.aws_iam_policy_document.alb_logs.json
+}
+
+# --- Frontend protection: WAF for Amplify (CloudFront) ---
+resource "aws_wafv2_web_acl" "frontend" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  name  = "${var.ec2_instance_name}-frontend-waf"
+  scope = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.ec2_instance_name}-frontend-waf"
+    sampled_requests_enabled   = true
+  }
+
+  rule {
+    name     = "AWSManagedRulesCommonRuleSet"
+    priority = 10
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesCommonRuleSet"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 20
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesKnownBadInputsRuleSet"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesAmazonIpReputationList"
+    priority = 30
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesAmazonIpReputationList"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesAmazonIpReputationList"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesAnonymousIpList"
+    priority = 40
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesAnonymousIpList"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesAnonymousIpList"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "RateLimit"
+    priority = 50
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.frontend_waf_rate_limit
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "RateLimit"
+      sampled_requests_enabled   = true
+    }
+  }
+}
+
+resource "aws_wafv2_web_acl_association" "frontend" {
+  count    = var.enable_frontend_waf && length(local.frontend_distribution_arn) > 0 ? 1 : 0
+  provider = aws.us_east_1
+
+  resource_arn = local.frontend_distribution_arn
+  web_acl_arn  = aws_wafv2_web_acl.frontend[0].arn
 }
 
 # --- App storage: Camera cheating-detection logs ---
@@ -842,25 +989,49 @@ resource "aws_launch_template" "backend" {
 
   user_data = base64encode(<<-EOF
     #!/bin/bash
-    set -e
+    set -euo pipefail
+
+    # Persist user-data logs for debugging (SSM into instance -> read this file).
+    exec > >(tee -a /var/log/user-data.log) 2>&1
+
+    retry() {
+      local max=8
+      local delay=5
+      local n=0
+      until "$@"; do
+        n=$((n + 1))
+        if [ "$n" -ge "$max" ]; then
+          echo "Command failed after ${n} attempts: $*"
+          return 1
+        fi
+        echo "Retry ${n}/${max} (sleep ${delay}s): $*"
+        sleep "$delay"
+        delay=$((delay * 2))
+      done
+    }
 
     # Environment variables
     REGION="${var.aws_region}"
     ECR_URL="${aws_ecr_repository.backend.repository_url}"
     TARGET_DIR="/home/ubuntu/app"
-    mkdir -p $TARGET_DIR
+    mkdir -p "$TARGET_DIR"
+
+    echo "Ensuring Docker is running..."
+    systemctl enable --now docker || true
+    retry systemctl is-active --quiet docker
 
     # ECR Login & Image Pull
     # Use a safer way to extract ECR URL fragments
     ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+    retry bash -lc "aws ecr get-login-password --region \"$REGION\" | docker login --username AWS --password-stdin \"$ECR_REGISTRY\""
 
     # Retrieve env from SSM
-    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+    retry bash -lc "aws ssm get-parameter --name \"/edutrust/backend/env\" --with-decryption --region \"$REGION\" --query \"Parameter.Value\" --output text > \"$TARGET_DIR/.env\""
 
     # Run Container
     IMAGE="$ECR_URL:${var.backend_image_tag}"
-    docker pull $IMAGE
+    echo "Pulling image: $IMAGE"
+    retry docker pull "$IMAGE"
     docker stop aws-fcj-backend || true
     docker rm aws-fcj-backend || true
     docker run -d --name aws-fcj-backend \

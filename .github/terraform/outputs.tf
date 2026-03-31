@@ -53,6 +53,11 @@ output "camera_detect_bucket_name" {
   value       = aws_s3_bucket.camera_detect.bucket
 }
 
+output "frontend_waf_web_acl_arn" {
+  description = "WAFv2 Web ACL ARN for the frontend (CloudFront scope), if enabled."
+  value       = var.enable_frontend_waf ? aws_wafv2_web_acl.frontend[0].arn : null
+}
+
 output "secrets_kms_key_arn" {
   description = "The ARN of the KMS key used for encrypting secrets"
   value       = aws_kms_key.secrets.arn
