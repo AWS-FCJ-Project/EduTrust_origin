@@ -33,6 +33,11 @@ output "alb_dns_name" {
   value       = aws_lb.main.dns_name
 }
 
+output "backend_target_group_arn" {
+  description = "Target Group ARN for the backend service (used for deployment health verification)"
+  value       = aws_lb_target_group.backend.arn
+}
+
 output "api_domain_name" {
   description = "Custom API domain name (if enabled)"
   value       = var.enable_api_custom_domain ? var.api_domain_name : null
