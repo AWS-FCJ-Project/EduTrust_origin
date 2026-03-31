@@ -594,6 +594,69 @@ resource "aws_lb_target_group" "backend" {
   }
 }
 
+data "aws_route53_zone" "api_parent" {
+  count        = var.enable_api_custom_domain && length(trimspace(var.route53_zone_id)) == 0 ? 1 : 0
+  name         = trimspace(var.route53_zone_name)
+  private_zone = false
+}
+
+locals {
+  api_zone_id = length(trimspace(var.route53_zone_id)) > 0 ? trimspace(var.route53_zone_id) : try(data.aws_route53_zone.api_parent[0].zone_id, "")
+}
+
+resource "aws_acm_certificate" "api" {
+  count             = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? 1 : 0
+  domain_name       = trimspace(var.api_domain_name)
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "api_cert_validation" {
+  for_each = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? {
+    for dvo in aws_acm_certificate.api[0].domain_validation_options :
+    dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  } : {}
+
+  zone_id = local.api_zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 60
+  records = [each.value.value]
+}
+
+resource "aws_acm_certificate_validation" "api" {
+  count           = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? 1 : 0
+  certificate_arn = aws_acm_certificate.api[0].arn
+
+  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
+}
+
+resource "aws_route53_record" "api_alias" {
+  count   = var.enable_api_custom_domain ? 1 : 0
+  zone_id = local.api_zone_id
+  name    = trimspace(var.api_domain_name)
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+locals {
+  https_certificate_arn = length(trimspace(var.certificate_arn)) > 0 ? trimspace(var.certificate_arn) : (
+    var.enable_api_custom_domain ? aws_acm_certificate_validation.api[0].certificate_arn : ""
+  )
+}
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -614,7 +677,7 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = var.certificate_arn
+  certificate_arn   = local.https_certificate_arn
 
   default_action {
     type             = "forward"

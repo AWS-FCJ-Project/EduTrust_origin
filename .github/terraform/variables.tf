@@ -43,16 +43,6 @@ variable "ecr_tag_immutable" {
   type        = bool
 }
 
-variable "ssh_ingress_cidr_blocks" {
-  description = "Allowed IPv4 CIDR blocks for inbound SSH (port 22)"
-  type        = list(string)
-}
-
-variable "https_ingress_cidr_blocks" {
-  description = "Allowed IPv4 CIDR blocks for inbound HTTPS (port 443) to the origin (e.g., Cloudflare)"
-  type        = list(string)
-}
-
 variable "docdb_egress_cidr_blocks" {
   description = "Allowed IPv4 CIDR blocks for outbound DocumentDB (MongoDB) traffic (port 27017)"
   type        = list(string)
@@ -107,11 +97,44 @@ variable "public_subnet_1c_cidr" {
 }
 
 variable "certificate_arn" {
-  description = "The ARN of the ACM certificate for HTTPS"
+  description = "The ARN of an existing ACM certificate for HTTPS (optional if enable_api_custom_domain=true)"
   type        = string
+  default     = ""
   validation {
-    condition     = length(trimspace(var.certificate_arn)) > 0
-    error_message = "certificate_arn must be set (ACM ARN) to create the HTTPS ALB listener."
+    condition     = length(trimspace(var.certificate_arn)) > 0 || var.enable_api_custom_domain
+    error_message = "Set certificate_arn, or set enable_api_custom_domain=true to have Terraform provision/validate an ACM certificate."
+  }
+}
+
+variable "enable_api_custom_domain" {
+  description = "When true, Terraform provisions ACM + Route53 records for a custom API domain and attaches the cert to the ALB listener."
+  type        = bool
+  default     = false
+}
+
+variable "api_domain_name" {
+  description = "API fully qualified domain name (e.g., api.edu-trust.app)"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_custom_domain || length(trimspace(var.api_domain_name)) > 0
+    error_message = "api_domain_name must be set when enable_api_custom_domain=true."
+  }
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID for the parent domain (preferred)."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_name" {
+  description = "Route53 hosted zone name (alternative to route53_zone_id), e.g. edu-trust.app"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_custom_domain || length(trimspace(var.route53_zone_id)) > 0 || length(trimspace(var.route53_zone_name)) > 0
+    error_message = "Provide route53_zone_id or route53_zone_name when enable_api_custom_domain=true."
   }
 }
 
@@ -134,4 +157,3 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of the Auto Scaling Group"
   type        = number
 }
-
