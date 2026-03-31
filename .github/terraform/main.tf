@@ -543,6 +543,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 resource "aws_s3_bucket" "camera_detect" {
   # checkov:skip=CKV_AWS_18: Access logging is optional for this demo bucket.
   # checkov:skip=CKV_AWS_144: Cross region replication not required.
+  # checkov:skip=CKV_AWS_145: SSE-S3 (AES256) is sufficient for this demo bucket; SSE-KMS can be enabled later if required.
   # checkov:skip=CKV2_AWS_61: Lifecycle config is not required initially.
   # checkov:skip=CKV2_AWS_62: Event notifications are not required initially.
   bucket = var.camera_detect_bucket_name
