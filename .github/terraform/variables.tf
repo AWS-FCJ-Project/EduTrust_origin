@@ -157,3 +157,13 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of the Auto Scaling Group"
   type        = number
 }
+
+variable "camera_detect_bucket_name" {
+  description = "S3 bucket name used to store camera cheating-detection evidence (images/videos). Must be globally unique."
+  type        = string
+  default     = "log-camera-detect-cheating-0293839182"
+  validation {
+    condition     = length(trimspace(var.camera_detect_bucket_name)) > 0
+    error_message = "camera_detect_bucket_name must be a non-empty S3 bucket name."
+  }
+}

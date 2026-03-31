@@ -23,7 +23,7 @@ concurrency:
 env:
   TF_DIR: .github/terraform
   CONTAINER_NAME: aws-fcj-backend
-  TF_STATE_BUCKET: backend-tf-state-bucket
+  TF_STATE_BUCKET: backend-tf-state-bucket-641458060045
   TF_STATE_REGION: ap-southeast-1
 
 jobs:

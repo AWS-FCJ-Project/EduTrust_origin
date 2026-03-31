@@ -7,7 +7,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "backend-tf-state-bucket"
+    bucket       = "backend-tf-state-bucket-641458060045"
     key          = "backend/terraform.tfstate"
     region       = "ap-southeast-1"
     use_lockfile = true
@@ -446,6 +446,26 @@ data "aws_iam_policy_document" "backend_ssm_read" {
   }
 
   statement {
+    effect  = "Allow"
+    actions = ["s3:ListBucket"]
+    resources = [
+      aws_s3_bucket.camera_detect.arn,
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.camera_detect.arn}/*",
+    ]
+  }
+
+  statement {
     # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -517,6 +537,52 @@ data "aws_iam_policy_document" "alb_logs" {
 resource "aws_s3_bucket_policy" "alb_logs" {
   bucket = aws_s3_bucket.alb_logs.id
   policy = data.aws_iam_policy_document.alb_logs.json
+}
+
+# --- App storage: Camera cheating-detection logs ---
+resource "aws_s3_bucket" "camera_detect" {
+  # checkov:skip=CKV_AWS_18: Access logging is optional for this demo bucket.
+  # checkov:skip=CKV_AWS_144: Cross region replication not required.
+  # checkov:skip=CKV2_AWS_61: Lifecycle config is not required initially.
+  # checkov:skip=CKV2_AWS_62: Event notifications are not required initially.
+  bucket = var.camera_detect_bucket_name
+
+  tags = {
+    Name = "${var.ec2_instance_name}-camera-detect"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "camera_detect" {
+  bucket                  = aws_s3_bucket.camera_detect.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+
+  depends_on = [aws_s3_bucket_ownership_controls.camera_detect]
 }
 
 resource "aws_security_group" "alb" {

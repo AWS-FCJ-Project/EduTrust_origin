@@ -48,6 +48,11 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.backend.repository_url
 }
 
+output "camera_detect_bucket_name" {
+  description = "S3 bucket name used to store camera cheating-detection evidence"
+  value       = aws_s3_bucket.camera_detect.bucket
+}
+
 output "secrets_kms_key_arn" {
   description = "The ARN of the KMS key used for encrypting secrets"
   value       = aws_kms_key.secrets.arn
