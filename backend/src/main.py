@@ -70,7 +70,9 @@ logfire.instrument_fastapi(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Wildcard origins are not compatible with credentials in browsers.
+    # Frontend uses Bearer tokens, so we keep credentials off to allow "*".
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
