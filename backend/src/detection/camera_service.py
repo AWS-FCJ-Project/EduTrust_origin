@@ -27,7 +27,9 @@ class CameraService:
             self.detector = ObjectDetector({"detection": self.config})
         except ModuleNotFoundError as e:
             # Keep the service usable for /camera/log even when server-side detection is not installed.
-            print(f"[WARN] Server-side object detection disabled (missing dependency): {e}")
+            print(
+                f"[WARN] Server-side object detection disabled (missing dependency): {e}"
+            )
         except Exception as e:
             print(f"[WARN] Server-side object detection disabled (init failed): {e}")
         self.logger = get_violation_logger()
