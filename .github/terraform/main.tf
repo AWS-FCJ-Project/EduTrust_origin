@@ -984,6 +984,7 @@ data "aws_ami" "base_ami" {
 }
 
 resource "aws_launch_template" "backend" {
+  # checkov:skip=CKV_AWS_341: IMDS hop limit is set to 2 intentionally so Docker containers can reach IMDSv2 and retrieve IAM role credentials. IMDSv2 is required and hop limit kept minimal.
   name_prefix   = "${var.ec2_instance_name}-lt-"
   image_id      = data.aws_ami.base_ami.id
   instance_type = var.ec2_instance_type
