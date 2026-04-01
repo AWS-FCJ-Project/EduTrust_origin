@@ -28,11 +28,6 @@ variable "ec2_instance_name" {
   type        = string
 }
 
-variable "ec2_key_name" {
-  description = "EC2 key pair name for SSH access (optional, for debug/testing)"
-  type        = string
-}
-
 variable "ecr_repository_name" {
   description = "ECR repository name for backend image"
   type        = string
@@ -41,16 +36,6 @@ variable "ecr_repository_name" {
 variable "ecr_tag_immutable" {
   description = "Whether ECR image tags are immutable"
   type        = bool
-}
-
-variable "ssh_ingress_cidr_blocks" {
-  description = "Allowed IPv4 CIDR blocks for inbound SSH (port 22)"
-  type        = list(string)
-}
-
-variable "https_ingress_cidr_blocks" {
-  description = "Allowed IPv4 CIDR blocks for inbound HTTPS (port 443) to the origin (e.g., Cloudflare)"
-  type        = list(string)
 }
 
 variable "docdb_egress_cidr_blocks" {
@@ -107,11 +92,44 @@ variable "public_subnet_1c_cidr" {
 }
 
 variable "certificate_arn" {
-  description = "The ARN of the ACM certificate for HTTPS"
+  description = "The ARN of an existing ACM certificate for HTTPS (optional if enable_api_custom_domain=true)"
   type        = string
+  default     = ""
   validation {
-    condition     = length(trimspace(var.certificate_arn)) > 0
-    error_message = "certificate_arn must be set (ACM ARN) to create the HTTPS ALB listener."
+    condition     = length(trimspace(var.certificate_arn)) > 0 || var.enable_api_custom_domain
+    error_message = "Set certificate_arn, or set enable_api_custom_domain=true to have Terraform provision/validate an ACM certificate."
+  }
+}
+
+variable "enable_api_custom_domain" {
+  description = "When true, Terraform provisions ACM + Route53 records for a custom API domain and attaches the cert to the ALB listener."
+  type        = bool
+  default     = false
+}
+
+variable "api_domain_name" {
+  description = "API fully qualified domain name (e.g., api.edu-trust.app)"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_custom_domain || length(trimspace(var.api_domain_name)) > 0
+    error_message = "api_domain_name must be set when enable_api_custom_domain=true."
+  }
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID for the parent domain (preferred)."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_name" {
+  description = "Route53 hosted zone name (alternative to route53_zone_id), e.g. edu-trust.app"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_custom_domain || length(trimspace(var.route53_zone_id)) > 0 || length(trimspace(var.route53_zone_name)) > 0
+    error_message = "Provide route53_zone_id or route53_zone_name when enable_api_custom_domain=true."
   }
 }
 
@@ -135,3 +153,30 @@ variable "asg_desired_capacity" {
   type        = number
 }
 
+variable "camera_detect_bucket_name" {
+  description = "S3 bucket name used to store camera cheating-detection evidence (images/videos). Must be globally unique."
+  type        = string
+  default     = "log-camera-detect-cheating-0293839182"
+  validation {
+    condition     = length(trimspace(var.camera_detect_bucket_name)) > 0
+    error_message = "camera_detect_bucket_name must be a non-empty S3 bucket name."
+  }
+}
+
+variable "enable_frontend_waf" {
+  description = "When true, create a WAFv2 Web ACL for the Amplify (CloudFront) frontend and optionally associate it to a distribution."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_cloudfront_distribution_id" {
+  description = "Amplify-managed CloudFront distribution ID to attach the WAF to (optional). If empty, Terraform creates the Web ACL but does not associate it."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_waf_rate_limit" {
+  description = "Rate limit (requests per 5 minutes per IP) for the frontend WAF."
+  type        = number
+  default     = 2000
+}
