@@ -4,7 +4,6 @@ import React, {
     useCallback,
     useDeferredValue,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react";
@@ -28,6 +27,9 @@ import {
     Check as OaiCheck,
     Copy,
     Delete,
+    Search as OaiSearch,
+    CloseBold,
+    Chat,
 } from "@openai/apps-sdk-ui/components/Icon";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -136,6 +138,8 @@ type PendingDeleteConversation = {
     title: string;
 };
 
+type SearchConversationResult = ConversationSummary;
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const VIETNAM_TIMEZONE = "Asia/Ho_Chi_Minh";
 const EMPTY_STATE_ROTATION_MS = 10000;
@@ -144,6 +148,27 @@ const DEFAULT_CONVERSATION_TITLE_EN = "New Chat";
 const STREAM_TYPING_INTERVAL_MS = 42;
 const STREAM_TYPING_CHARS_PER_TICK = 2;
 const STREAM_DRAIN_MAX_WAIT_MS = 3000;
+
+const formatConversationTimestamp = (value?: string | null) => {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return new Intl.DateTimeFormat("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: VIETNAM_TIMEZONE,
+    }).format(date);
+};
 
 const stripMarkdownForPreview = (value?: string | null) => {
     const text = (value || "").trim();
@@ -373,6 +398,11 @@ export default function AIChatSupport() {
     const [pendingDeleteConversation, setPendingDeleteConversation] =
         useState<PendingDeleteConversation | null>(null);
     const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+    const [searchResults, setSearchResults] = useState<SearchConversationResult[]>(
+        [],
+    );
+    const [isSearchLoading, setIsSearchLoading] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [search, setSearch] = useState("");
@@ -392,6 +422,7 @@ export default function AIChatSupport() {
         Record<string, ThinkingMessageState>
     >({});
     const scrollRef = useRef<HTMLDivElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
     const { theme, toggleTheme } = useTheme();
 
     const SidebarMenuMobileIcon = ({ size = 20 }: { size?: number }) => (
@@ -420,17 +451,36 @@ export default function AIChatSupport() {
 
     const deferredSearch = useDeferredValue(search);
 
-    const filteredConversations = useMemo(() => {
-        const keyword = deferredSearch.trim().toLowerCase();
-        if (!keyword) {
-            return conversations;
+    const openSearchModal = useCallback(() => {
+        setIsSearchModalOpen(true);
+        setSearch("");
+        setSearchResults(conversations);
+        window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    }, [conversations]);
+
+    const closeSearchModal = useCallback(() => {
+        setIsSearchModalOpen(false);
+        setIsSearchLoading(false);
+        setSearch("");
+        setSearchResults([]);
+    }, []);
+
+    useEffect(() => {
+        if (!isSearchModalOpen) {
+            return;
         }
 
-        return conversations.filter((conversation) => {
-            const haystack = `${conversation.title} ${conversation.preview}`.toLowerCase();
-            return haystack.includes(keyword);
-        });
-    }, [conversations, deferredSearch]);
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") {
+                return;
+            }
+            event.preventDefault();
+            closeSearchModal();
+        };
+
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [closeSearchModal, isSearchModalOpen]);
 
     useEffect(() => {
         if (!scrollRef.current) {
@@ -467,6 +517,46 @@ export default function AIChatSupport() {
 
         bootstrap();
     }, []);
+
+    useEffect(() => {
+        if (isPageLoading || !isSearchModalOpen) {
+            return;
+        }
+
+        const keyword = deferredSearch.trim();
+        if (!keyword) {
+            setIsSearchLoading(false);
+            setSearchResults(conversations);
+            return;
+        }
+
+        const controller = new AbortController();
+        setIsSearchLoading(true);
+
+        const timeoutId = window.setTimeout(async () => {
+            try {
+                const fetchedConversations = await fetchConversations(keyword, {
+                    signal: controller.signal,
+                });
+                setSearchResults(fetchedConversations);
+            } catch (searchError) {
+                if (
+                    searchError instanceof DOMException &&
+                    searchError.name === "AbortError"
+                ) {
+                    return;
+                }
+                console.error(searchError);
+            } finally {
+                setIsSearchLoading(false);
+            }
+        }, 220);
+
+        return () => {
+            controller.abort();
+            window.clearTimeout(timeoutId);
+        };
+    }, [conversations, deferredSearch, isPageLoading, isSearchModalOpen]);
 
     useEffect(() => {
         const shouldRotateWelcome =
@@ -525,12 +615,22 @@ export default function AIChatSupport() {
         return userInfo;
     };
 
-    const fetchConversations = async (): Promise<ConversationSummary[]> => {
+    const fetchConversations = async (
+        query?: string,
+        options?: { signal?: AbortSignal },
+    ): Promise<ConversationSummary[]> => {
         const token = Cookies.get("auth_token");
-        const response = await fetch(`${API_URL}/unified-agent/conversations?limit=50`, {
+        const params = new URLSearchParams({ limit: "50" });
+        const normalizedQuery = (query || "").split(/\s+/).join(" ").trim();
+        if (normalizedQuery) {
+            params.set("query", normalizedQuery);
+        }
+
+        const response = await fetch(`${API_URL}/unified-agent/conversations?${params.toString()}`, {
             headers: {
                 Authorization: `Bearer ${token}`,
             },
+            signal: options?.signal,
         });
 
         if (!response.ok) {
@@ -1151,6 +1251,106 @@ export default function AIChatSupport() {
                     : "xl:grid-cols-[minmax(0,1fr)_72px]"
             } transition-[grid-template-columns] duration-300 ease-in-out`}
         >
+            {isSearchModalOpen ? (
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Tìm hội thoại"
+                    onClick={closeSearchModal}
+                >
+                    <div
+                        className="w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-neutral-900/90 shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3 px-5 py-4">
+                            <OaiSearch className="size-5 text-white/70" />
+                            <input
+                                ref={searchInputRef}
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Tìm hội thoại..."
+                                className="h-10 w-full bg-transparent text-lg text-white placeholder:text-white/40 focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={closeSearchModal}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white"
+                                aria-label="Đóng"
+                                title="Đóng"
+                            >
+                                <CloseBold className="size-4" />
+                            </button>
+                        </div>
+                        <div className="h-px w-full bg-white/10" />
+                        <div className="max-h-[60vh] overflow-y-auto px-4 py-4">
+                            {isSearchLoading ? (
+                                <div className="flex items-center justify-center py-10 text-white/70">
+                                    <Loader2 className="animate-spin" size={22} />
+                                </div>
+                            ) : searchResults.length === 0 ? (
+                                <div className="py-10 text-center text-sm text-white/50">
+                                    Không tìm thấy hội thoại phù hợp.
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {searchResults.map((conversation) => {
+                                        const title = stripMarkdownForPreview(
+                                            normalizeConversationTitle(
+                                                conversation.title,
+                                            ),
+                                        );
+                                        const preview =
+                                            stripMarkdownForPreview(
+                                                conversation.preview,
+                                            ) || "Chưa có tin nhắn";
+                                        const timestamp =
+                                            formatConversationTimestamp(
+                                                conversation.updated_at ||
+                                                    conversation.created_at,
+                                            );
+
+                                        return (
+                                            <button
+                                                key={conversation.conversation_id}
+                                                type="button"
+                                                onClick={async () => {
+                                                    closeSearchModal();
+                                                    await handleSelectConversation(
+                                                        conversation.conversation_id,
+                                                    );
+                                                }}
+                                                className="flex w-full items-start gap-4 rounded-2xl px-4 py-4 text-left text-white/90 transition hover:bg-white/10"
+                                            >
+                                                <div className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70">
+                                                    <Chat className="size-4" />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-start justify-between gap-4">
+                                                        <p className="line-clamp-1 text-base font-semibold">
+                                                            {title ||
+                                                                DEFAULT_CONVERSATION_TITLE_VI}
+                                                        </p>
+                                                        <p className="shrink-0 text-xs text-white/40">
+                                                            {timestamp}
+                                                        </p>
+                                                    </div>
+                                                    <p className="mt-1 line-clamp-1 text-sm text-[var(--chat-accent)]">
+                                                        {preview}
+                                                    </p>
+                                                    <p className="mt-2 text-xs uppercase tracking-wide text-white/35">
+                                                        user
+                                                    </p>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             {pendingDeleteConversation ? (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
@@ -1640,29 +1840,27 @@ export default function AIChatSupport() {
                                 <span className="text-[1.05rem]">Tạo hội thoại mới</span>
                             </button>
 
-                            <label className="mb-6 flex items-center gap-3 px-1 py-2 text-[var(--chat-sidebar-text)]">
+                            <button
+                                type="button"
+                                onClick={openSearchModal}
+                                className="mb-6 flex w-full items-center gap-3 px-1 py-2 text-left text-[var(--chat-sidebar-text)] transition hover:text-[var(--chat-accent)]"
+                                aria-label="Tìm hội thoại"
+                            >
                                 <Search size={24} strokeWidth={2.5} />
-                                <input
-                                    value={search}
-                                    onChange={(event) => setSearch(event.target.value)}
-                                    placeholder="Tìm hội thoại"
-                                    className="w-full bg-transparent text-[1.05rem] placeholder:text-[var(--chat-text-muted)] focus:outline-none"
-                                />
-                            </label>
+                                <span className="text-[1.05rem]">Tìm hội thoại</span>
+                            </button>
 
                             <div className="mb-4 flex items-center justify-between">
                                 <p className="text-sm font-medium text-[var(--chat-text-muted)]">Hội thoại của bạn</p>
                             </div>
 
                             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                                {filteredConversations.length === 0 ? (
+                                {conversations.length === 0 ? (
                                     <div className="px-3 py-4 text-sm leading-7 text-[var(--chat-text-muted)]">
-                                        {conversations.length === 0
-                                            ? "Chưa có lịch sử trò chuyện."
-                                            : "Không tìm thấy hội thoại phù hợp."}
+                                        Chưa có lịch sử trò chuyện.
                                     </div>
                                 ) : (
-                                    filteredConversations.map((conversation) => {
+                                    conversations.map((conversation) => {
                                         const isActive =
                                             conversation.conversation_id === activeConversationId;
 

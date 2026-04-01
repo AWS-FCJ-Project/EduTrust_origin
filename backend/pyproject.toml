@@ -5,8 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "pydantic-ai>=0.0.14",
-    "pydantic-ai-litellm>=0.0.1",
+    "pydantic-ai==1.51.0",
+    "pydantic-ai-litellm==0.2.3",
+    "griffe==1.15.0",
     "logfire[fastapi]>=0.30.0",
     "rich>=13.0.0",
     "duckduckgo-search>=8.1.1",
@@ -24,7 +25,7 @@ dependencies = [
     "motor",
     "passlib[bcrypt]",
     "python-multipart",
-    "pydantic[email]",
+    "pydantic[email]==2.11.10",
     "slowapi",
     "bcrypt==3.2.2",
     "itsdangerous>=2.2.0",
@@ -38,6 +39,7 @@ dependencies = [
     "pandas>=3.0.1",
     "openpyxl>=3.1.5",
     "redis>=5.0.0",
+    "sentence-transformers>=5.0.0",
 ]
 
 [dependency-groups]
