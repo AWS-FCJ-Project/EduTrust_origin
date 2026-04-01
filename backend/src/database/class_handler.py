@@ -161,6 +161,28 @@ class ClassHandler(DBHandler):
             violations.append(v)
         return violations
 
+    def get_available_students(self, class_id: str) -> list[dict]:
+        """Get students not in a class."""
+        if not ObjectId.is_valid(class_id):
+            return []
+
+        cls = self.collection.find_one({"_id": ObjectId(class_id)})
+        if not cls:
+            return []
+
+        students = []
+        for s in self._users_collection().find(
+            {
+                "role": "student",
+                "$or": [
+                    {"class_name": {"$ne": cls["name"]}},
+                    {"grade": {"$ne": cls["grade"]}},
+                ],
+            }
+        ):
+            students.append(self._user_helper(s))
+        return students
+
     def _users_collection(self):
         """Get users collection."""
         return self._database["users"]
