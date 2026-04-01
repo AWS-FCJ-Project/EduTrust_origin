@@ -1198,6 +1198,110 @@ resource "aws_autoscaling_group" "backend" {
   }
 }
 
+resource "aws_sns_topic" "alarms" {
+  count = var.enable_alarms ? 1 : 0
+
+  name = "${var.ec2_instance_name}-alarms"
+}
+
+resource "aws_sns_topic_subscription" "alarm_email" {
+  count = var.enable_alarms && length(trimspace(var.alarm_email)) > 0 ? 1 : 0
+
+  topic_arn = aws_sns_topic.alarms[0].arn
+  protocol  = "email"
+  endpoint  = trimspace(var.alarm_email)
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-alb-5xx"
+  alarm_description   = "ALB 5xx responses exceeded 5 over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HTTPCode_ELB_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 5
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "target_unhealthy_hosts" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-tg-unhealthy-hosts"
+  alarm_description   = "Target group has unhealthy hosts for 2 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = aws_lb_target_group.backend.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "backend_asg_cpu" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-asg-cpu-high"
+  alarm_description   = "Average ASG CPU utilization exceeded 80 percent over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.backend.name
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_target_response_time_p95" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-alb-target-response-time-p95"
+  alarm_description   = "ALB target response time p95 exceeded 1 second over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "TargetResponseTime"
+  namespace           = "AWS/ApplicationELB"
+  period              = 300
+  extended_statistic  = "p95"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = aws_lb_target_group.backend.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
 resource "aws_ecr_repository" "backend" {
   name                 = var.ecr_repository_name
   image_tag_mutability = var.ecr_tag_immutable ? "IMMUTABLE" : "MUTABLE"
