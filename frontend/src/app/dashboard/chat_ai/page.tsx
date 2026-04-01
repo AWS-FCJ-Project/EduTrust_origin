@@ -10,7 +10,6 @@ import React, {
 } from "react";
 import {
     ArrowUp,
-    ClipboardCopy,
     PenLine,
     Loader2,
     Search,
