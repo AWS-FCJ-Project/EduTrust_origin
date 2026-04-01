@@ -5,21 +5,19 @@ import logfire
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentence_transformers import SentenceTransformer
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from src import state
 from src.app_config import app_config
+from src.conversation.conversation_cache import ConversationCache
+from src.conversation.conversation_handler import ConversationHandler
+from src.database.class_handler import ClassHandler
+from src.database.exam_handler import ExamHandler
+from src.database.mongo_client import MongoClient
+from src.database.redis_client import RedisClient
 from src.extensions import limiter
-from src.memory.conversation_cache import ConversationCache
-from src.memory.conversation_handler import ConversationHandler
-from src.memory.redis_client import RedisClient
-from src.routers import (
-    class_routes,
-    conversation_routes,
-    exam_routes,
-    translate_routes,
-    unified_agent_routes,
-)
+from src.routers import (class_routes, conversation_routes, exam_routes,
+                         translate_routes, unified_agent_routes)
 from src.routers.auth import login, password, register
 
 try:
@@ -50,17 +48,42 @@ logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    redis_client = RedisClient()
+    mongo_client = MongoClient(
+        connection_string=app_config.MONGO_URI,
+        username=app_config.MONGO_USERNAME,
+        password=app_config.MONGO_PASSWORD,
+        db_name=app_config.MONGO_DB_NAME,
+    )
+    redis_client = RedisClient(
+        host=app_config.REDIS_CLIENT_HOST,
+        password=app_config.REDIS_CLIENT_PASSWORD,
+        port=app_config.REDIS_PORT,
+        db=app_config.REDIS_DB,
+        tls=app_config.REDIS_TLS,
+        key_prefix=app_config.REDIS_KEY_PREFIX,
+        chat_ttl=app_config.REDIS_CHAT_TTL,
+    )
+    mongo_client.connect_to_database()
     redis_client.connect_to_database()
+
+    # Init handlers
+    app.state.exam_handler = ExamHandler(mongo_client.get_database())
+    app.state.class_handler = ClassHandler(mongo_client.get_database())
+
+    embedding_model = SentenceTransformer(app_config.EMBEDDING_MODEL)
     conversation_cache = ConversationCache(redis_client=redis_client)
 
-    state.conversation_handler = ConversationHandler(
-        conversation_cache=conversation_cache
+    app.state.conversation_handler = ConversationHandler(
+        mongo_client=mongo_client,
+        embedding_model=embedding_model,
+        conversation_cache=conversation_cache,
     )
-    state.conversation_handler.connect_to_database()
+    app.state.conversation_handler.create_index()
     yield
-    if state.conversation_handler:
-        state.conversation_handler.close()
+    if app.state.conversation_handler:
+        app.state.conversation_handler.close()
+    mongo_client.close()
+    redis_client.close()
 
 
 app = FastAPI(
@@ -81,8 +104,6 @@ logfire.instrument_fastapi(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    # Wildcard origins are not compatible with credentials in browsers.
-    # Frontend uses Bearer tokens, so we keep credentials off to allow "*".
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

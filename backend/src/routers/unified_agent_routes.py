@@ -1,35 +1,34 @@
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from src.agent.unified_agent import UnifiedAgent
 from src.auth.dependencies import get_current_user
 from src.llm import LLM
-from src.schemas.unified_agent_schema import (
-    UnifiedAgentRequestSchema,
-    UnifiedAgentResponseSchema,
-)
-from src.state import get_conversation_handler
+from src.schemas.unified_agent_schema import (UnifiedAgentRequestSchema,
+                                              UnifiedAgentResponseSchema)
 from src.streaming import Streaming
 
 router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
 
 
 @lru_cache
-def get_orchestrator() -> UnifiedAgent:
-    return UnifiedAgent(
-        llm=LLM(),
-        conversation_handler=get_conversation_handler(),
-    )
+def get_llm() -> LLM:
+    return LLM()
+
+
+def get_orchestrator(request: Request) -> UnifiedAgent:
+    handler = request.app.state.conversation_handler
+    return UnifiedAgent(llm=get_llm(), conversation_handler=handler)
 
 
 @router.post("/ask", response_model=UnifiedAgentResponseSchema)
 async def ask_agent(
     request: UnifiedAgentRequestSchema,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[object, Depends(get_conversation_handler)],
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ) -> UnifiedAgentResponseSchema:
+    handler = orch.conversation_handler
     user_id = str(current_user["_id"])
     if handler.conversation_exists(request.conversation_id):
         if not handler.conversation_exists(request.conversation_id, user_id=user_id):
@@ -52,9 +51,9 @@ async def ask_agent(
 async def ask_agent_streaming(
     request: UnifiedAgentRequestSchema,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[object, Depends(get_conversation_handler)],
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ):
+    handler = orch.conversation_handler
     user_id = str(current_user["_id"])
     if handler.conversation_exists(request.conversation_id):
         if not handler.conversation_exists(request.conversation_id, user_id=user_id):

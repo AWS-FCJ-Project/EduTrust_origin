@@ -9,7 +9,8 @@ from src.app_config import app_config
 from src.llm import LLM
 from src.logger import log_agent_response, log_user_input
 from src.memory.conversation_handler import ConversationHandler
-from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent
+from src.schemas.unified_agent_schema import (MainAgentDeps,
+                                              MainAgentStreamEvent)
 from src.search_services.unified_search import UnifiedSearch
 from src.streaming import Streaming
 from src.utils import get_current_datetime
@@ -26,6 +27,10 @@ class UnifiedAgent:
         self._llms_config: dict = self._load_llms_config()
 
         self._main_agent: Agent[MainAgentDeps] = self._initialize()
+
+    @property
+    def conversation_handler(self) -> ConversationHandler:
+        return self._conversation_handler
 
     def _load_agents_config(self) -> dict:
         with open(app_config.AGENTS_CONFIG_PATH) as file:
