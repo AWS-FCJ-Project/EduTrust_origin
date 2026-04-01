@@ -32,6 +32,8 @@ dependencies = [
     "langchain-core",
     "langchain-community",
     "kreuzberg>=4.0.0",
+    "numpy>=1.26.0",
+    "opencv-python-headless>=4.9.0.80",
     "pytest>=9.0.2",
     "python-jose[cryptography]>=3.5.0",
     "pyjwt>=2.11.0",

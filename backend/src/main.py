@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 import logfire
@@ -37,6 +38,16 @@ logfire.instrument_pydantic(record="failure")
 logfire.instrument_pydantic_ai()
 
 
+class _UvicornHealthCheckAccessLogFilter(logging.Filter):
+    """Reduce noise from ALB target group health checks in container logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET /health " not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter())
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     redis_client = RedisClient()
@@ -70,7 +81,9 @@ logfire.instrument_fastapi(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Wildcard origins are not compatible with credentials in browsers.
+    # Frontend uses Bearer tokens, so we keep credentials off to allow "*".
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
