@@ -15,12 +15,18 @@ class S3Handler:
 
         self.bucket_name = app_config.S3_BUCKET_NAME
         self.region = app_config.AWS_REGION
-        self.s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=app_config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=app_config.AWS_SECRET_ACCESS_KEY,
-            region_name=self.region,
-        )
+        # Prefer IAM role credentials on AWS (instance profile / task role).
+        # Only use static keys when explicitly provided (e.g., local dev).
+        client_kwargs = {"region_name": self.region}
+        if app_config.AWS_ACCESS_KEY_ID and app_config.AWS_SECRET_ACCESS_KEY:
+            client_kwargs.update(
+                {
+                    "aws_access_key_id": app_config.AWS_ACCESS_KEY_ID,
+                    "aws_secret_access_key": app_config.AWS_SECRET_ACCESS_KEY,
+                }
+            )
+
+        self.s3_client = boto3.client("s3", **client_kwargs)
 
     def upload_file_bytes(self, file_bytes, s3_key, content_type="image/jpeg"):
         """Uploads raw bytes to S3"""
