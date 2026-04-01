@@ -4,7 +4,6 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-from src.detection.object_detection import ObjectDetector
 from src.detection.screenshot_utils import get_violation_capturer
 from src.detection.violation_logger import get_violation_logger
 
@@ -19,11 +18,25 @@ class CameraService:
                 "model_path": os.path.join(os.path.dirname(__file__), "yolo26n.pt"),
             }
         }
-        self.detector = ObjectDetector({"detection": self.config})
+        # Server-side detection (torch/ultralytics) is optional. Client-side can still
+        # POST /camera/log with a screenshot for evidence without these heavy deps.
+        self.detector = None
+        try:
+            from src.detection.object_detection import ObjectDetector
+
+            self.detector = ObjectDetector({"detection": self.config})
+        except ModuleNotFoundError as e:
+            # Keep the service usable for /camera/log even when server-side detection is not installed.
+            print(f"[WARN] Server-side object detection disabled (missing dependency): {e}")
+        except Exception as e:
+            print(f"[WARN] Server-side object detection disabled (init failed): {e}")
         self.logger = get_violation_logger()
         self.capturer = get_violation_capturer()
 
     async def process_frame(self, frame_bytes: bytes):
+        if self.detector is None:
+            return {"error": "Server-side detection is not enabled on this deployment"}
+
         nparr = np.frombuffer(frame_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
