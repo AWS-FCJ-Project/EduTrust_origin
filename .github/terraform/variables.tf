@@ -153,6 +153,18 @@ variable "asg_desired_capacity" {
   type        = number
 }
 
+variable "enable_alarms" {
+  description = "When true, create CloudWatch alarms and an SNS topic for backend infrastructure notifications."
+  type        = bool
+  default     = false
+}
+
+variable "alarm_email" {
+  description = "Optional email address to subscribe to the alarms SNS topic."
+  type        = string
+  default     = ""
+}
+
 variable "camera_detect_bucket_name" {
   description = "S3 bucket name used to store camera cheating-detection evidence (images/videos). Must be globally unique."
   type        = string

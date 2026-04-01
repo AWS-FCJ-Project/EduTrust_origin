@@ -18,6 +18,10 @@ asg_max_size         =
 asg_desired_capacity = 
 backend_image_tag    = 
 
+// CloudWatch alarms + SNS notifications
+enable_alarms        = false
+alarm_email          = ""
+
 // Network config (VPC & Subnets)
 vpc_cidr_block            = 
 private_subnet_1a_cidr    = 

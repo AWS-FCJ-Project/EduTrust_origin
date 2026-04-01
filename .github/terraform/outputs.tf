@@ -38,6 +38,11 @@ output "backend_target_group_arn" {
   value       = aws_lb_target_group.backend.arn
 }
 
+output "alarm_sns_topic_arn" {
+  description = "SNS topic ARN used for CloudWatch alarm notifications, if alarms are enabled."
+  value       = var.enable_alarms ? aws_sns_topic.alarms[0].arn : null
+}
+
 output "api_domain_name" {
   description = "Custom API domain name (if enabled)"
   value       = var.enable_api_custom_domain ? var.api_domain_name : null
