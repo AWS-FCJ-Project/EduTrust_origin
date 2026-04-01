@@ -1005,8 +1005,8 @@ resource "aws_launch_template" "backend" {
   }
 
   metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
+    http_endpoint = "enabled"
+    http_tokens   = "required"
     # Docker containers often need hop_limit >= 2 to reach IMDSv2 and fetch IAM role credentials.
     http_put_response_hop_limit = 2
   }
