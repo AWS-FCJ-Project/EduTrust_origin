@@ -26,6 +26,8 @@ class UserRegister(BaseModel):
     role: UserRole = UserRole.student
     class_name: Optional[str] = None
     grade: Optional[int] = None
+    base_64_url: Optional[str] = None
+    image_url: Optional[str] = None
 
     @field_validator("password")
     def validate_password_complexity(cls, v: str) -> str:
@@ -87,6 +89,7 @@ class UserInDB(BaseModel):
     grade: Optional[int] = None
     subjects: List[str] = []
     password_plain: Optional[str] = None
+    avatar_s3_key: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
 
@@ -105,6 +108,7 @@ class UserInfoResponse(BaseModel):
     grade: Optional[int] = None
     subjects: List[str] = []
     is_verified: bool = False
+    avatar_url: Optional[str] = None
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
@@ -116,9 +120,19 @@ class UserUpdate(BaseModel):
     grade: Optional[int] = None
     subjects: Optional[List[str]] = None
     password: Optional[str] = None
+    base_64_url: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 def user_helper(user) -> dict:
+    from src.utils.s3_utils import get_s3_handler
+
+    avatar_url = None
+    avatar_s3_key = user.get("avatar_s3_key")
+    if avatar_s3_key:
+        s3 = get_s3_handler()
+        avatar_url = s3.get_presign_url(avatar_s3_key, is_avatar=True)
+
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -128,6 +142,7 @@ def user_helper(user) -> dict:
         "grade": user.get("grade"),
         "subjects": user.get("subjects", []),
         "is_verified": bool(user.get("is_verified", False)),
+        "avatar_url": avatar_url,
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),
     }

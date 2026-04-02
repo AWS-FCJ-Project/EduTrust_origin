@@ -69,8 +69,9 @@ async def update_user(
     update_data: UserUpdate,
     current_user: dict = Depends(get_current_user_from_token),
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can update users")
+    current_user_id = str(current_user.get("_id", current_user.get("id", "")))
+    if current_user["role"] != "admin" and current_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this profile")
 
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
@@ -89,6 +90,18 @@ async def update_user(
         from src.auth.auth_utils import hash_password
 
         update_dict["hashed_password"] = hash_password(new_password)
+
+    base_64_url = update_dict.pop("base_64_url", None)
+    image_url = update_dict.pop("image_url", None)
+    if base_64_url or image_url:
+        from src.utils.s3_utils import get_s3_handler
+        s3 = get_s3_handler()
+        try:
+            s3_key = s3.load_avatar(base_64_url, image_url, user_id)
+            if s3_key:
+                update_dict["avatar_s3_key"] = s3_key
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     if not update_dict:
         return {"message": "No changes provided"}

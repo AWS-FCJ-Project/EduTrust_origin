@@ -53,7 +53,19 @@ async def register(request: Request, user: UserRegister):
         "grade": user.grade if user.role == UserRole.student else None,
         "created_at": datetime.now(timezone.utc),
     }
-    await users_collection.insert_one(user_doc)
+    inserted = await users_collection.insert_one(user_doc)
+    
+    # Process avatar if provided
+    if user.base_64_url or user.image_url:
+        from src.utils.s3_utils import get_s3_handler
+        s3 = get_s3_handler()
+        user_id = str(inserted.inserted_id)
+        s3_key = s3.load_avatar(user.base_64_url, user.image_url, user_id)
+        if s3_key:
+            await users_collection.update_one(
+                {"_id": inserted.inserted_id},
+                {"$set": {"avatar_s3_key": s3_key}}
+            )
 
     return {"message": "User registered successfully, you can now login."}
 

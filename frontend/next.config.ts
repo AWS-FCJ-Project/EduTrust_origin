@@ -7,8 +7,17 @@ const normalizeBaseUrl = (value?: string) => {
 };
 
 const nextConfig: NextConfig = {
-  experimental: {
-    reactCompiler: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**.s3.amazonaws.com",
+      },
+      {
+        protocol: "https",
+        hostname: "**.s3.*.amazonaws.com",
+      },
+    ],
   },
   eslint: {
     ignoreDuringBuilds: true,
