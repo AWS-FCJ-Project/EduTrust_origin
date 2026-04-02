@@ -6,6 +6,7 @@ import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from src.auth.auth_utils import hash_password
+from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.database import classes_collection, users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import UserRegister, UserRole
@@ -22,12 +23,25 @@ router = APIRouter()
 )
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserRegister):
+    del request
     existing = await users_collection.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(user.password)
     default_name = user.email.split("@", 1)[0]
+    name = (user.name or "").strip() or default_name
+
+    try:
+        cognito_user = cognito_auth_service.ensure_user(
+            user.email,
+            user.password,
+            name=name,
+            role=(user.role or UserRole.student).value,
+        )
+    except CognitoAuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
     if user.role == UserRole.student and user.class_name and user.grade:
         existing_class = await classes_collection.find_one(
             {"name": user.class_name, "grade": user.grade}
@@ -37,7 +51,7 @@ async def register(request: Request, user: UserRegister):
                 {
                     "name": user.class_name,
                     "grade": user.grade,
-                    "school_year": "2026-2027",  # Default for now
+                    "school_year": "2026-2027",
                     "homeroom_teacher_id": None,
                     "subject_teachers": [],
                     "status": "inactive",
@@ -48,10 +62,11 @@ async def register(request: Request, user: UserRegister):
         "email": user.email,
         "hashed_password": hashed,
         "is_verified": True,
-        "name": (user.name or "").strip() or default_name,
+        "name": name,
         "role": (user.role or UserRole.student).value,
         "class_name": user.class_name if user.role == UserRole.student else None,
         "grade": user.grade if user.role == UserRole.student else None,
+        "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
     }
     inserted = await users_collection.insert_one(user_doc)
@@ -74,6 +89,7 @@ async def register(request: Request, user: UserRegister):
 @router.post("/multi-register", responses={400: {"description": "Bad Request"}})
 @limiter.limit("5/minute")
 async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]):
+    del request
     try:
         content = await file.read()
         filename = getattr(file, "filename", "") or ""
@@ -149,8 +165,8 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 class_name=class_name if role == UserRole.student else None,
                 grade=grade if role == UserRole.student else None,
             )
-        except Exception as e:
-            err_msg = str(e).split("\n")[0]
+        except Exception as error:
+            err_msg = str(error).split("\n")[0]
             errors.append(f"Row {row_number}: Invalid data - {err_msg}")
             continue
 
@@ -178,6 +194,18 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             continue
 
         hashed = hash_password(valid_user.password)
+        try:
+            cognito_user = cognito_auth_service.ensure_user(
+                valid_user.email,
+                valid_user.password,
+                name=valid_user.name,
+                role=valid_user.role.value,
+            )
+        except CognitoAuthError as error:
+            errors.append(
+                f"Row {row_number}: Cognito provisioning failed - {error.message}"
+            )
+            continue
 
         if (
             valid_user.role == UserRole.student
@@ -208,6 +236,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 "role": valid_user.role.value,
                 "class_name": valid_user.class_name,
                 "grade": valid_user.grade,
+                "cognito_sub": cognito_user.get("sub"),
                 "created_at": datetime.now(timezone.utc),
             }
         )

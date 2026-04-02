@@ -3,7 +3,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import numpy as np
 import pymongo
 
 from src.app_config import app_config
@@ -34,10 +33,6 @@ class ConversationHandler:
         self.db_name = db_name or app_config.MONGO_DB_NAME
         self.collection_name = collection_name
         self._conversation_cache = conversation_cache
-        self._title_embedding_model = None
-        self._title_embedding_cache: dict[str, list[float]] = {}
-
-    _DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
     def _log_cache(
         self,
@@ -331,39 +326,6 @@ class ConversationHandler:
         )
         return str(doc["_id"]) if doc else None
 
-    def calculate_cosine_similarity(
-        self, left: list[float], right: list[float]
-    ) -> float:
-        if not left or not right or len(left) != len(right):
-            return 0.0
-
-        left_vec = np.asarray(left, dtype=np.float32)
-        right_vec = np.asarray(right, dtype=np.float32)
-        denom = float(np.linalg.norm(left_vec) * np.linalg.norm(right_vec))
-        if denom <= 0:
-            return 0.0
-        return float(np.dot(left_vec, right_vec) / denom)
-
-    def embed_title(self, title: str) -> list[float]:
-        normalized = " ".join((title or "").split()).strip()
-        if not normalized:
-            return []
-        cached = self._title_embedding_cache.get(normalized)
-        if cached is not None:
-            return cached
-
-        if self._title_embedding_model is None:
-            from sentence_transformers import SentenceTransformer
-
-            model_name = app_config.EMBEDDING_MODEL or self._DEFAULT_EMBEDDING_MODEL
-            # Let sentence-transformers pick the best available hardware (auto).
-            self._title_embedding_model = SentenceTransformer(model_name)
-
-        model = self._title_embedding_model
-        embedding = model.encode(normalized, normalize_embeddings=True).tolist()
-        self._title_embedding_cache[normalized] = embedding
-        return embedding
-
     def search_conversations(
         self,
         *,
@@ -389,25 +351,17 @@ class ConversationHandler:
         if exact_matches:
             return exact_matches[:limit]
 
-        query_embedding = self.embed_title(query_text)
-        if not query_embedding:
-            return []
-
-        scored: list[dict[str, Any]] = []
-        for conversation in conversations:
-            title = str(conversation.get("title") or "")
-            title_embedding = self.embed_title(title)
-            score = self.calculate_cosine_similarity(query_embedding, title_embedding)
-            scored.append({**conversation, "similarity": score})
-
-        scored.sort(
-            key=lambda item: (
-                float(item.get("similarity") or 0.0),
-                str(item.get("updated_at") or ""),
-            ),
-            reverse=True,
+        # Lightweight fallback: substring match on titles (regex, case-insensitive).
+        contains_pattern = re.compile(
+            re.escape(query_text),
+            flags=re.IGNORECASE,
         )
-        return [item for item in scored if (item.get("similarity") or 0) > 0][:limit]
+        contains_matches = [
+            conversation
+            for conversation in conversations
+            if contains_pattern.search(str(conversation.get("title") or "").strip())
+        ]
+        return contains_matches[:limit]
 
     def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
         """Delete a conversation document for a user (hard delete)."""

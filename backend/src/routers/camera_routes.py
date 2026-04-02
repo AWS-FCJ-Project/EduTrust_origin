@@ -1,4 +1,3 @@
-import base64
 import json
 from datetime import datetime, timezone
 
@@ -38,22 +37,6 @@ async def receive_client_log(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-async def _process_binary_frame(message, service):
-    """Processes raw binary frame from websocket."""
-    result = await service.process_frame(message["bytes"])
-    return {
-        "person_count": result.get("person_count", 0),
-        "forbidden_detected": result.get("forbidden_detected", False),
-        "violations": result.get("violations", []),
-        "timestamp": result.get("timestamp", ""),
-        "visualized_frame": (
-            base64.b64encode(result["visualized_frame"]).decode()
-            if result.get("visualized_frame")
-            else None
-        ),
-    }
-
-
 async def _process_json_payload(message, service):
     """Processes JSON payload from websocket."""
     try:
@@ -84,8 +67,12 @@ async def websocket_endpoint(websocket: WebSocket):
             message = await websocket.receive()
 
             if "bytes" in message:
-                response = await _process_binary_frame(message, service)
-                await websocket.send_json(response)
+                # Backend no longer does server-side frame detection.
+                await websocket.send_json(
+                    {
+                        "error": "Binary frame detection is disabled on the backend. Send DETECTION_LOG JSON instead."
+                    }
+                )
 
             elif "text" in message:
                 response = await _process_json_payload(message, service)
