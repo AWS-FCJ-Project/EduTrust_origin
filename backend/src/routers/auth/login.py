@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
-from src.app_config import app_config
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
+from src.app_config import app_config
 from src.auth.auth_utils import hash_password, verify_password
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.auth.dependencies import get_current_user as get_current_user_from_token
@@ -99,8 +99,11 @@ async def get_user_info(user: dict = Depends(get_current_user_from_token)):
     user_data = user_helper(user)
     if user.get("avatar_s3_key"):
         from src.utils.s3_utils import get_s3_handler
+
         s3 = get_s3_handler()
-        user_data["avatar_url"] = s3.get_presigned_url(user["avatar_s3_key"], bucket=app_config.S3_AVATAR_BUCKET_NAME)
+        user_data["avatar_url"] = s3.get_presigned_url(
+            user["avatar_s3_key"], bucket=app_config.S3_AVATAR_BUCKET_NAME
+        )
     return user_data
 
 
@@ -122,7 +125,10 @@ async def update_user(
     current_user: dict = Depends(get_current_user_from_token),
 ):
     if current_user["role"] != "admin" and str(current_user["_id"]) != user_id:
-        raise HTTPException(status_code=403, detail="Only admins or the user themselves can update profile")
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins or the user themselves can update profile",
+        )
 
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
@@ -173,6 +179,7 @@ async def update_user(
     if "base_64_url" in update_dict:
         base_64_url = update_dict.pop("base_64_url")
         from src.utils.s3_utils import get_s3_handler
+
         s3 = get_s3_handler()
         try:
             s3_key = s3.load_avatar(base_64_url, user_id)
@@ -186,9 +193,7 @@ async def update_user(
 
     # Update user in DB
     updated_user = await users_collection.find_one_and_update(
-        {"_id": ObjectId(user_id)},
-        {"$set": update_dict},
-        return_document=True
+        {"_id": ObjectId(user_id)}, {"$set": update_dict}, return_document=True
     )
 
     if not updated_user:
@@ -198,8 +203,11 @@ async def update_user(
     avatar_url = None
     if updated_user.get("avatar_s3_key"):
         from src.utils.s3_utils import get_s3_handler
+
         s3 = get_s3_handler()
-        avatar_url = s3.get_presigned_url(updated_user["avatar_s3_key"], bucket=app_config.S3_AVATAR_BUCKET_NAME)
+        avatar_url = s3.get_presigned_url(
+            updated_user["avatar_s3_key"], bucket=app_config.S3_AVATAR_BUCKET_NAME
+        )
 
     response_user = user_helper(updated_user)
     response_user["avatar_url"] = avatar_url

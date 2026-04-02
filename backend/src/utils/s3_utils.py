@@ -93,10 +93,12 @@ class S3Handler:
     def get_s3_key(self, object_name):
         return f"avatars/{object_name}"
 
-    def upload_img_s3(self, file_bytes, s3_key, content_type="image/jpeg", is_avatar=False):
+    def upload_img_s3(
+        self, file_bytes, s3_key, content_type="image/jpeg", is_avatar=False
+    ):
         bucket = app_config.S3_AVATAR_BUCKET_NAME if is_avatar else self.bucket_name
         if not bucket:
-            bucket = self.bucket_name # Fallback
+            bucket = self.bucket_name  # Fallback
         try:
             self.s3_client.put_object(
                 Bucket=bucket,
@@ -129,7 +131,9 @@ class S3Handler:
                     content_type = match.group(1)
                     encoded = match.group(2)
                 else:
-                    encoded = base_64_url.split(",")[1] if "," in base_64_url else base_64_url
+                    encoded = (
+                        base_64_url.split(",")[1] if "," in base_64_url else base_64_url
+                    )
             else:
                 encoded = base_64_url
             file_bytes = base64.b64decode(encoded)
@@ -140,7 +144,9 @@ class S3Handler:
         if file_bytes:
             ext = "png" if "png" in content_type else "jpg"
             s3_key = self.get_s3_key(f"{user_id}_{uuid4().hex}.{ext}")
-            success = self.upload_img_s3(file_bytes, s3_key, content_type, is_avatar=True)
+            success = self.upload_img_s3(
+                file_bytes, s3_key, content_type, is_avatar=True
+            )
             if success:
                 return s3_key
             else:
