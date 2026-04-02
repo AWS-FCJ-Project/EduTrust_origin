@@ -362,6 +362,10 @@ resource "aws_cognito_user_pool" "backend" {
   auto_verified_attributes = ["email"]
   mfa_configuration        = "OFF"
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   admin_create_user_config {
     allow_admin_create_user_only = true
   }
@@ -390,6 +394,10 @@ resource "aws_cognito_user_pool" "backend" {
 resource "aws_cognito_user_pool_client" "backend" {
   name         = "${var.ec2_instance_name}-app-client"
   user_pool_id = aws_cognito_user_pool.backend.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   generate_secret               = false
   prevent_user_existence_errors = "ENABLED"
@@ -1279,14 +1287,14 @@ resource "aws_autoscaling_group" "backend" {
   # Use ALB Target Group health checks to decide instance health (better signal than EC2 status checks).
   health_check_type = "ELB"
   # Give instances time to pull the container image + start the app before ASG considers them unhealthy.
-  health_check_grace_period = 600
+  health_check_grace_period = 240
   wait_for_capacity_timeout = "0"
 
   instance_refresh {
     strategy = "Rolling"
     preferences {
       min_healthy_percentage = 50
-      instance_warmup        = 120
+      instance_warmup        = 90
     }
   }
 
