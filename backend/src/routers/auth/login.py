@@ -1,13 +1,21 @@
 from datetime import datetime, timezone
+from typing import List
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from src.auth.auth_utils import verify_password
 from src.auth.dependencies import get_current_user as get_current_user_from_token
 from src.auth.jwt_handler import create_access_token
 from src.database import classes_collection, users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import (
+    AdminResponse,
+    LoginResponse,
+    MessageResponse,
+    StudentResponse,
+    TeacherClassAssignment,
+    TeacherResponse,
+    UpdateUserResponse,
     UserInfoResponse,
     UserLogin,
     UserRole,
@@ -20,13 +28,15 @@ router = APIRouter()
 
 @router.post(
     "/login",
+    response_model=LoginResponse,
     responses={
         401: {"description": "Invalid credentials"},
         429: {"description": "Too Many Requests"},
     },
 )
 @limiter.limit("5/minute")
-async def login(request: Request, user: UserLogin):
+async def login(request: Request, user: UserLogin) -> LoginResponse:
+    """Authenticate user and return access token."""
     db_user = await users_collection.find_one({"email": user.email})
     if not db_user or not verify_password(user.password, db_user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -37,7 +47,9 @@ async def login(request: Request, user: UserLogin):
 
     access_token = create_access_token(data={"sub": user.email})
 
-    return {"access_token": access_token, "token_type": "bearer", "email": user.email}
+    return LoginResponse(
+        access_token=access_token, token_type="bearer", email=user.email
+    )
 
 
 @router.get(
@@ -48,27 +60,34 @@ async def login(request: Request, user: UserLogin):
         404: {"description": "User not found"},
     },
 )
-async def get_user_info(user: dict = Depends(get_current_user_from_token)):
-    return user_helper(user)
+async def get_user_info(
+    user: dict = Depends(get_current_user_from_token),
+) -> UserInfoResponse:
+    """Get current user info."""
+    return UserInfoResponse(**user_helper(user))
 
 
-@router.get("/users/students", response_model=list[dict])
-async def list_students(user: dict = Depends(get_current_user_from_token)):
+@router.get("/users/students", response_model=List[StudentResponse])
+async def list_students(
+    user: dict = Depends(get_current_user_from_token),
+) -> List[StudentResponse]:
+    """List all students (admin/teacher only)."""
     if user["role"] not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     students = []
     async for s in users_collection.find({"role": UserRole.student.value}):
-        students.append(user_helper(s))
+        students.append(StudentResponse(**user_helper(s)))
     return students
 
 
-@router.patch("/users/{user_id}")
+@router.patch("/users/{user_id}", response_model=UpdateUserResponse)
 async def update_user(
     user_id: str,
     update_data: UserUpdate,
     current_user: dict = Depends(get_current_user_from_token),
-):
+) -> UpdateUserResponse:
+    """Update user info (admin only)."""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update users")
 
@@ -91,7 +110,7 @@ async def update_user(
         update_dict["hashed_password"] = hash_password(new_password)
 
     if not update_dict:
-        return {"message": "No changes provided"}
+        return UpdateUserResponse(message="No changes provided")
 
     if "class_name" in update_dict and "grade" in update_dict:
         existing_class = await classes_collection.find_one(
@@ -116,13 +135,14 @@ async def update_user(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"message": "User updated successfully"}
+    return UpdateUserResponse(message="User updated successfully")
 
 
-@router.delete("/users/{user_id}")
+@router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(
     user_id: str, current_user: dict = Depends(get_current_user_from_token)
-):
+) -> MessageResponse:
+    """Delete user (admin only)."""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete users")
 
@@ -143,17 +163,20 @@ async def delete_user(
         )
 
     await users_collection.delete_one({"_id": ObjectId(user_id)})
-    return {"message": "User deleted successfully"}
+    return MessageResponse(message="User deleted successfully")
 
 
-@router.post("/logout")
-async def logout():
-    """Logout user (client-side handles token removal)"""
-    return {"message": "Client should remove the token to logout"}
+@router.post("/logout", response_model=MessageResponse)
+async def logout() -> MessageResponse:
+    """Logout user (client-side handles token removal)."""
+    return MessageResponse(message="Client should remove the token to logout")
 
 
-@router.get("/users/teachers", response_model=list[dict])
-async def list_teachers(current_user: dict = Depends(get_current_user_from_token)):
+@router.get("/users/teachers", response_model=List[TeacherResponse])
+async def list_teachers(
+    current_user: dict = Depends(get_current_user_from_token),
+) -> List[TeacherResponse]:
+    """List all teachers with their assigned classes."""
     if current_user.get("role") not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -164,45 +187,50 @@ async def list_teachers(current_user: dict = Depends(get_current_user_from_token
 
         async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
             assigned_classes.append(
-                {"id": str(c["_id"]), "name": c["name"], "role": "Giáo viên Chủ nhiệm"}
+                TeacherClassAssignment(
+                    id=str(c["_id"]), name=c["name"], role="Homeroom Teacher"
+                )
             )
 
         async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
             for st in c.get("subject_teachers", []):
                 if st["teacher_id"] == t_id:
                     assigned_classes.append(
-                        {
-                            "id": str(c["_id"]),
-                            "name": c["name"],
-                            "role": f"Giáo viên Bộ môn ({st.get('subject', 'N/A')})",
-                        }
+                        TeacherClassAssignment(
+                            id=str(c["_id"]),
+                            name=c["name"],
+                            role=f"Subject Teacher ({st.get('subject', 'N/A')})",
+                        )
                     )
 
         teachers.append(
-            {
-                "id": t_id,
-                "name": t.get("name"),
-                "email": t["email"],
-                "subjects": t.get("subjects", []),
-                "assigned_classes": assigned_classes,
-                "is_assigned": len(assigned_classes) > 0,
-            }
+            TeacherResponse(
+                id=t_id,
+                name=t.get("name"),
+                email=t["email"],
+                subjects=t.get("subjects", []),
+                assigned_classes=assigned_classes,
+                is_assigned=len(assigned_classes) > 0,
+            )
         )
     return teachers
 
 
-@router.get("/users/admins", response_model=list[dict])
-async def list_admins(current_user: dict = Depends(get_current_user_from_token)):
+@router.get("/users/admins", response_model=List[AdminResponse])
+async def list_admins(
+    current_user: dict = Depends(get_current_user_from_token),
+) -> List[AdminResponse]:
+    """List all admins (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Permission denied")
 
     admins = []
     async for a in users_collection.find({"role": "admin"}):
         admins.append(
-            {
-                "id": str(a["_id"]),
-                "name": a.get("name"),
-                "email": a["email"],
-            }
+            AdminResponse(
+                id=str(a["_id"]),
+                name=a.get("name"),
+                email=a["email"],
+            )
         )
     return admins

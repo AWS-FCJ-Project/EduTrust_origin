@@ -5,6 +5,28 @@ from typing import Optional
 from bson import ObjectId
 from pymongo.database import Database
 from src.database.db_handler import DBHandler
+from src.schemas.exam_schemas import ExamStatus
+
+
+def exam_helper(exam_document: dict, include_secret: bool = False) -> dict:
+    """Format exam document for API response."""
+    result = {
+        "id": str(exam_document["_id"]),
+        "title": exam_document["title"],
+        "description": exam_document.get("description"),
+        "subject": exam_document["subject"],
+        "exam_type": exam_document.get("exam_type", "15-minute quiz"),
+        "teacher_id": exam_document["teacher_id"],
+        "class_id": exam_document["class_id"],
+        "start_time": exam_document["start_time"],
+        "end_time": exam_document["end_time"],
+        "duration": exam_document.get("duration", 60),
+        "has_secret_key": bool(exam_document.get("secret_key")),
+        "questions": exam_document.get("questions", []),
+    }
+    if include_secret:
+        result["secret_key"] = exam_document.get("secret_key")
+    return result
 
 
 class ExamHandler(DBHandler):
@@ -14,9 +36,9 @@ class ExamHandler(DBHandler):
         super().__init__(database, "exams")
         self._database = database
 
-    # ==================== Permission Methods ====================
-
-    def can_create_exam(self, role: str, user_id: str, class_id: str) -> tuple[bool, Optional[dict]]:
+    def can_create_exam(
+        self, role: str, user_id: str, class_id: str
+    ) -> tuple[bool, Optional[dict]]:
         """Check if user can create exam in class. Returns (allowed, class_info)."""
         if role == "admin":
             cls = self._get_classes_collection().find_one({"_id": ObjectId(class_id)})
@@ -35,7 +57,9 @@ class ExamHandler(DBHandler):
         )
         return bool(is_homeroom or is_subject), cls
 
-    def can_access_exam(self, role: str, user_id: str, exam_id: str) -> tuple[bool, Optional[dict]]:
+    def can_access_exam(
+        self, role: str, user_id: str, exam_id: str
+    ) -> tuple[bool, Optional[dict]]:
         """Check if user can access exam. Returns (allowed, exam)."""
         if role == "admin":
             exam = self.get_exam_by_id(exam_id)
@@ -67,7 +91,9 @@ class ExamHandler(DBHandler):
 
         return False, exam
 
-    def can_modify_exam(self, role: str, user_id: str, exam_id: str) -> tuple[bool, Optional[dict]]:
+    def can_modify_exam(
+        self, role: str, user_id: str, exam_id: str
+    ) -> tuple[bool, Optional[dict]]:
         """Check if user can modify/delete exam. Returns (allowed, exam)."""
         if role == "admin":
             exam = self.get_exam_by_id(exam_id)
@@ -93,8 +119,6 @@ class ExamHandler(DBHandler):
             }
         )
         return bool(cls), exam
-
-    # ==================== CRUD Methods ====================
 
     def create_exam(self, exam_data: dict, teacher_id: str) -> dict:
         """Create a new exam."""
@@ -222,7 +246,11 @@ class ExamHandler(DBHandler):
         return results
 
     def submit_exam(
-        self, exam_id: str, student_id: str, answers: dict, status_value: str = "completed"
+        self,
+        exam_id: str,
+        student_id: str,
+        answers: dict,
+        status_value: ExamStatus = ExamStatus.completed,
     ) -> dict:
         """Submit an exam and calculate score."""
         exam = self.get_exam_by_id(exam_id)
@@ -248,16 +276,25 @@ class ExamHandler(DBHandler):
             "score": score,
             "correct_count": correct_count,
             "total_questions": total_questions,
-            "status": status_value,
+            "status": status_value.value,
         }
         self._get_submissions_collection().insert_one(submission)
 
-        if status_value == "completed":
+        if status_value == ExamStatus.completed:
             self._get_violations_collection().delete_many(
                 {"student_id": student_id, "exam_id": exam_id}
             )
 
-        return {"message": "Exam submitted successfully"}
+        return {
+            "exam_id": exam_id,
+            "student_id": student_id,
+            "submitted_at": submission["submitted_at"],
+            "score": score,
+            "correct_count": correct_count,
+            "total_questions": total_questions,
+            "status": status_value.value,
+            "violation_count": 0,
+        }
 
     def get_exam_submissions(self, exam_id: str) -> list[dict]:
         """Get all submissions for an exam with student info."""
@@ -285,7 +322,9 @@ class ExamHandler(DBHandler):
             results.append(
                 {
                     "student_id": student_id,
-                    "student_name": student.get("name") if student else "Unknown student",
+                    "student_name": (
+                        student.get("name") if student else "Unknown student"
+                    ),
                     "score": submission.get("score", 0),
                     "violation_count": submission.get("violation_count", 0),
                     "status": submission.get("status"),
@@ -333,9 +372,7 @@ class ExamHandler(DBHandler):
                     }
                 },
             ]
-            stats_list = list(
-                self._get_submissions_collection().aggregate(pipeline)
-            )
+            stats_list = list(self._get_submissions_collection().aggregate(pipeline))
             stats = (
                 stats_list[0]
                 if stats_list
@@ -368,6 +405,7 @@ class ExamHandler(DBHandler):
         """Get all violations, optionally filtered by teacher's classes."""
         query = {}
         if teacher_id:
+            # Filter by classes where teacher is homeroom or subject teacher
             teacher_classes = []
             for cls in self._get_classes_collection().find(
                 {
@@ -381,28 +419,36 @@ class ExamHandler(DBHandler):
             query = {"class_id": {"$in": teacher_classes}}
 
         violations = []
-        for violation in self._get_violations_collection().find(query).sort(
-            "violation_time", -1
+        for violation in (
+            self._get_violations_collection().find(query).sort("violation_time", -1)
         ):
             student = self._get_users_collection().find_one(
                 {"_id": ObjectId(str(violation["student_id"]))}
             )
 
+            # Resolve unknown class_id by looking up student's current class
             if violation.get("class_id") == "unknown" and student:
                 current_class_id = student.get("class_id")
                 if not current_class_id:
+                    # Fallback: find class by name and grade
                     class_info = self._get_classes_collection().find_one(
-                        {"name": student.get("class_name"), "grade": student.get("grade")}
+                        {
+                            "name": student.get("class_name"),
+                            "grade": student.get("grade"),
+                        }
                     )
                     if class_info:
                         current_class_id = str(class_info["_id"])
 
                 if current_class_id:
+                    # Update violation record with resolved class_id
                     self._get_violations_collection().update_one(
-                        {"_id": violation["_id"]}, {"$set": {"class_id": str(current_class_id)}}
+                        {"_id": violation["_id"]},
+                        {"$set": {"class_id": str(current_class_id)}},
                     )
                     violation["class_id"] = str(current_class_id)
 
+            # Enrich violation with student info
             if student:
                 violation["student_name"] = student.get("name", "Unknown student")
                 grade = str(student.get("grade", ""))
@@ -412,6 +458,7 @@ class ExamHandler(DBHandler):
                 violation["student_name"] = "Unknown student"
                 violation["student_class"] = "N/A"
 
+            # Resolve exam info from exam_id
             exam = None
             raw_exam_id = str(violation.get("exam_id", "")).strip()
             try:
@@ -423,14 +470,17 @@ class ExamHandler(DBHandler):
                 violation["exam_title"] = exam.get("title", "Unknown Exam")
                 violation["exam_start"] = exam.get("start_time")
                 violation["exam_end"] = exam.get("end_time")
+                # Fill missing subject from exam
                 if violation.get("subject") == "N/A":
                     violation["subject"] = exam.get("subject", "N/A")
                     self._get_violations_collection().update_one(
-                        {"_id": violation["_id"]}, {"$set": {"subject": violation["subject"]}}
+                        {"_id": violation["_id"]},
+                        {"$set": {"subject": violation["subject"]}},
                     )
             else:
                 violation["exam_title"] = "Unknown Exam"
 
+            # Convert ObjectId to string for response
             violation["id"] = str(violation["_id"])
             del violation["_id"]
             violations.append(violation)

@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from src.routers.exam_routes import exam_helper
-from src.schemas.school_schemas import ExamCreate, ExamUpdate
+from src.database.exam_handler import exam_helper
+from src.schemas.exam_schemas import ExamCreate, ExamType, ExamUpdate
 
 
 def test_exam_create_defaults_exam_type():
@@ -18,9 +18,9 @@ def test_exam_create_defaults_exam_type():
 
 
 def test_exam_update_accepts_exam_type():
-    payload = ExamUpdate(exam_type="Final exam")
+    payload = ExamUpdate(exam_type=ExamType.final_exam)
 
-    assert payload.exam_type == "Final exam"
+    assert payload.exam_type == ExamType.final_exam
 
 
 def test_exam_helper_returns_exam_type_from_exam_document():

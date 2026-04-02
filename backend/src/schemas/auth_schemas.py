@@ -118,7 +118,66 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class StudentResponse(BaseModel):
+    """Schema for student list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+    role: str
+    class_name: Optional[str] = None
+    grade: Optional[int] = None
+
+
+class TeacherClassAssignment(BaseModel):
+    """Schema for teacher class assignment."""
+
+    id: str
+    name: str
+    role: str
+
+
+class TeacherResponse(BaseModel):
+    """Schema for teacher list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+    subjects: List[str] = []
+    assigned_classes: List[TeacherClassAssignment] = []
+    is_assigned: bool = False
+
+
+class AdminResponse(BaseModel):
+    """Schema for admin list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+
+
+class LoginResponse(BaseModel):
+    """Schema for login response."""
+
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+
+    message: str
+
+
+class UpdateUserResponse(BaseModel):
+    """Response for user update."""
+
+    message: str = "User updated successfully"
+
+
 def user_helper(user) -> dict:
+    """Convert user document to user info dict."""
     return {
         "id": str(user["_id"]),
         "email": user["email"],
