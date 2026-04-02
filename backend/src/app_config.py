@@ -19,6 +19,7 @@ class AppConfig(BaseSettings):
     AGENT_MODEL: Optional[str] = None
     TRANSLATE_MODEL: Optional[str] = None
     LOGFIRE_TOKEN: Optional[str] = None
+    EMBEDDING_MODEL: Optional[str] = None
 
     # Database Settings
     MONGO_URI: Optional[str] = None

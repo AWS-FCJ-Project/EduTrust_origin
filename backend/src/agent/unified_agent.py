@@ -6,11 +6,10 @@ import yaml
 from pydantic_ai import Agent
 from src.agent.tools import AgentTools
 from src.app_config import app_config
+from src.conversation.conversation_handler import ConversationHandler
 from src.llm import LLM
 from src.logger import log_agent_response, log_user_input
-from src.memory.conversation_handler import ConversationHandler
-from src.schemas.unified_agent_schema import (MainAgentDeps,
-                                              MainAgentStreamEvent)
+from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent
 from src.search_services.unified_search import UnifiedSearch
 from src.streaming import Streaming
 from src.utils import get_current_datetime
