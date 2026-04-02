@@ -14,12 +14,16 @@ from pydantic import (
 
 
 class UserRole(str, Enum):
+    """Enum for user roles."""
+
     student = "student"
     teacher = "teacher"
     admin = "admin"
 
 
 class UserRegister(BaseModel):
+    """Schema for user registration."""
+
     email: EmailStr
     password: str = Field(..., min_length=8)
     name: Optional[str] = None
@@ -49,15 +53,21 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
+    """Schema for user login."""
+
     email: EmailStr
     password: str
 
 
 class ForgotPassword(BaseModel):
+    """Schema for forgot password request."""
+
     email: EmailStr
 
 
 class ResetPassword(BaseModel):
+    """Schema for password reset."""
+
     email: EmailStr
     otp: str
     new_password: str = Field(..., min_length=8)
@@ -77,6 +87,8 @@ class ResetPassword(BaseModel):
 
 
 class UserInDB(BaseModel):
+    """Schema for user stored in database."""
+
     id: Optional[str] = Field(None, alias="_id")
     email: EmailStr
     hashed_password: str
@@ -97,6 +109,8 @@ class UserInDB(BaseModel):
 
 
 class UserInfoResponse(BaseModel):
+    """Schema for user info response."""
+
     id: str
     email: EmailStr
     name: Optional[str] = None
@@ -110,6 +124,8 @@ class UserInfoResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """Schema for updating user info."""
+
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     class_name: Optional[str] = None
