@@ -11,7 +11,6 @@ def mock_dependencies():
 
 
 from src.main import app
-from src.auth.jwt_handler import create_access_token
 
 client = TestClient(app)
 
@@ -34,13 +33,19 @@ def test_me_requires_bearer_token():
 
 
 def test_me_returns_user_profile():
-    token = create_access_token(data={"sub": "me@example.com"})
-
     with patch(
-        "src.routers.auth.login.users_collection.find_one", new_callable=AsyncMock
+        "src.auth.dependencies.cognito_auth_service.verify_token",
+        return_value={
+            "email": "me@example.com",
+            "sub": "cognito-sub-1",
+            "token_use": "id",
+        },
+    ), patch(
+        "src.auth.dependencies.users_collection.find_one", new_callable=AsyncMock
     ) as mock_find_one:
         mock_find_one.return_value = {
             "_id": "user-id-1",
+            "cognito_sub": "cognito-sub-1",
             "email": "me@example.com",
             "is_verified": True,
             "name": "Me",
@@ -48,7 +53,7 @@ def test_me_returns_user_profile():
         }
 
         response = client.get(
-            "/user-info", headers={"Authorization": f"Bearer {token}"}
+            "/user-info", headers={"Authorization": "Bearer cognito-id-token"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -59,14 +64,19 @@ def test_me_returns_user_profile():
 
 
 def test_me_404_when_user_missing():
-    token = create_access_token(data={"sub": "missing@example.com"})
-
     with patch(
-        "src.routers.auth.login.users_collection.find_one", new_callable=AsyncMock
+        "src.auth.dependencies.cognito_auth_service.verify_token",
+        return_value={
+            "email": "missing@example.com",
+            "sub": "cognito-sub-2",
+            "token_use": "id",
+        },
+    ), patch(
+        "src.auth.dependencies.users_collection.find_one", new_callable=AsyncMock
     ) as mock_find_one:
         mock_find_one.return_value = None
 
         response = client.get(
-            "/user-info", headers={"Authorization": f"Bearer {token}"}
+            "/user-info", headers={"Authorization": "Bearer missing-id-token"}
         )
         assert response.status_code == 404

@@ -38,6 +38,16 @@ output "backend_target_group_arn" {
   value       = aws_lb_target_group.backend.arn
 }
 
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID for backend authentication."
+  value       = aws_cognito_user_pool.backend.id
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito User Pool App Client ID for backend authentication."
+  value       = aws_cognito_user_pool_client.backend.id
+}
+
 output "alarm_sns_topic_arn" {
   description = "SNS topic ARN used for CloudWatch alarm notifications, if alarms are enabled."
   value       = var.enable_alarms ? aws_sns_topic.alarms[0].arn : null

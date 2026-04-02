@@ -355,6 +355,72 @@ locals {
   frontend_distribution_arn = length(trimspace(var.frontend_cloudfront_distribution_id)) > 0 ? "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/${trimspace(var.frontend_cloudfront_distribution_id)}" : ""
 }
 
+resource "aws_cognito_user_pool" "backend" {
+  name = "${var.ec2_instance_name}-user-pool"
+
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+  mfa_configuration        = "OFF"
+
+  admin_create_user_config {
+    allow_admin_create_user_only = true
+  }
+
+  password_policy {
+    minimum_length                   = 8
+    require_lowercase                = true
+    require_numbers                  = true
+    require_symbols                  = true
+    require_uppercase                = true
+    temporary_password_validity_days = 7
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+  }
+}
+
+resource "aws_cognito_user_pool_client" "backend" {
+  name         = "${var.ec2_instance_name}-app-client"
+  user_pool_id = aws_cognito_user_pool.backend.id
+
+  generate_secret               = false
+  prevent_user_existence_errors = "ENABLED"
+  enable_token_revocation       = true
+  explicit_auth_flows           = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_PASSWORD_AUTH"]
+  access_token_validity         = 24
+  id_token_validity             = 24
+  refresh_token_validity        = 30
+
+  token_validity_units {
+    access_token  = "hours"
+    id_token      = "hours"
+    refresh_token = "days"
+  }
+}
+
+resource "aws_cognito_user_group" "admin" {
+  name         = "admin"
+  user_pool_id = aws_cognito_user_pool.backend.id
+}
+
+resource "aws_cognito_user_group" "teacher" {
+  name         = "teacher"
+  user_pool_id = aws_cognito_user_pool.backend.id
+}
+
+resource "aws_cognito_user_group" "student" {
+  name         = "student"
+  user_pool_id = aws_cognito_user_pool.backend.id
+}
+
 data "aws_iam_policy_document" "kms_secrets_policy" {
   # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
   # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
@@ -497,6 +563,39 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
   name   = "${var.ec2_instance_name}-ssm-read-policy"
   role   = aws_iam_role.backend.id
   policy = data.aws_iam_policy_document.backend_ssm_read.json
+}
+
+data "aws_iam_policy_document" "backend_cognito_access" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "cognito-idp:AdminAddUserToGroup",
+      "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDeleteUser",
+      "cognito-idp:AdminGetUser",
+      "cognito-idp:AdminRemoveUserFromGroup",
+      "cognito-idp:AdminSetUserPassword",
+      "cognito-idp:AdminUpdateUserAttributes",
+    ]
+    resources = [aws_cognito_user_pool.backend.arn]
+  }
+
+  statement {
+    # checkov:skip=CKV_AWS_355:Cognito public auth APIs do not support resource-level permissions for every action and require "*".
+    effect = "Allow"
+    actions = [
+      "cognito-idp:ConfirmForgotPassword",
+      "cognito-idp:ForgotPassword",
+      "cognito-idp:InitiateAuth",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "backend_cognito_access" {
+  name   = "${var.ec2_instance_name}-cognito-access-policy"
+  role   = aws_iam_role.backend.id
+  policy = data.aws_iam_policy_document.backend_cognito_access.json
 }
 
 # --- Load Balancer Configuration ---
