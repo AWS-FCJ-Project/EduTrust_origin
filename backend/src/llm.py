@@ -3,6 +3,7 @@ from typing import Any
 import yaml
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
+
 from src.app_config import app_config
 
 

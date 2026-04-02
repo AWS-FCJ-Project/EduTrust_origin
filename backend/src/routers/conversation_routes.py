@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+
 from src.auth.dependencies import get_current_user
 from src.schemas.conversation_schema import (
     ConversationResponseSchema,

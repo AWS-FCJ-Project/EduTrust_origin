@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+
 from src.detection.camera_service import get_camera_service
 
 router = APIRouter(prefix="/camera", tags=["Camera"])
@@ -108,6 +109,7 @@ async def get_violation_image(path: str):
     """
     try:
         from fastapi.responses import RedirectResponse
+
         from src.utils.s3_utils import get_s3_handler
 
         s3 = get_s3_handler()

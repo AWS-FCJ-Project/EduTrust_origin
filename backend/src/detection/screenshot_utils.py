@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 import cv2
+
 from src.utils.s3_utils import get_s3_handler
 
 

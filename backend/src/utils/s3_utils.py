@@ -45,7 +45,9 @@ class S3Handler:
     def get_s3_key(self, object_name: str, prefix: str = "avatars") -> str:
         return f"{prefix}/{object_name}"
 
-    def upload_img_s3(self, file_bytes, s3_key, content_type="image/jpeg", is_avatar=False):
+    def upload_img_s3(
+        self, file_bytes, s3_key, content_type="image/jpeg", is_avatar=False
+    ):
         bucket = app_config.S3_AVATAR_BUCKET_NAME if is_avatar else self.bucket_name
         if not bucket:
             bucket = self.bucket_name
@@ -80,10 +82,13 @@ class S3Handler:
         """Generates a temporary public URL for a private S3 object (legacy method)"""
         return self.get_presign_url(s3_key, expiration, is_avatar=False)
 
-    def load_avatar(self, base_64_url: str = None, image_url: str = None, user_id: str = None):
+    def load_avatar(
+        self, base_64_url: str = None, image_url: str = None, user_id: str = None
+    ):
         import base64
-        import requests
         from uuid import uuid4
+
+        import requests
 
         if not base_64_url and not image_url:
             return None
@@ -102,7 +107,7 @@ class S3Handler:
                 file_bytes = base64.b64decode(encoded)
             elif image_url:
                 import urllib.parse
-                
+
                 # Check if it's a Google Image Search URL and extract the real image URL
                 if "imgres" in image_url and "imgurl=" in image_url:
                     parsed_url = urllib.parse.urlparse(image_url)
@@ -117,12 +122,20 @@ class S3Handler:
                 if response.status_code == 200:
                     content_type = response.headers.get("Content-Type", "").lower()
                     if "image" not in content_type:
-                        print(f"[S3 ERROR] URL is not an image (content_type={content_type})")
-                        raise ValueError(f"Đường dẫn kết nối thành công nhưng file nhận được là {content_type}, không phải file ảnh (.jpg, .png...)")
+                        print(
+                            f"[S3 ERROR] URL is not an image (content_type={content_type})"
+                        )
+                        raise ValueError(
+                            f"Đường dẫn kết nối thành công nhưng file nhận được là {content_type}, không phải file ảnh (.jpg, .png...)"
+                        )
                     file_bytes = response.content
                 else:
-                    print(f"[S3 ERROR] Failed to download image, status {response.status_code}")
-                    raise ValueError(f"Máy chủ chứa ảnh từ chối truy cập (Mã lỗi HTTP {response.status_code}). Cố gắng tìm ảnh ở trang web khác nhé!")
+                    print(
+                        f"[S3 ERROR] Failed to download image, status {response.status_code}"
+                    )
+                    raise ValueError(
+                        f"Máy chủ chứa ảnh từ chối truy cập (Mã lỗi HTTP {response.status_code}). Cố gắng tìm ảnh ở trang web khác nhé!"
+                    )
         except ValueError:
             raise
         except Exception as e:
@@ -132,7 +145,9 @@ class S3Handler:
         if file_bytes:
             ext = "png" if "png" in content_type else "jpg"
             s3_key = self.get_s3_key(f"{user_id}_{uuid4().hex}.{ext}")
-            success = self.upload_img_s3(file_bytes, s3_key, content_type, is_avatar=True)
+            success = self.upload_img_s3(
+                file_bytes, s3_key, content_type, is_avatar=True
+            )
             if success:
                 return s3_key
             else:

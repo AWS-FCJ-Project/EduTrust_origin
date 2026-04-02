@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
 from src.agent.unified_agent import UnifiedAgent
 from src.auth.dependencies import get_current_user
 from src.llm import LLM

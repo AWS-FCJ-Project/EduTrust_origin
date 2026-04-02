@@ -1,6 +1,7 @@
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
+
 from src.memory.conversation_handler import ConversationHandler
 
 

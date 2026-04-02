@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import redis
+
 from src.app_config import app_config
 
 logger = logging.getLogger(__name__)

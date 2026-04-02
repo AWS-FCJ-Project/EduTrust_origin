@@ -4,6 +4,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+
 from src.detection.screenshot_utils import get_violation_capturer
 from src.detection.violation_logger import get_violation_logger
 

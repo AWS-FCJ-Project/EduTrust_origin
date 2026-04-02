@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+
 from src.auth.dependencies import get_current_user
 from src.database import classes_collection, users_collection, violations_collection
 from src.schemas.school_schemas import ClassCreate, ClassResponse, ClassUpdate

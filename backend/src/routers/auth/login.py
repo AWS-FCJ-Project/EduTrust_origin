@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
 from src.auth.auth_utils import verify_password
 from src.auth.dependencies import get_current_user as get_current_user_from_token
 from src.auth.jwt_handler import create_access_token
@@ -71,7 +72,9 @@ async def update_user(
 ):
     current_user_id = str(current_user.get("_id", current_user.get("id", "")))
     if current_user["role"] != "admin" and current_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this profile")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to update this profile"
+        )
 
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
@@ -95,6 +98,7 @@ async def update_user(
     image_url = update_dict.pop("image_url", None)
     if base_64_url or image_url:
         from src.utils.s3_utils import get_s3_handler
+
         s3 = get_s3_handler()
         try:
             s3_key = s3.load_avatar(base_64_url, image_url, user_id)

@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from fastapi.responses import StreamingResponse
 from pydantic_ai import Agent, AgentRunResultEvent, messages
+
 from src.logger import log_agent_response
 from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent
 

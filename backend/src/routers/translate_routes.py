@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
+
 from src.auth.dependencies import get_current_user
 from src.schemas.translate_schema import TranslateRequest, TranslateResponse
 from src.translate_service.translate import TranslateService

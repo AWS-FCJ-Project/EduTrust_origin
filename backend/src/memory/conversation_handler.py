@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 import numpy as np
 import pymongo
+
 from src.app_config import app_config
 from src.logger import logger
 from src.memory.conversation_cache import ConversationCache
