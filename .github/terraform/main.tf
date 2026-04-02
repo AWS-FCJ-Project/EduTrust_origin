@@ -1107,10 +1107,8 @@ resource "aws_launch_template" "backend" {
   block_device_mappings {
     device_name = "/dev/sda1"
     ebs {
-      volume_size           = 40
-      volume_type           = "gp3"
-      delete_on_termination = true
-      encrypted             = true
+      volume_size = 20
+      encrypted   = true
     }
   }
 
