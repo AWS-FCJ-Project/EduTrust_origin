@@ -30,6 +30,9 @@ class AppConfig(BaseSettings):
 
     # Auth Settings
     SECRET_KEY: Optional[str] = None
+    COGNITO_USER_POOL_ID: Optional[str] = None
+    COGNITO_APP_CLIENT_ID: Optional[str] = None
+    COGNITO_REGION: Optional[str] = None
 
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None

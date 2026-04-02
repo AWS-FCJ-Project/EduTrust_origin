@@ -6,13 +6,13 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft } from "lucide-react";
 import Cookies from "js-cookie";
 
-type LoginResponse =
-    | {
-        access_token?: string;
-        token?: string;
-        message?: string;
-    }
-    | string;
+interface LoginResponse {
+    id_token?: string;
+    access_token?: string;
+    refresh_token?: string;
+    token?: string;
+    message?: string;
+}
 
 interface UserInfo {
     id?: string | number;
@@ -129,7 +129,7 @@ export default function LoginPage() {
             const data: LoginResponse = await response.json();
 
             if (response.ok) {
-                const token = typeof data === "string" ? data : data.access_token || data.token || "";
+                const token = data.id_token || data.access_token || data.token || (typeof data === 'string' ? data : "");
                 if (token) {
                     Cookies.set("auth_token", token, {
                         expires: 7,

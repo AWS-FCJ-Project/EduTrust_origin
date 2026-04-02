@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from src.auth.auth_utils import verify_password
+from fastapi import APIRouter, Depends, HTTPException, Request
+from src.auth.auth_utils import hash_password, verify_password
+from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.auth.dependencies import get_current_user as get_current_user_from_token
-from src.auth.jwt_handler import create_access_token
 from src.database import classes_collection, users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import (
@@ -27,17 +27,63 @@ router = APIRouter()
 )
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin):
+    del request
     db_user = await users_collection.find_one({"email": user.email})
-    if not db_user or not verify_password(user.password, db_user["hashed_password"]):
+    if not db_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    await users_collection.update_one(
-        {"email": user.email}, {"$set": {"last_login": datetime.now(timezone.utc)}}
-    )
+    try:
+        auth_result = cognito_auth_service.authenticate_user(user.email, user.password)
+    except CognitoAuthError as error:
+        hashed_password = db_user.get("hashed_password")
+        can_migrate = bool(
+            hashed_password and verify_password(user.password, hashed_password)
+        )
+        if not can_migrate:
+            raise HTTPException(status_code=error.status_code, detail=error.message)
 
-    access_token = create_access_token(data={"sub": user.email})
+        cognito_user = cognito_auth_service.ensure_user(
+            user.email,
+            user.password,
+            name=db_user.get("name"),
+            role=db_user.get("role"),
+            email_verified=bool(db_user.get("is_verified", True)),
+        )
+        update_fields = {"last_login": datetime.now(timezone.utc)}
+        if cognito_user.get("sub"):
+            update_fields["cognito_sub"] = cognito_user["sub"]
+        await users_collection.update_one(
+            {"email": user.email},
+            {"$set": update_fields},
+        )
+        auth_result = cognito_auth_service.authenticate_user(user.email, user.password)
+    else:
+        cognito_auth_service.sync_user_group(user.email, db_user.get("role"))
+        update_fields = {"last_login": datetime.now(timezone.utc)}
+        cognito_user = cognito_auth_service.get_user(user.email)
+        if cognito_user and cognito_user.get("sub"):
+            update_fields["cognito_sub"] = cognito_user["sub"]
+        await users_collection.update_one(
+            {"email": user.email},
+            {"$set": update_fields},
+        )
 
-    return {"access_token": access_token, "token_type": "bearer", "email": user.email}
+    id_token = auth_result.get("IdToken")
+    if not id_token:
+        raise HTTPException(
+            status_code=500,
+            detail="Cognito did not return an ID token",
+        )
+
+    return {
+        "access_token": id_token,
+        "id_token": id_token,
+        "provider_access_token": auth_result.get("AccessToken"),
+        "refresh_token": auth_result.get("RefreshToken"),
+        "expires_in": auth_result.get("ExpiresIn"),
+        "token_type": "bearer",
+        "email": user.email,
+    }
 
 
 @router.get(
@@ -75,6 +121,10 @@ async def update_user(
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
+    target_user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     update_dict = {
         k: v
         for k, v in update_data.model_dump().items()
@@ -84,10 +134,15 @@ async def update_user(
         and not (k == "grade" and v == 0)
     }
 
+    if "email" in update_dict and update_dict["email"] != target_user["email"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Updating email is not supported while Cognito auth is enabled.",
+        )
+
     if "password" in update_dict:
         new_password = update_dict.pop("password")
-        from src.auth.auth_utils import hash_password
-
+        cognito_auth_service.set_user_password(target_user["email"], new_password)
         update_dict["hashed_password"] = hash_password(new_password)
 
     if not update_dict:
@@ -109,12 +164,10 @@ async def update_user(
                 }
             )
 
-    result = await users_collection.update_one(
-        {"_id": ObjectId(user_id)}, {"$set": update_dict}
+    await users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": update_dict},
     )
-
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
 
     return {"message": "User updated successfully"}
 
@@ -142,6 +195,7 @@ async def delete_user(
             {}, {"$pull": {"subject_teachers": {"teacher_id": user_id}}}
         )
 
+    cognito_auth_service.delete_user(target_user["email"])
     await users_collection.delete_one({"_id": ObjectId(user_id)})
     return {"message": "User deleted successfully"}
 
@@ -164,7 +218,11 @@ async def list_teachers(current_user: dict = Depends(get_current_user_from_token
 
         async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
             assigned_classes.append(
-                {"id": str(c["_id"]), "name": c["name"], "role": "Giáo viên Chủ nhiệm"}
+                {
+                    "id": str(c["_id"]),
+                    "name": c["name"],
+                    "role": "Giáo viên Chủ nhiệm",
+                }
             )
 
         async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
