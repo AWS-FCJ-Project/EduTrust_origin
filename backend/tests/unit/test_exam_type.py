@@ -1,8 +1,7 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from src.database.exam_handler import exam_helper
-from src.schemas.exam_schemas import ExamCreate, ExamType, ExamUpdate
+from src.schemas.exam_schemas import ExamCreate, ExamType, ExamUpdate, exam_helper
 
 
 def test_exam_create_defaults_exam_type():

@@ -241,3 +241,24 @@ class ExamSubmitAlreadyResponse(BaseModel):
 
     message: str = "Exam already submitted"
     already_submitted: bool = True
+
+
+def exam_helper(exam_document: dict, include_secret: bool = False) -> dict:
+    """Format exam document for API response."""
+    result = {
+        "id": str(exam_document["_id"]),
+        "title": exam_document["title"],
+        "description": exam_document.get("description"),
+        "subject": exam_document["subject"],
+        "exam_type": exam_document.get("exam_type", "15-minute quiz"),
+        "teacher_id": exam_document["teacher_id"],
+        "class_id": exam_document["class_id"],
+        "start_time": exam_document["start_time"],
+        "end_time": exam_document["end_time"],
+        "duration": exam_document.get("duration", 60),
+        "has_secret_key": bool(exam_document.get("secret_key")),
+        "questions": exam_document.get("questions", []),
+    }
+    if include_secret:
+        result["secret_key"] = exam_document.get("secret_key")
+    return result

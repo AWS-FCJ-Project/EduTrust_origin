@@ -5,28 +5,7 @@ from typing import Optional
 from bson import ObjectId
 from pymongo.database import Database
 from src.database.db_handler import DBHandler
-from src.schemas.exam_schemas import ExamStatus
-
-
-def exam_helper(exam_document: dict, include_secret: bool = False) -> dict:
-    """Format exam document for API response."""
-    result = {
-        "id": str(exam_document["_id"]),
-        "title": exam_document["title"],
-        "description": exam_document.get("description"),
-        "subject": exam_document["subject"],
-        "exam_type": exam_document.get("exam_type", "15-minute quiz"),
-        "teacher_id": exam_document["teacher_id"],
-        "class_id": exam_document["class_id"],
-        "start_time": exam_document["start_time"],
-        "end_time": exam_document["end_time"],
-        "duration": exam_document.get("duration", 60),
-        "has_secret_key": bool(exam_document.get("secret_key")),
-        "questions": exam_document.get("questions", []),
-    }
-    if include_secret:
-        result["secret_key"] = exam_document.get("secret_key")
-    return result
+from src.schemas.exam_schemas import ExamStatus, exam_helper
 
 
 class ExamHandler(DBHandler):
@@ -145,7 +124,7 @@ class ExamHandler(DBHandler):
         """Get exams for a student."""
         exams = []
         for exam_document in self.collection.find({"class_id": class_id}):
-            exam_dict = self._format_exam(exam_document)
+            exam_dict = exam_helper(exam_document)
             submission = self._get_submission(
                 exam_id=str(exam_document["_id"]), student_id=student_id
             )
@@ -162,14 +141,14 @@ class ExamHandler(DBHandler):
         """Get exams created by or assigned to a teacher."""
         exams = []
         for exam_document in self.collection.find({"teacher_id": teacher_id}):
-            exams.append(self._format_exam(exam_document))
+            exams.append(exam_helper(exam_document))
         return exams
 
     def get_all_exams(self) -> list[dict]:
         """Get all exams for admin."""
         exams = []
         for exam_document in self.collection.find({}):
-            exams.append(self._format_exam(exam_document))
+            exams.append(exam_helper(exam_document))
         return exams
 
     def verify_key(self, exam_id: str, key: str) -> tuple[bool, Optional[dict]]:
@@ -508,23 +487,3 @@ class ExamHandler(DBHandler):
     def _get_violations_collection(self):
         """Get violations collection."""
         return self._database["violations"]
-
-    def _format_exam(self, exam_document: dict, include_secret: bool = False) -> dict:
-        """Helper to format exam document."""
-        result = {
-            "id": str(exam_document["_id"]),
-            "title": exam_document["title"],
-            "description": exam_document.get("description"),
-            "subject": exam_document["subject"],
-            "exam_type": exam_document.get("exam_type", "15-minute quiz"),
-            "teacher_id": exam_document["teacher_id"],
-            "class_id": exam_document["class_id"],
-            "start_time": exam_document["start_time"],
-            "end_time": exam_document["end_time"],
-            "duration": exam_document.get("duration", 60),
-            "has_secret_key": bool(exam_document.get("secret_key")),
-            "questions": exam_document.get("questions", []),
-        }
-        if include_secret:
-            result["secret_key"] = exam_document.get("secret_key")
-        return result
