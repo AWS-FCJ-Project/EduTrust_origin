@@ -15,19 +15,13 @@ from src.memory.conversation_handler import ConversationHandler
 from src.memory.redis_client import RedisClient
 from src.routers import (
     class_routes,
+    camera_routes,
     conversation_routes,
     exam_routes,
     translate_routes,
     unified_agent_routes,
 )
 from src.routers.auth import login, password, register
-
-try:
-    from src.routers import camera_routes
-except ModuleNotFoundError as error:
-    if error.name not in {"cv2", "numpy", "torch", "ultralytics"}:
-        raise
-    camera_routes = None
 
 logfire.configure(
     environment="local",
@@ -95,8 +89,7 @@ app.include_router(login.router, tags=["Login"])
 app.include_router(password.router, tags=["Password"])
 app.include_router(exam_routes.router)
 app.include_router(class_routes.router)
-if camera_routes is not None:
-    app.include_router(camera_routes.router, tags=["Camera"])
+app.include_router(camera_routes.router, tags=["Camera"])
 
 
 @app.get("/")

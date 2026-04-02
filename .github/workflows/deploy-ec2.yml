@@ -543,6 +543,7 @@ jobs:
           # which checks target group health + /health end-to-end.
           max_wait_seconds=$((60 * 60))       # 60 minutes
           stuck_100_seconds=$((10 * 60))      # 10 minutes at 100% but still InProgress
+          stuck_no_progress_seconds=$((7 * 60)) # 7 minutes with no % progress
 
           while true; do
             status="$(aws autoscaling describe-instance-refreshes \
@@ -587,6 +588,16 @@ jobs:
                 # If AWS reports 100% complete but doesn't flip to Successful, don't spam logs forever.
                 if [ "${pct}" = "100" ] && [ $((now - last_change_at)) -ge ${stuck_100_seconds} ]; then
                   echo "Refresh is stuck at 100% InProgress for >=10m; proceeding to rollout verification."
+                  break
+                fi
+
+                # If refresh isn't making progress (commonly stuck at 50% due to an unhealthy new target),
+                # proceed to rollout verification which prints target health and /health diagnostics.
+                if [ $((now - last_change_at)) -ge ${stuck_no_progress_seconds} ]; then
+                  echo "Refresh has made no progress for >=7m (current ${pct}%). Dumping diagnostics and proceeding to rollout verification."
+                  aws elbv2 describe-target-health --region "${region}" --target-group-arn "${tg_arn}" --output table || true
+                  aws autoscaling describe-scaling-activities --region "${region}" --auto-scaling-group-name "${asg}" --max-items 10 --output table || true
+                  aws autoscaling describe-instance-refreshes --region "${region}" --auto-scaling-group-name "${asg}" --instance-refresh-ids "${refresh_id}" --output table || true
                   break
                 fi
 
