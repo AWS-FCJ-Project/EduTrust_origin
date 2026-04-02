@@ -33,9 +33,12 @@ async def create_conversation(
 async def list_conversations(
     current_user: Annotated[dict, Depends(get_current_user)],
     limit: int = 50,
+    query: str | None = None,
     handler=Depends(get_conversation_handler),
 ):
     user_id = str(current_user["_id"])
+    if query and query.strip():
+        return handler.search_conversations(user_id=user_id, query=query, limit=limit)
     return handler.list_conversations(user_id=user_id, limit=limit)
 
 
