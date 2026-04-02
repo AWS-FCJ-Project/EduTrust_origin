@@ -68,7 +68,23 @@ async def register(request: Request, user: UserRegister):
         "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
     }
-    await users_collection.insert_one(user_doc)
+
+    result = await users_collection.insert_one(user_doc)
+    user_id = str(result.inserted_id)
+
+    # Process avatar if provided
+    if user.base_64_url:
+        from src.utils.s3_utils import get_s3_handler
+        s3 = get_s3_handler()
+        try:
+            s3_key = s3.load_avatar(user.base_64_url, user_id=user_id)
+            if s3_key:
+                await users_collection.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"avatar_s3_key": s3_key}}
+                )
+        except ValueError as e:
+            print(f"Warning: Avatar upload failed during registration: {e}")
 
     return {"message": "User registered successfully, you can now login."}
 
