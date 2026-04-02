@@ -7,7 +7,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "aws-fcj-terraform-641458060045"
+    bucket       = "backend-tf-state-bucket-641458060045"
     key          = "backend/terraform.tfstate"
     region       = "ap-southeast-1"
     use_lockfile = true
@@ -16,6 +16,12 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+}
+
+# CloudFront-scope WAF resources must be created via us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
 }
 
 # --- VPC & Network Configuration ---
@@ -345,6 +351,10 @@ resource "aws_iam_instance_profile" "backend" {
 # --- Encryption ---
 data "aws_caller_identity" "current" {}
 
+locals {
+  frontend_distribution_arn = length(trimspace(var.frontend_cloudfront_distribution_id)) > 0 ? "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/${trimspace(var.frontend_cloudfront_distribution_id)}" : ""
+}
+
 data "aws_iam_policy_document" "kms_secrets_policy" {
   # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
   # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
@@ -446,6 +456,26 @@ data "aws_iam_policy_document" "backend_ssm_read" {
   }
 
   statement {
+    effect  = "Allow"
+    actions = ["s3:ListBucket"]
+    resources = [
+      aws_s3_bucket.camera_detect.arn,
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.camera_detect.arn}/*",
+    ]
+  }
+
+  statement {
     # checkov:skip=CKV_AWS_355:ecr:GetAuthorizationToken does not support resource-level permissions and requires "*"
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -519,6 +549,213 @@ resource "aws_s3_bucket_policy" "alb_logs" {
   policy = data.aws_iam_policy_document.alb_logs.json
 }
 
+# --- Frontend protection: WAF for Amplify (CloudFront) ---
+resource "aws_wafv2_web_acl" "frontend" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  name  = "${var.ec2_instance_name}-frontend-waf"
+  scope = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.ec2_instance_name}-frontend-waf"
+    sampled_requests_enabled   = true
+  }
+
+  rule {
+    name     = "AWSManagedRulesCommonRuleSet"
+    priority = 10
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesCommonRuleSet"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 20
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesKnownBadInputsRuleSet"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesAmazonIpReputationList"
+    priority = 30
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesAmazonIpReputationList"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesAmazonIpReputationList"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesAnonymousIpList"
+    priority = 40
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesAnonymousIpList"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesAnonymousIpList"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "RateLimit"
+    priority = 50
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.frontend_waf_rate_limit
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "RateLimit"
+      sampled_requests_enabled   = true
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_group" "frontend_waf" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  # AWS WAF requires the log group name to start with "aws-waf-logs-".
+  # checkov:skip=CKV_AWS_158: KMS encryption is optional for this project's WAF logs; can be enabled later if required.
+  # checkov:skip=CKV_AWS_338: 30 days retention is sufficient for this project.
+  name              = "aws-waf-logs-${var.ec2_instance_name}-frontend"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${var.ec2_instance_name}-frontend-waf-logs"
+  }
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "frontend" {
+  count    = var.enable_frontend_waf ? 1 : 0
+  provider = aws.us_east_1
+
+  resource_arn            = aws_wafv2_web_acl.frontend[0].arn
+  log_destination_configs = [aws_cloudwatch_log_group.frontend_waf[0].arn]
+}
+
+resource "aws_wafv2_web_acl_association" "frontend" {
+  count    = var.enable_frontend_waf && length(local.frontend_distribution_arn) > 0 ? 1 : 0
+  provider = aws.us_east_1
+
+  resource_arn = local.frontend_distribution_arn
+  web_acl_arn  = aws_wafv2_web_acl.frontend[0].arn
+}
+
+# --- App storage: Camera cheating-detection logs ---
+resource "aws_s3_bucket" "camera_detect" {
+  # checkov:skip=CKV_AWS_18: Access logging is optional for this demo bucket.
+  # checkov:skip=CKV_AWS_144: Cross region replication not required.
+  # checkov:skip=CKV_AWS_145: SSE-S3 (AES256) is sufficient for this demo bucket; SSE-KMS can be enabled later if required.
+  # checkov:skip=CKV2_AWS_61: Lifecycle config is not required initially.
+  # checkov:skip=CKV2_AWS_62: Event notifications are not required initially.
+  bucket = var.camera_detect_bucket_name
+
+  tags = {
+    Name = "${var.ec2_instance_name}-camera-detect"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "camera_detect" {
+  bucket = aws_s3_bucket.camera_detect.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "camera_detect" {
+  bucket                  = aws_s3_bucket.camera_detect.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+
+  depends_on = [aws_s3_bucket_ownership_controls.camera_detect]
+}
+
 resource "aws_security_group" "alb" {
   name        = "${var.ec2_instance_name}-alb-sg"
   description = "Security group for ALB"
@@ -588,10 +825,73 @@ resource "aws_lb_target_group" "backend" {
     path                = "/health"
     healthy_threshold   = 2
     unhealthy_threshold = 2
-    timeout             = 3
-    interval            = 5
+    timeout             = 5
+    interval            = 30
     matcher             = "200"
   }
+}
+
+data "aws_route53_zone" "api_parent" {
+  count        = var.enable_api_custom_domain && length(trimspace(var.route53_zone_id)) == 0 ? 1 : 0
+  name         = trimspace(var.route53_zone_name)
+  private_zone = false
+}
+
+locals {
+  api_zone_id = length(trimspace(var.route53_zone_id)) > 0 ? trimspace(var.route53_zone_id) : try(data.aws_route53_zone.api_parent[0].zone_id, "")
+}
+
+resource "aws_acm_certificate" "api" {
+  count             = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? 1 : 0
+  domain_name       = trimspace(var.api_domain_name)
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "api_cert_validation" {
+  for_each = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? {
+    for dvo in aws_acm_certificate.api[0].domain_validation_options :
+    dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  } : {}
+
+  zone_id = local.api_zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 60
+  records = [each.value.value]
+}
+
+resource "aws_acm_certificate_validation" "api" {
+  count           = var.enable_api_custom_domain && length(trimspace(var.certificate_arn)) == 0 ? 1 : 0
+  certificate_arn = aws_acm_certificate.api[0].arn
+
+  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
+}
+
+resource "aws_route53_record" "api_alias" {
+  count   = var.enable_api_custom_domain ? 1 : 0
+  zone_id = local.api_zone_id
+  name    = trimspace(var.api_domain_name)
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+locals {
+  https_certificate_arn = length(trimspace(var.certificate_arn)) > 0 ? trimspace(var.certificate_arn) : (
+    var.enable_api_custom_domain ? aws_acm_certificate_validation.api[0].certificate_arn : ""
+  )
 }
 
 resource "aws_lb_listener" "http" {
@@ -614,7 +914,7 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = var.certificate_arn
+  certificate_arn   = local.https_certificate_arn
 
   default_action {
     type             = "forward"
@@ -684,10 +984,10 @@ data "aws_ami" "base_ami" {
 }
 
 resource "aws_launch_template" "backend" {
+  # checkov:skip=CKV_AWS_341: IMDS hop limit is set to 2 intentionally so Docker containers can reach IMDSv2 and retrieve IAM role credentials. IMDSv2 is required and hop limit kept minimal.
   name_prefix   = "${var.ec2_instance_name}-lt-"
   image_id      = data.aws_ami.base_ami.id
   instance_type = var.ec2_instance_type
-  key_name      = var.ec2_key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.backend.name
@@ -706,43 +1006,112 @@ resource "aws_launch_template" "backend" {
   }
 
   metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+    # Docker containers often need hop_limit >= 2 to reach IMDSv2 and fetch IAM role credentials.
+    http_put_response_hop_limit = 2
   }
 
-  user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -e
+  # NOTE:
+  # 1. This repo is often edited on Windows, which can introduce CRLF (\r\n). If that
+  #    reaches EC2 user-data, the shebang can become "/bin/bash\r" and cloud-init
+  #    will fail to execute the script. We strip '\r' defensively.
+  # 2. The script is responsible for bootstrapping the instance (Docker, ECR login,
+  #    pull/run container). If it doesn't run, ALB health checks will fail and ASG
+  #    instance refreshes will stall.
+  user_data = base64encode(replace((<<EOF
+#!/usr/bin/env bash
+set -euo pipefail
 
-    # Environment variables
-    REGION="${var.aws_region}"
-    ECR_URL="${aws_ecr_repository.backend.repository_url}"
-    TARGET_DIR="/home/ubuntu/app"
-    mkdir -p $TARGET_DIR
+# Persist user-data logs for debugging (SSM into instance -> read this file).
+exec > >(tee -a /var/log/user-data.log) 2>&1
+set -x
 
-    # ECR Login & Image Pull
-    # Use a safer way to extract ECR URL fragments
-    ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
-    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+retry() {
+  local max=8
+  local delay=5
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    if [ "$n" -ge "$max" ]; then
+      echo "Command failed after $${n} attempts: $*"
+      return 1
+    fi
+    echo "Retry $${n}/$${max} (sleep $${delay}s): $*"
+    sleep "$delay"
+    delay=$((delay * 2))
+  done
+}
 
-    # Retrieve env from SSM
-    aws ssm get-parameter --name "/edutrust/backend/env" --with-decryption --region $REGION --query "Parameter.Value" --output text > $TARGET_DIR/.env
+# Environment variables
+REGION="${var.aws_region}"
+ECR_URL="${aws_ecr_repository.backend.repository_url}"
+TARGET_DIR="/opt/edutrust"
+mkdir -p "$TARGET_DIR"
 
-    # Run Container
-    IMAGE="$ECR_URL:${var.backend_image_tag}"
-    docker pull $IMAGE
-    docker stop aws-fcj-backend || true
-    docker rm aws-fcj-backend || true
-    docker run -d --name aws-fcj-backend \
-      --restart unless-stopped \
-      -p ${var.backend_port}:${var.backend_port} \
-      --env-file $TARGET_DIR/.env \
-      $IMAGE
+echo "Bootstrapping instance..."
+echo "REGION=$REGION"
+echo "ECR_URL=$ECR_URL"
 
-    # CloudWatch Agent Configuration
-    mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
-    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
+if ! command -v aws >/dev/null 2>&1; then
+  echo "AWS CLI not found; installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends awscli ca-certificates curl
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y awscli curl ca-certificates
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y awscli curl ca-certificates
+  else
+    echo "No supported package manager found to install AWS CLI" >&2
+    exit 1
+  fi
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker not found; installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends docker.io
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y docker
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y docker
+  else
+    echo "No supported package manager found to install Docker" >&2
+    exit 1
+  fi
+fi
+
+echo "Ensuring Docker is running..."
+systemctl enable --now docker || true
+retry systemctl is-active --quiet docker
+
+# ECR Login & Image Pull
+ECR_REGISTRY=$(echo "$ECR_URL" | cut -d'/' -f1)
+retry bash -lc "aws ecr get-login-password --region \"$REGION\" | docker login --username AWS --password-stdin \"$ECR_REGISTRY\""
+
+# Retrieve env from SSM
+retry bash -lc "aws ssm get-parameter --name \"/edutrust/backend/env\" --with-decryption --region \"$REGION\" --query \"Parameter.Value\" --output text > \"$TARGET_DIR/.env\""
+
+# Run Container
+IMAGE="$ECR_URL:${var.backend_image_tag}"
+echo "Pulling image: $IMAGE"
+retry docker pull "$IMAGE"
+docker stop aws-fcj-backend || true
+docker rm aws-fcj-backend || true
+docker run -d --name aws-fcj-backend \
+  --restart unless-stopped \
+  -p ${var.backend_port}:${var.backend_port} \
+  --env-file "$TARGET_DIR/.env" \
+  "$IMAGE"
+
+# CloudWatch Agent Configuration (optional)
+if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then
+  mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+  cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CW_EOF'
 {
   "metrics": {
     "namespace": "EduTrust/Container",
@@ -758,6 +1127,16 @@ resource "aws_launch_template" "backend" {
       "files": {
         "collect_list": [
           {
+            "file_path": "/var/log/user-data.log",
+            "log_group_name": "/edutrust/user-data",
+            "log_stream_name": "{instance_id}"
+          },
+          {
+            "file_path": "/var/log/cloud-init-output.log",
+            "log_group_name": "/edutrust/cloud-init",
+            "log_stream_name": "{instance_id}"
+          },
+          {
             "file_path": "/var/lib/docker/containers/*/*.log",
             "log_group_name": "/edutrust/container-logs",
             "log_stream_name": "{instance_id}"
@@ -768,9 +1147,10 @@ resource "aws_launch_template" "backend" {
   }
 }
 CW_EOF
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-  EOF
-  )
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+fi
+EOF
+  ), "\r", ""))
 
   tag_specifications {
     resource_type = "instance"
@@ -797,15 +1177,17 @@ resource "aws_autoscaling_group" "backend" {
     version = "$Latest"
   }
 
-  health_check_type         = "EC2"
-  health_check_grace_period = 300
+  # Use ALB Target Group health checks to decide instance health (better signal than EC2 status checks).
+  health_check_type = "ELB"
+  # Give instances time to pull the container image + start the app before ASG considers them unhealthy.
+  health_check_grace_period = 600
   wait_for_capacity_timeout = "0"
 
   instance_refresh {
     strategy = "Rolling"
     preferences {
       min_healthy_percentage = 50
-      instance_warmup        = 60
+      instance_warmup        = 120
     }
   }
 
@@ -814,6 +1196,110 @@ resource "aws_autoscaling_group" "backend" {
     value               = "${var.ec2_instance_name}-asg"
     propagate_at_launch = true
   }
+}
+
+resource "aws_sns_topic" "alarms" {
+  count = var.enable_alarms ? 1 : 0
+
+  name = "${var.ec2_instance_name}-alarms"
+}
+
+resource "aws_sns_topic_subscription" "alarm_email" {
+  count = var.enable_alarms && length(trimspace(var.alarm_email)) > 0 ? 1 : 0
+
+  topic_arn = aws_sns_topic.alarms[0].arn
+  protocol  = "email"
+  endpoint  = trimspace(var.alarm_email)
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-alb-5xx"
+  alarm_description   = "ALB 5xx responses exceeded 5 over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HTTPCode_ELB_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 5
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "target_unhealthy_hosts" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-tg-unhealthy-hosts"
+  alarm_description   = "Target group has unhealthy hosts for 2 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = aws_lb_target_group.backend.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "backend_asg_cpu" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-asg-cpu-high"
+  alarm_description   = "Average ASG CPU utilization exceeded 80 percent over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.backend.name
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_target_response_time_p95" {
+  count = var.enable_alarms ? 1 : 0
+
+  alarm_name          = "${var.ec2_instance_name}-alb-target-response-time-p95"
+  alarm_description   = "ALB target response time p95 exceeded 1 second over 5 minutes."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "TargetResponseTime"
+  namespace           = "AWS/ApplicationELB"
+  period              = 300
+  extended_statistic  = "p95"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = aws_lb_target_group.backend.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alarms[0].arn]
+  ok_actions    = [aws_sns_topic.alarms[0].arn]
 }
 
 resource "aws_ecr_repository" "backend" {

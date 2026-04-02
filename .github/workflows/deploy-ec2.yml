@@ -23,6 +23,8 @@ concurrency:
 env:
   TF_DIR: .github/terraform
   CONTAINER_NAME: aws-fcj-backend
+  TF_STATE_BUCKET: backend-tf-state-bucket-641458060045
+  TF_STATE_REGION: ap-southeast-1
 
 jobs:
   packer:
@@ -131,6 +133,9 @@ jobs:
       ecr_repository_url: ${{ steps.tf_output.outputs.ecr_repository_url }}
       backend_port: ${{ steps.tf_output.outputs.backend_port }}
       secrets_kms_key_arn: ${{ steps.tf_output.outputs.secrets_kms_key_arn }}
+      alb_dns_name: ${{ steps.tf_output.outputs.alb_dns_name }}
+      api_domain_name: ${{ steps.tf_output.outputs.api_domain_name }}
+      backend_target_group_arn: ${{ steps.tf_output.outputs.backend_target_group_arn }}
       ecr_tag_immutable: ${{ steps.ecr_vars.outputs.ecr_tag_immutable }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -185,16 +190,64 @@ jobs:
           esac
           echo "ecr_tag_immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
 
-      - name: Terraform Init
-        working-directory: ${{ env.TF_DIR }}
-        run: terraform init
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Ensure Terraform State Bucket Exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bucket="${TF_STATE_BUCKET}"
+          region="${TF_STATE_REGION}"
+
+          echo "Checking Terraform state bucket: ${bucket}"
+          # Use us-east-1/global endpoint for existence check (avoids false negatives due to region redirects).
+          if aws s3api head-bucket --bucket "${bucket}" --region us-east-1 2>/dev/null; then
+            echo "Bucket exists, skipping create."
+          else
+            echo "Bucket missing, creating: ${bucket} (region: ${region})"
+            if [ "${region}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket "${bucket}" --region "${region}"
+            else
+              aws s3api create-bucket \
+                --bucket "${bucket}" \
+                --region "${region}" \
+                --create-bucket-configuration LocationConstraint="${region}"
+            fi
+          fi
+
+          # Hardening / best practices for state storage.
+          aws s3api put-public-access-block \
+            --bucket "${bucket}" \
+            --public-access-block-configuration '{
+              "BlockPublicAcls": true,
+              "IgnorePublicAcls": true,
+              "BlockPublicPolicy": true,
+              "RestrictPublicBuckets": true
+            }'
+
+          aws s3api put-bucket-versioning \
+            --bucket "${bucket}" \
+            --versioning-configuration Status=Enabled
+
+          aws s3api put-bucket-encryption \
+            --bucket "${bucket}" \
+            --server-side-encryption-configuration '{
+              "Rules": [
+                {
+                  "ApplyServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" }
+                }
+              ]
+            }'
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
 
       - name: Import existing ECR repository (if already created)
         working-directory: ${{ env.TF_DIR }}
@@ -236,6 +289,10 @@ jobs:
           echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "backend_port=$(terraform output -raw backend_port)" >> "$GITHUB_OUTPUT"
           echo "secrets_kms_key_arn=$(terraform output -raw secrets_kms_key_arn)" >> "$GITHUB_OUTPUT"
+          echo "alb_dns_name=$(terraform output -raw alb_dns_name)" >> "$GITHUB_OUTPUT"
+          # terraform output -raw prints "null" for null values, which is OK for downstream logic
+          echo "api_domain_name=$(terraform output -raw api_domain_name)" >> "$GITHUB_OUTPUT"
+          echo "backend_target_group_arn=$(terraform output -raw backend_target_group_arn)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build & Push backend image (ECR)
@@ -317,6 +374,10 @@ jobs:
       AWS_REGION: ${{ needs.terraform.outputs.aws_region }}
       ASG_NAME: ${{ needs.terraform.outputs.asg_name }}
       IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+      ECR_REPOSITORY_URL: ${{ needs.terraform.outputs.ecr_repository_url }}
+      ALB_DNS_NAME: ${{ needs.terraform.outputs.alb_dns_name }}
+      API_DOMAIN_NAME: ${{ needs.terraform.outputs.api_domain_name }}
+      BACKEND_TARGET_GROUP_ARN: ${{ needs.terraform.outputs.backend_target_group_arn }}
       BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
       SECRETS_KMS_KEY_ARN: ${{ needs.terraform.outputs.secrets_kms_key_arn }}
       TF_DIR: .github/terraform
@@ -367,50 +428,218 @@ jobs:
 
       - name: Start ASG Instance Refresh
         run: |
-          echo "Checking for in-progress instance refresh for ASG: $ASG_NAME"
-          CURRENT_REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --query "InstanceRefreshes[?Status=='InProgress'].InstanceRefreshId" \
-            --output text)
+          set -euo pipefail
 
-          if [ -n "$CURRENT_REFRESH_ID" ] && [ "$CURRENT_REFRESH_ID" != "None" ]; then
-            echo "A refresh ($CURRENT_REFRESH_ID) is already in progress. Cancelling it..."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "$ASG_NAME"
+          asg="${ASG_NAME}"
+
+          inprogress_id() {
+            aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --query "InstanceRefreshes[?Status=='InProgress'] | [0].InstanceRefreshId" \
+              --output text 2>/dev/null || true
+          }
+
+          echo "Checking for in-progress instance refresh for ASG: ${asg}"
+          current_refresh_id="$(inprogress_id)"
+          if [ -n "${current_refresh_id}" ] && [ "${current_refresh_id}" != "None" ]; then
+            echo "A refresh (${current_refresh_id}) is already in progress. Cancelling it..."
+            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "${asg}" || true
             echo "Waiting for cancellation to process..."
-            sleep 30
+            for _ in $(seq 1 20); do
+              sleep 15
+              still="$(inprogress_id)"
+              if [ -z "${still}" ] || [ "${still}" = "None" ]; then
+                echo "No in-progress refresh detected."
+                break
+              fi
+              echo "Still in progress: ${still}"
+            done
           fi
 
-          echo "Starting new instance refresh for ASG: $ASG_NAME"
-          # TIMEOUT removed as requested
-          REFRESH_ID=$(aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}' \
+          echo "Starting new instance refresh for ASG: ${asg}"
+          refresh_id="$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "${asg}" \
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
             --query "InstanceRefreshId" \
-            --output text)
-          echo "Instance Refresh ID: $REFRESH_ID"
+            --output text)"
+          echo "Instance Refresh ID: ${refresh_id}"
+
+          started_at="$(date +%s)"
+          last_pct=""
+          last_change_at="${started_at}"
+
+          # Avoid infinite loops: if ASG/ALB health is slow, we'll proceed to the rollout verification step,
+          # which checks target group health + /health end-to-end.
+          max_wait_seconds=$((60 * 60))       # 60 minutes
+          stuck_100_seconds=$((10 * 60))      # 10 minutes at 100% but still InProgress
+
           while true; do
-            STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "$ASG_NAME" \
-              --instance-refresh-ids "$REFRESH_ID" \
+            status="$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].Status" \
-              --output text)
-            PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "$ASG_NAME" \
-              --instance-refresh-ids "$REFRESH_ID" \
+              --output text)"
+
+            pct="$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${asg}" \
+              --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].PercentageComplete" \
-              --output text)
-            echo "Status: $STATUS ($PERCENTAGE% complete)..."
-            case "$STATUS" in
-              Successful) echo "Deployment successful!"; break ;;
+              --output text)"
+
+            now="$(date +%s)"
+            if [ "${pct}" != "${last_pct}" ]; then
+              last_pct="${pct}"
+              last_change_at="${now}"
+            fi
+
+            echo "Refresh status: ${status} (${pct}% complete)"
+
+            case "${status}" in
+              Successful)
+                echo "Instance refresh successful."
+                break
+                ;;
               Failed|Cancelled|TimedOut)
-                echo "Deployment $STATUS!"
-                REASON=$(aws autoscaling describe-instance-refreshes \
-                  --auto-scaling-group-name "$ASG_NAME" \
-                  --instance-refresh-ids "$REFRESH_ID" \
+                echo "Instance refresh ${status}."
+                reason="$(aws autoscaling describe-instance-refreshes \
+                  --auto-scaling-group-name "${asg}" \
+                  --instance-refresh-ids "${refresh_id}" \
                   --query "InstanceRefreshes[0].StatusReason" \
-                  --output text)
-                echo "Reason: $REASON"
-                exit 1 ;;
-              *) sleep 30 ;;
+                  --output text || true)"
+                echo "Reason: ${reason}"
+                exit 1
+                ;;
+              InProgress|Pending)
+                # If AWS reports 100% complete but doesn't flip to Successful, don't spam logs forever.
+                if [ "${pct}" = "100" ] && [ $((now - last_change_at)) -ge ${stuck_100_seconds} ]; then
+                  echo "Refresh is stuck at 100% InProgress for >=10m; proceeding to rollout verification."
+                  break
+                fi
+
+                if [ $((now - started_at)) -ge ${max_wait_seconds} ]; then
+                  echo "Timed out waiting for instance refresh after ${max_wait_seconds}s; proceeding to rollout verification."
+                  aws autoscaling describe-instance-refreshes \
+                    --auto-scaling-group-name "${asg}" \
+                    --instance-refresh-ids "${refresh_id}" \
+                    --output table || true
+                  break
+                fi
+
+                sleep 30
+                ;;
+              *)
+                echo "Unknown refresh status: ${status}. Proceeding to rollout verification."
+                break
+                ;;
             esac
           done
+
+      - name: Verify rollout (ECR image exists, targets healthy, /health OK)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${ECR_REPOSITORY_URL}"
+          repo_name="${repo_url#*/}"
+          tag="${IMAGE_TAG}"
+          tg_arn="${BACKEND_TARGET_GROUP_ARN}"
+          asg="${ASG_NAME}"
+          region="${AWS_REGION}"
+          alb_dns="${ALB_DNS_NAME}"
+          api_domain="${API_DOMAIN_NAME}"
+
+          echo "Verifying ECR image exists: ${repo_name}:${tag}"
+          aws ecr describe-images \
+            --region "${region}" \
+            --repository-name "${repo_name}" \
+            --image-ids imageTag="${tag}" >/dev/null
+
+          desired="$(aws autoscaling describe-auto-scaling-groups \
+            --region "${region}" \
+            --auto-scaling-group-names "${asg}" \
+            --query 'AutoScalingGroups[0].DesiredCapacity' \
+            --output text)"
+          if [ -z "${desired}" ] || [ "${desired}" = "None" ]; then
+            echo "ERROR: Could not determine ASG desired capacity."
+            exit 1
+          fi
+          echo "ASG desired capacity: ${desired}"
+
+          # If custom domain is enabled, verify against it (TLS-valid). Otherwise, hit ALB DNS and ignore cert mismatch.
+          if [ -n "${api_domain}" ] && [ "${api_domain}" != "null" ]; then
+            health_url="https://${api_domain}/health"
+            curl_flags=(--fail --show-error --silent --location --max-time 10)
+          else
+            health_url="https://${alb_dns}/health"
+            curl_flags=(--fail --show-error --silent --location --max-time 10 -k)
+          fi
+          echo "Health check URL: ${health_url}"
+
+          # Up to 2 attempts: initial wait, then (if still unhealthy) force another refresh to repull/start containers.
+          for attempt in 1 2; do
+            echo "Waiting for Target Group to become healthy (attempt ${attempt}/2)..."
+            for i in $(seq 1 60); do
+              states="$(aws elbv2 describe-target-health \
+                --region "${region}" \
+                --target-group-arn "${tg_arn}" \
+                --query 'TargetHealthDescriptions[*].TargetHealth.State' \
+                --output text || true)"
+
+              healthy_count="$(echo "${states}" | tr '\t' '\n' | grep -c '^healthy$' || true)"
+              total_count="$(echo "${states}" | tr '\t' '\n' | grep -c '^[a-z]' || true)"
+              echo "Target states: ${states:-<none>} (healthy=${healthy_count}, total=${total_count}, desired=${desired})"
+
+              if [ "${healthy_count}" -ge "${desired}" ] && [ "${desired}" -gt 0 ]; then
+                echo "All desired targets are healthy."
+                break
+              fi
+              sleep 10
+            done
+
+            echo "Calling /health..."
+            if curl "${curl_flags[@]}" "${health_url}" >/dev/null; then
+              echo "Health check OK."
+              exit 0
+            fi
+
+            echo "Health check failed."
+            aws elbv2 describe-target-health --region "${region}" --target-group-arn "${tg_arn}" --output table || true
+            aws autoscaling describe-scaling-activities --region "${region}" --auto-scaling-group-name "${asg}" --max-items 10 --output table || true
+
+            if [ "${attempt}" -eq 1 ]; then
+              echo "Forcing another instance refresh to repull/start the image..."
+              refresh_id="$(aws autoscaling start-instance-refresh \
+                --region "${region}" \
+                --auto-scaling-group-name "${asg}" \
+                --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
+                --query 'InstanceRefreshId' \
+                --output text)"
+              echo "Instance Refresh ID: ${refresh_id}"
+              while true; do
+                status="$(aws autoscaling describe-instance-refreshes \
+                  --region "${region}" \
+                  --auto-scaling-group-name "${asg}" \
+                  --instance-refresh-ids "${refresh_id}" \
+                  --query 'InstanceRefreshes[0].Status' \
+                  --output text)"
+                pct="$(aws autoscaling describe-instance-refreshes \
+                  --region "${region}" \
+                  --auto-scaling-group-name "${asg}" \
+                  --instance-refresh-ids "${refresh_id}" \
+                  --query 'InstanceRefreshes[0].PercentageComplete' \
+                  --output text)"
+                echo "Refresh status: ${status} (${pct}% complete)..."
+                case "${status}" in
+                  Successful) echo "Refresh successful."; break ;;
+                  Failed|Cancelled|TimedOut)
+                    echo "Refresh ${status}."
+                    aws autoscaling describe-instance-refreshes --region "${region}" --auto-scaling-group-name "${asg}" --instance-refresh-ids "${refresh_id}" --output table || true
+                    break ;;
+                  *) sleep 30 ;;
+                esac
+              done
+            fi
+          done
+
+          echo "ERROR: Rollout verification failed after retries."
+          exit 1

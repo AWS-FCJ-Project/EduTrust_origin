@@ -106,12 +106,19 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
 
         query = {"class_id": str(cls["_id"])}
     elif role == "teacher":
-        homeroom_classes = []
-        async for cls in classes_collection.find({"homeroom_teacher_id": user_id}):
-            homeroom_classes.append(str(cls["_id"]))
+        teacher_classes = []
+        async for cls in classes_collection.find(
+            {
+                "$or": [
+                    {"homeroom_teacher_id": user_id},
+                    {"subject_teachers.teacher_id": user_id},
+                ]
+            }
+        ):
+            teacher_classes.append(str(cls["_id"]))
 
         query = {
-            "$or": [{"teacher_id": user_id}, {"class_id": {"$in": homeroom_classes}}]
+            "$or": [{"teacher_id": user_id}, {"class_id": {"$in": teacher_classes}}]
         }
     else:
         raise HTTPException(status_code=403, detail="Invalid role")
@@ -280,13 +287,52 @@ async def get_my_results(current_user: dict = Depends(get_current_user)):
 
 @router.get("/all-results/summary", response_model=List[dict])
 async def get_all_results_summary(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ["admin", "teacher"]:
+    role = current_user.get("role")
+    if role not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    exams = await exams_collection.find().to_list(None)
+    user_id = str(current_user["_id"])
+    query = {}
+    if role == "teacher":
+        teacher_classes = []
+        async for cls in classes_collection.find(
+            {
+                "$or": [
+                    {"homeroom_teacher_id": user_id},
+                    {"subject_teachers.teacher_id": user_id},
+                ]
+            }
+        ):
+            teacher_classes.append(str(cls["_id"]))
+
+        query = {
+            "$or": [
+                {"class_id": {"$in": teacher_classes}},
+                {"teacher_id": user_id},
+            ]
+        }
+
+    exams = await exams_collection.find(query).to_list(None)
+
+    # Batch load class info to avoid N+1 queries
+    class_object_ids = set()
+    for exam in exams:
+        cid = exam.get("class_id")
+        if cid and ObjectId.is_valid(cid):
+            class_object_ids.add(ObjectId(cid))
+
+    classes_by_id = {}
+    if class_object_ids:
+        classes_list = await classes_collection.find(
+            {"_id": {"$in": list(class_object_ids)}}
+        ).to_list(None)
+        classes_by_id = {str(c["_id"]): c for c in classes_list}
     summary = []
     for exam in exams:
         exam_id = str(exam["_id"])
+        class_id = exam.get("class_id")
+        class_info = classes_by_id.get(str(class_id))
+
         pipeline = [
             {"$match": {"exam_id": exam_id}},
             {
@@ -315,13 +361,86 @@ async def get_all_results_summary(current_user: dict = Depends(get_current_user)
                 "id": exam_id,
                 "title": exam["title"],
                 "subject": exam["subject"],
+                "class_id": class_id,
+                "class_name": class_info.get("name") if class_info else "N/A",
+                "grade": class_info.get("grade") if class_info else "N/A",
                 "total_submissions": stats["total_submissions"],
                 "average_score": stats["average_score"] or 0,
                 "highest_score": stats["highest_score"] or 0,
                 "violations_count": stats["violations_sum"] or 0,
+                "start_time": exam.get("start_time"),
+                "end_time": exam.get("end_time"),
             }
         )
     return summary
+
+
+@router.get("/{exam_id}/submissions", response_model=List[dict])
+async def get_exam_submissions(
+    exam_id: str, current_user: dict = Depends(get_current_user)
+):
+    role = current_user.get("role")
+    if role not in ["admin", "teacher"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not ObjectId.is_valid(exam_id):
+        raise HTTPException(status_code=400, detail="Invalid exam ID")
+
+    user_id = str(current_user["_id"])
+    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if role == "teacher":
+        class_id = exam.get("class_id")
+        # Check if teacher is assigned to this class or created the exam
+        cls = None
+        if class_id and ObjectId.is_valid(class_id):
+            cls = await classes_collection.find_one(
+                {
+                    "_id": ObjectId(class_id),
+                    "$or": [
+                        {"homeroom_teacher_id": user_id},
+                        {"subject_teachers.teacher_id": user_id},
+                    ],
+                }
+            )
+        if not cls and exam.get("teacher_id") != user_id:
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+    submissions = await submissions_collection.find({"exam_id": exam_id}).to_list(None)
+
+    # Collect all valid student_ids to query users once, avoiding N+1 queries
+    student_object_ids = set()
+    for sub in submissions:
+        sid = sub.get("student_id")
+        if sid and ObjectId.is_valid(sid):
+            student_object_ids.add(ObjectId(sid))
+
+    students_by_id = {}
+    if student_object_ids:
+        students = await users_collection.find(
+            {"_id": {"$in": list(student_object_ids)}}
+        ).to_list(None)
+        students_by_id = {str(s["_id"]): s for s in students}
+
+    results = []
+    for sub in submissions:
+        student_id = sub.get("student_id")
+        student = students_by_id.get(str(student_id))
+
+        results.append(
+            {
+                "student_id": student_id,
+                "student_name": student.get("name") if student else "Unknown student",
+                "score": sub.get("score", 0),
+                "violation_count": sub.get("violation_count", 0),
+                "status": sub.get("status"),
+                "submitted_at": sub.get("submitted_at"),
+            }
+        )
+
+    return results
 
 
 @router.get("/{exam_id}", response_model=dict)
@@ -391,7 +510,13 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
             has_permission = True
         else:
             cls = await classes_collection.find_one(
-                {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+                {
+                    "_id": ObjectId(exam["class_id"]),
+                    "$or": [
+                        {"homeroom_teacher_id": user_id},
+                        {"subject_teachers.teacher_id": user_id},
+                    ],
+                }
             )
             if cls:
                 has_permission = True
@@ -425,7 +550,13 @@ async def update_exam(
             has_permission = True
         else:
             cls = await classes_collection.find_one(
-                {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+                {
+                    "_id": ObjectId(exam["class_id"]),
+                    "$or": [
+                        {"homeroom_teacher_id": user_id},
+                        {"subject_teachers.teacher_id": user_id},
+                    ],
+                }
             )
             if cls:
                 has_permission = True
@@ -463,7 +594,13 @@ async def delete_exam(exam_id: str, current_user: dict = Depends(get_current_use
             has_permission = True
         else:
             cls = await classes_collection.find_one(
-                {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+                {
+                    "_id": ObjectId(exam["class_id"]),
+                    "$or": [
+                        {"homeroom_teacher_id": user_id},
+                        {"subject_teachers.teacher_id": user_id},
+                    ],
+                }
             )
             if cls:
                 has_permission = True
@@ -494,7 +631,13 @@ async def get_exam_secret_key(
     user_id = str(current_user["_id"])
     if role == "teacher" and exam["teacher_id"] != user_id:
         cls = await classes_collection.find_one(
-            {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+            {
+                "_id": ObjectId(exam["class_id"]),
+                "$or": [
+                    {"homeroom_teacher_id": user_id},
+                    {"subject_teachers.teacher_id": user_id},
+                ],
+            }
         )
         if not cls:
             raise HTTPException(status_code=403, detail="Permission denied")
@@ -519,7 +662,13 @@ async def regenerate_exam_secret_key(
     user_id = str(current_user["_id"])
     if role == "teacher" and exam["teacher_id"] != user_id:
         cls = await classes_collection.find_one(
-            {"_id": ObjectId(exam["class_id"]), "homeroom_teacher_id": user_id}
+            {
+                "_id": ObjectId(exam["class_id"]),
+                "$or": [
+                    {"homeroom_teacher_id": user_id},
+                    {"subject_teachers.teacher_id": user_id},
+                ],
+            }
         )
         if not cls:
             raise HTTPException(status_code=403, detail="Permission denied")
@@ -541,10 +690,17 @@ async def get_all_violations(current_user: dict = Depends(get_current_user)):
 
     query = {}
     if role == "teacher":
-        homeroom_classes = []
-        async for cls in classes_collection.find({"homeroom_teacher_id": user_id}):
-            homeroom_classes.append(str(cls["_id"]))
-        query = {"class_id": {"$in": homeroom_classes}}
+        teacher_classes = []
+        async for cls in classes_collection.find(
+            {
+                "$or": [
+                    {"homeroom_teacher_id": user_id},
+                    {"subject_teachers.teacher_id": user_id},
+                ]
+            }
+        ):
+            teacher_classes.append(str(cls["_id"]))
+        query = {"class_id": {"$in": teacher_classes}}
 
     violations = []
     async for v in violations_collection.find(query).sort("violation_time", -1):

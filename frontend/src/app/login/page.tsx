@@ -146,17 +146,17 @@ export default function LoginPage() {
     };
 
     return (
-        <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans text-white">
-            <a
+        <main className="min-h-screen bg-[#5B0019] flex flex-col items-center justify-center p-4 font-sans">
+            <Link
                 href="/"
                 className="absolute top-6 left-6 inline-flex items-center gap-2
                  text-gray-400 hover:text-white transition-colors"
             >
                 <ArrowLeft size={18} />
                 <span className="text-sm">Quay lại</span>
-            </a>
+            </Link>
 
-            <div className="w-full max-w-100 bg-[#5c0f23] p-8 rounded-3xl shadow-2xl border border-white/5">
+            <div className="w-full max-w-100 bg-white p-10 rounded-[2.5rem] shadow-2xl border border-white/10">
 
                 <div className="flex justify-center mb-8">
                     <img
@@ -167,7 +167,7 @@ export default function LoginPage() {
                 </div>
 
                 <div className="text-center mb-8">
-                    <p className="text-gray-400 text-sm leading-relaxed tracking-[-0.015em] px-2">
+                    <p className="text-gray-500 text-sm font-semibold leading-relaxed tracking-tight px-2">
                         Vui lòng đăng nhập để tiếp tục hành trình <br /> chinh phục tri thức của bạn
                     </p>
                 </div>
@@ -178,11 +178,11 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                <form className="space-y-5" onSubmit={handleSubmit} noValidate>
-                    <div className="space-y-1">
-                        <label className="text-gray-300 text-xs ml-1 font-medium tracking-[-0.01em]">Email address</label>
+                <form className="space-y-5" onSubmit={handleSubmit}>
+                    <div className="space-y-2">
+                        <label className="text-[#5B0019] text-[10px] font-black uppercase tracking-widest ml-1">Email address</label>
                         <div className="relative">
-                            <Mail className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${emailError ? 'text-red-400' : 'text-gray-500'}`} size={18} />
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                             <input
                                 name="email"
                                 type="email"
@@ -193,6 +193,7 @@ export default function LoginPage() {
                                     ? 'border-red-500 focus:ring-1 focus:ring-red-500'
                                     : 'border-gray-700 focus:border-[#5B0019] focus:ring-1 focus:ring-[#5B0019]'
                                     }`}
+                                className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#5B0019]/20 focus:border-[#5B0019] transition-all font-medium"
                             />
                         </div>
                         {emailError && (
@@ -202,13 +203,12 @@ export default function LoginPage() {
                         )}
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                         <div className="flex justify-between items-center px-1">
-                            <label className="text-gray-300 text-xs font-medium">Password</label>
-                            <Link href="#" className="text-gray-400 text-xs hover:text-white">Quên mật khẩu?</Link>
+                            <label className="text-[#5B0019] text-[10px] font-black uppercase tracking-widest">Password</label>
                         </div>
                         <div className="relative">
-                            <Lock className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${passwordError ? 'text-red-400' : 'text-gray-500'}`} size={18} />
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                             <input
                                 name="password"
                                 type={showPassword ? "text" : "password"}
@@ -224,7 +224,7 @@ export default function LoginPage() {
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#5B0019] transition-colors"
                             >
                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                             </button>
@@ -239,7 +239,7 @@ export default function LoginPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-white border-2 border-[#5B0019] text-[#000000] font-medium py-3 rounded-xl transition-all duration-300 shadow-lg mt-4 hover:bg-[#5B0019] hover:border-[#5B0019] hover:text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-[#5B0019] text-white font-black py-4 rounded-2xl transition-all duration-300 shadow-xl shadow-red-900/10 mt-6 hover:bg-black hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest text-xs"
                     >
                         {loading ? (
                             <>
@@ -252,11 +252,8 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                <p className="text-center text-gray-400 text-sm mt-8">
-                    Bạn chưa có tài khoản?{" "}
-                    <Link href="/contact" className="text-[#0D9488] font-medium hover:text-[#11ad9e] transition-colors">
-                        Liên hệ nhà trường
-                    </Link>
+                <p className="text-center text-gray-400 text-[11px] font-black uppercase tracking-widest mt-10 leading-relaxed">
+                    Đăng nhập chỉ dành cho nhà trường,<br /> giáo viên và học sinh
                 </p>
             </div>
         </main>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Users, Search, Edit2, Trash2, Shield, Loader2, X, Save, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Users, Search, Edit2, Trash2, Shield, Loader2, X, Save, AlertCircle } from 'lucide-react';
 import Cookies from 'js-cookie';
 
 const StudentsPage = () => {
@@ -9,7 +9,6 @@ const StudentsPage = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
     
     // Edit Modal State
     const [editingStudent, setEditingStudent] = useState<any>(null);
@@ -38,10 +37,6 @@ const StudentsPage = () => {
     useEffect(() => {
         fetchStudents();
     }, []);
-
-    const togglePassword = (id: string) => {
-        setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }));
-    };
 
     const handleDelete = async (id: string) => {
         if (!confirm("Bạn có chắc chắn muốn xóa học sinh này? Hành động này không thể hoàn tác.")) return;
@@ -177,17 +172,9 @@ const StudentsPage = () => {
                                     </span>
                                 </td>
                                 <td className="px-8 py-6 text-center">
-                                    <div className="flex items-center justify-center gap-2">
-                                        <code className="px-2 py-1 bg-gray-100 text-gray-600 rounded font-mono text-xs min-w-[80px]">
-                                            {visiblePasswords[student.id] ? (student.password_plain || 'N/A') : '********'}
-                                        </code>
-                                        <button 
-                                            onClick={() => togglePassword(student.id)}
-                                            className="p-1 text-gray-400 hover:text-[#5B0019] transition-colors"
-                                        >
-                                            {visiblePasswords[student.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                        </button>
-                                    </div>
+                                    <span className="px-3 py-1 bg-green-50 text-green-600 rounded-lg font-black text-xs">
+                                        Đang hoạt động
+                                    </span>
                                 </td>
                                 <td className="px-8 py-6 text-right">
                                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -269,7 +256,7 @@ const StudentsPage = () => {
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-2">Mật khẩu mới (Để trống nếu không đổi)</label>
                                 <input 
-                                    type="text"
+                                    type="password"
                                     placeholder="Nhập mật khẩu mới..."
                                     value={editForm.password}
                                     onChange={(e) => setEditForm({...editForm, password: e.target.value})}

@@ -2,25 +2,25 @@
 aws_region         = 
 //EC2 config
 ec2_instance_type  = 
-ec2_ami_id         = 
 ec2_instance_name  = 
-ec2_key_name       = 
 
 //ECR config
 ecr_repository_name =
 ecr_tag_immutable   = 
 
-//Security group rules
-ssh_ingress_cidr_blocks   = 
-https_ingress_cidr_blocks = 
-docdb_egress_cidr_blocks  = 
-redis_egress_cidr_blocks  = 
+// Security group rules (egress allowlists used by backend SG)
+docdb_egress_cidr_blocks  =
+redis_egress_cidr_blocks  =
 
 // ASG config 
 asg_min_size         = 
 asg_max_size         = 
 asg_desired_capacity = 
 backend_image_tag    = 
+
+// CloudWatch alarms + SNS notifications
+enable_alarms        = false
+alarm_email          = ""
 
 // Network config (VPC & Subnets)
 vpc_cidr_block            = 
@@ -34,6 +34,27 @@ vpc_name                  =
 igw_name                  = 
 backend_port              = 
 
+// App storage (S3 for camera cheating-detection evidence)
+camera_detect_bucket_name = "log-camera-detect-cheating-0293839182"
+
+// Frontend (Amplify/CloudFront) WAF
+// Set enable_frontend_waf=true to create a Web ACL (scope CLOUDFRONT).
+// To have Terraform auto-attach it, set frontend_cloudfront_distribution_id
+// (you can find this in the CloudFront console for the Amplify app).
+enable_frontend_waf                 = false
+frontend_cloudfront_distribution_id = ""
+frontend_waf_rate_limit             = 2000
+
 // SSL Certificate
 certificate_arn           = 
 
+// Custom API domain (Route53 + ACM)
+// If you want Terraform to provision `api.edu-trust.app` end-to-end, set:
+// enable_api_custom_domain = true
+// api_domain_name          = "api.edu-trust.app"
+// route53_zone_id          = "<HOSTED_ZONE_ID>"   # preferred
+// route53_zone_name        = "edu-trust.app"      # alternative to zone_id
+enable_api_custom_domain  =
+api_domain_name           =
+route53_zone_id           =
+route53_zone_name         =

@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from src.auth.dependencies import get_current_user
 from src.schemas.conversation_schema import (
     ConversationResponseSchema,
@@ -33,9 +33,12 @@ async def create_conversation(
 async def list_conversations(
     current_user: Annotated[dict, Depends(get_current_user)],
     limit: int = 50,
+    query: str | None = None,
     handler=Depends(get_conversation_handler),
 ):
     user_id = str(current_user["_id"])
+    if query and query.strip():
+        return handler.search_conversations(user_id=user_id, query=query, limit=limit)
     return handler.list_conversations(user_id=user_id, limit=limit)
 
 
@@ -91,3 +94,20 @@ async def get_conversation(
         updated_at=conversation.get("updated_at"),
         messages=messages,
     )
+
+
+@router.delete(
+    "/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_conversation(
+    conversation_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    handler=Depends(get_conversation_handler),
+) -> Response:
+    user_id = str(current_user["_id"])
+    deleted = handler.delete_conversation(conversation_id, user_id=user_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
