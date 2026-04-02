@@ -179,8 +179,11 @@ class CognitoAuthService:
                 status_code=403,
             ) from error
         except ClientError as error:
+            error_message = error.response.get("Error", {}).get(
+                "Message", "Unknown Cognito error"
+            )
             raise CognitoAuthError(
-                "Unable to authenticate with Cognito.",
+                f"Unable to authenticate: {error_message}",
                 status_code=500,
             ) from error
 

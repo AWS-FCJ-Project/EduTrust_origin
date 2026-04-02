@@ -42,12 +42,13 @@ class S3Handler:
             print(f"[S3 ERROR] Upload failed: {e}")
             return False
 
-    def get_presigned_url(self, s3_key, expiration=3600):
+    def get_presigned_url(self, s3_key, bucket=None, expiration=3600):
         """Generates a temporary public URL for a private S3 object"""
+        target_bucket = bucket or self.bucket_name
         try:
             url = self.s3_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.bucket_name, "Key": s3_key},
+                Params={"Bucket": target_bucket, "Key": s3_key},
                 ExpiresIn=expiration,
             )
             return url
@@ -88,6 +89,69 @@ class S3Handler:
         except ClientError as e:
             print(f"[S3 ERROR] Count failed: {e}")
             return 0
+
+    def get_s3_key(self, object_name):
+        return f"avatars/{object_name}"
+
+    def upload_img_s3(
+        self, file_bytes, s3_key, content_type="image/jpeg", is_avatar=False
+    ):
+        bucket = app_config.S3_AVATAR_BUCKET_NAME if is_avatar else self.bucket_name
+        if not bucket:
+            bucket = self.bucket_name  # Fallback
+        try:
+            self.s3_client.put_object(
+                Bucket=bucket,
+                Key=s3_key,
+                Body=file_bytes,
+                ContentType=content_type,
+            )
+            return True
+        except ClientError as e:
+            print(f"[S3 ERROR] Upload failed: {e}")
+            return False
+
+    def load_avatar(self, base_64_url: str = None, user_id: str = None):
+        """Processes base64 and uploads to S3"""
+        if not base_64_url:
+            return None
+
+        import base64
+        import re
+        from uuid import uuid4
+
+        file_bytes = None
+        content_type = "image/jpeg"
+
+        try:
+            # Process base64
+            if base_64_url.startswith("data:image"):
+                match = re.match(r"data:(image/\w+);base64,(.*)", base_64_url)
+                if match:
+                    content_type = match.group(1)
+                    encoded = match.group(2)
+                else:
+                    encoded = (
+                        base_64_url.split(",")[1] if "," in base_64_url else base_64_url
+                    )
+            else:
+                encoded = base_64_url
+            file_bytes = base64.b64decode(encoded)
+        except Exception as e:
+            print(f"[S3 ERROR] load_avatar convert failed: {e}")
+            raise ValueError(f"Lấy ảnh base64 thất bại: {str(e)}")
+
+        if file_bytes:
+            ext = "png" if "png" in content_type else "jpg"
+            s3_key = self.get_s3_key(f"{user_id}_{uuid4().hex}.{ext}")
+            success = self.upload_img_s3(
+                file_bytes, s3_key, content_type, is_avatar=True
+            )
+            if success:
+                return s3_key
+            else:
+                raise ValueError("Không thể lưu ảnh lên hệ thống lưu trữ S3.")
+        return None
 
 
 _s3_handler = None
