@@ -14,8 +14,8 @@ from src.memory.conversation_cache import ConversationCache
 from src.memory.conversation_handler import ConversationHandler
 from src.memory.redis_client import RedisClient
 from src.routers import (
-    class_routes,
     camera_routes,
+    class_routes,
     conversation_routes,
     exam_routes,
     translate_routes,
