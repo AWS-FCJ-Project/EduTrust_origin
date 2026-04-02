@@ -26,7 +26,7 @@ class CognitoAuthService:
             or "ap-southeast-1"
         )
         self._jwk_client: PyJWKClient | None = None
-        self._client = boto3.client("cognito-idp", region_name=self.region)
+        self._client = None
 
     @property
     def configured(self) -> bool:
@@ -38,6 +38,16 @@ class CognitoAuthService:
 
     @property
     def client(self):
+        if self._client is None:
+            client_kwargs = {"region_name": self.region}
+            if app_config.AWS_ACCESS_KEY_ID and app_config.AWS_SECRET_ACCESS_KEY:
+                client_kwargs.update(
+                    {
+                        "aws_access_key_id": app_config.AWS_ACCESS_KEY_ID,
+                        "aws_secret_access_key": app_config.AWS_SECRET_ACCESS_KEY,
+                    }
+                )
+            self._client = boto3.client("cognito-idp", **client_kwargs)
         return self._client
 
     def ensure_configured(self) -> None:
