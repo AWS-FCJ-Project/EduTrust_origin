@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import (APIRouter, Depends, HTTPException, Request, Response,
-                     status)
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from src.auth.dependencies import get_current_user
 from src.conversation.conversation_handler import ConversationHandler
-from src.schemas.conversation_schema import (ConversationResponseSchema,
-                                             ConversationSummarySchema)
+from src.schemas.conversation_schema import (
+    ConversationResponseSchema,
+    ConversationSummarySchema,
+)
 
 router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
 
