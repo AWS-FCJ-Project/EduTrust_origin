@@ -417,16 +417,56 @@ jobs:
             ${{ runner.os }}-terraform-
 
       - name: Update Launch Template with new tag
+        id: tf_plan
         working-directory: ${{ env.TF_DIR }}
         env:
           TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
           TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
+          set -euo pipefail
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
-          terraform apply -auto-approve -input=false -var="backend_image_tag=$IMAGE_TAG"
+          set +e
+          terraform plan -detailed-exitcode -input=false -out=tfplan -var="backend_image_tag=$IMAGE_TAG"
+          plan_exit_code=$?
+          set -e
+
+          case "$plan_exit_code" in
+            0)
+              echo "No infrastructure changes detected."
+              echo "terraform_has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "launch_template_changed=false" >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "Infrastructure changes detected. Inspecting Terraform plan..."
+              terraform show -json tfplan > tfplan.json
+              if jq -e '
+                .resource_changes[]
+                | select(.address == "aws_launch_template.backend")
+                | select(
+                    (.change.actions | index("create")) or
+                    (.change.actions | index("update")) or
+                    (.change.actions | index("replace")) or
+                    (.change.actions | index("delete"))
+                  )
+              ' tfplan.json >/dev/null; then
+                echo "Launch template changes detected."
+                echo "launch_template_changed=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "Launch template unchanged."
+                echo "launch_template_changed=false" >> "$GITHUB_OUTPUT"
+              fi
+              echo "terraform_has_changes=true" >> "$GITHUB_OUTPUT"
+              terraform apply -auto-approve -input=false tfplan
+              ;;
+            *)
+              echo "terraform plan failed with exit code ${plan_exit_code}" >&2
+              exit "$plan_exit_code"
+              ;;
+          esac
 
       - name: Start ASG Instance Refresh
+        if: ${{ steps.tf_plan.outputs.launch_template_changed == 'true' }}
         run: |
           set -euo pipefail
 
@@ -568,6 +608,12 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Skip ASG Instance Refresh
+        if: ${{ steps.tf_plan.outputs.launch_template_changed != 'true' }}
+        run: |
+          echo "Launch template did not change in Terraform plan, so instance refresh is skipped."
+          echo "ROLLING_REFRESH_STARTED=false" >> "$GITHUB_ENV"
 
       - name: Verify rollout (ECR image exists, targets healthy, /health OK)
         shell: bash
