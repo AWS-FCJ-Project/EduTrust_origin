@@ -115,14 +115,14 @@ class S3Handler:
         """Processes base64 and uploads to S3"""
         if not base_64_url:
             return None
-            
+
         import base64
         import re
         from uuid import uuid4
-        
+
         file_bytes = None
         content_type = "image/jpeg"
-        
+
         try:
             # Process base64
             if base_64_url.startswith("data:image"):
