@@ -1,5 +1,25 @@
-"""Legacy database package.
+# Database layer
+# Provides abstraction over storage backend (DynamoDB)
+from src.database.dynamodb_facade import PersistenceFacade
+from src.database.repositories import (
+    BaseRepository,
+    ClassRepository,
+    ConversationRepository,
+    ExamRepository,
+    OtpRepository,
+    SubmissionRepository,
+    UserRepository,
+    ViolationRepository,
+)
 
-This package still contains Mongo-backed modules kept for migration compatibility.
-Do not initialize database clients at import time.
-"""
+__all__ = [
+    "PersistenceFacade",
+    "BaseRepository",
+    "UserRepository",
+    "ClassRepository",
+    "ExamRepository",
+    "SubmissionRepository",
+    "ViolationRepository",
+    "ConversationRepository",
+    "OtpRepository",
+]

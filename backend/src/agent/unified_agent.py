@@ -6,7 +6,7 @@ import yaml
 from pydantic_ai import Agent
 from src.agent.tools import AgentTools
 from src.app_config import app_config
-from src.conversation.conversation_handler_dynamodb import DynamoDBConversationHandler
+from src.conversation.conversation_handler import DynamoDBConversationHandler
 from src.llm import LLM
 from src.logger import log_agent_response, log_user_input
 from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent

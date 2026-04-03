@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from src.auth.dependencies import get_current_user
-from src.conversation.conversation_handler_dynamodb import DynamoDBConversationHandler
+from src.conversation.conversation_handler import DynamoDBConversationHandler
 from src.schemas.conversation_schema import (
     ConversationResponseSchema,
     ConversationSummarySchema,

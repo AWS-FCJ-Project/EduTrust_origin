@@ -61,8 +61,8 @@ async def lifespan(app: FastAPI):
     redis_client.connect_to_database()
 
     # Persistence facade - Phase 03 uses DynamoDB
-    from src.persistence import PersistenceFacade
-    from src.persistence.dynamodb_client import DynamoDBClient
+    from src.database import PersistenceFacade
+    from src.database.dynamodb_client import DynamoDBClient
 
     dynamo_client = DynamoDBClient()
     app.state.persistence = PersistenceFacade(dynamo_client)
@@ -76,12 +76,8 @@ async def lifespan(app: FastAPI):
     conversation_cache = ConversationCache(redis_client=redis_client)
 
     # DynamoDB-backed conversation handler (Phase 03)
-    from src.conversation.conversation_handler_dynamodb import (
-        DynamoDBConversationHandler,
-    )
-    from src.persistence.repositories.conversation_repository import (
-        ConversationRepository,
-    )
+    from src.conversation.conversation_handler import DynamoDBConversationHandler
+    from src.database.repositories.conversation_handler import ConversationRepository
 
     conversation_repo = ConversationRepository(dynamo_client)
     app.state.conversation_handler = DynamoDBConversationHandler(

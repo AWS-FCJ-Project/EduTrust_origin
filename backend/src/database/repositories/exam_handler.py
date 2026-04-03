@@ -1,6 +1,6 @@
 from typing import Optional
 
-from src.persistence.dynamodb_client import get_dynamodb_client
+from src.database.dynamodb_client import get_dynamodb_client
 
 
 class ExamRepository:

@@ -1,48 +1,41 @@
+"""
+DynamoDB-backed ConversationHandler for Phase 03.
+Delegates persistence to ConversationRepository while keeping
+cache and embedding for read optimization.
+"""
+
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import numpy as np
-import pymongo
-from pymongo import ASCENDING, DESCENDING
 from sentence_transformers import SentenceTransformer
 from src.conversation.conversation_cache import ConversationCache
 from src.conversation.conversation_constants import DEFAULT_LIMIT, DEFAULT_TITLE
-from src.database.mongo_client import MongoClient
+from src.database.repositories.conversation_handler import ConversationRepository
 
 logger = logging.getLogger(__name__)
 
 
-class ConversationHandler:
+class DynamoDBConversationHandler:
     """
-    Handler for storing conversations in MongoDB with optional caching.
+    Handler for storing conversations in DynamoDB with optional caching.
     Provides search functionality with embeddings.
+    All methods are async to safely integrate with ASGI/FastAPI.
     """
 
     def __init__(
         self,
-        mongo_client: MongoClient,
+        conversation_repo: ConversationRepository,
         embedding_model: SentenceTransformer,
         conversation_cache: Optional[ConversationCache] = None,
-        collection_name: str = "conversations",
     ):
-        self._mongo = mongo_client
+        self._repo = conversation_repo
         self._embedding_model = embedding_model
-        self._collection_name = collection_name
         self._conversation_cache = conversation_cache
         self._embedding_cache: dict[str, list[float]] = {}
-
-    @property
-    def collection(self) -> pymongo.collection.Collection:
-        """Get the conversations collection."""
-        return self._mongo.get_collection(self._collection_name)
-
-    def create_index(self) -> None:
-        """Create required indexes for efficient queries."""
-        self.collection.create_index(
-            [("user_id", ASCENDING), ("updated_at", DESCENDING)]
-        )
 
     def _log_cache(
         self,
@@ -60,18 +53,28 @@ class ConversationHandler:
             cached_messages,
         )
 
-    def _log_mongo_read(self, *, conversation_id: str, message_limit: int) -> None:
-        logger.info(
-            "conversation_mongo read conversation_id=%s message_limit=%s",
-            conversation_id,
-            message_limit,
-        )
+    async def create_conversation(
+        self, conversation_id: str, *, user_id: str
+    ) -> dict[str, Any]:
+        """Create a new empty conversation for a user."""
+        import uuid
 
-    def _require_collection(self) -> pymongo.collection.Collection:
-        """Get MongoDB collection."""
-        return self.collection
+        conv_id = conversation_id or str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        conversation = {
+            "conversation_id": conv_id,
+            "user_id": user_id,
+            "title": DEFAULT_TITLE,
+            "messages": [],
+            "message_count": 0,
+            "last_message_preview": "",
+            "created_at": now,
+            "updated_at": now,
+        }
+        await self._repo.insert_one(conversation)
+        return conversation
 
-    def add_message(
+    async def add_message(
         self,
         conversation_id: str,
         *,
@@ -82,47 +85,32 @@ class ConversationHandler:
         **extra: Any,
     ) -> None:
         """Append message to conversation, creating it if needed."""
-        collection = self._require_collection()
         now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
 
         message: dict[str, Any] = {
             "role": role,
             "content": content,
-            "created_at": extra.pop("created_at", now),
+            "created_at": extra.pop("created_at", now_iso),
             **extra,
         }
-        push_value: dict[str, Any] = {"$each": [message]}
-        if max_messages is not None:
-            push_value["$slice"] = -max_messages
 
-        set_on_insert: dict[str, Any] = {
-            "_id": conversation_id,
-            "title": DEFAULT_TITLE,
-            "created_at": now,
-        }
-        if user_id is not None:
-            set_on_insert["user_id"] = user_id
-
-        collection.update_one(
-            {"_id": conversation_id},
-            {
-                "$setOnInsert": set_on_insert,
-                "$set": {"updated_at": now},
-                "$inc": {"message_count": 1},
-                "$push": {"messages": push_value},
-            },
-            upsert=True,
+        await self._repo.append_message(
+            conversation_id=conversation_id,
+            message=message,
+            user_id=user_id,
+            max_messages=max_messages,
         )
 
         if role == "user":
-            self._update_title_from_first_message(conversation_id, content)
+            await self._update_title_from_first_message(conversation_id, content)
 
         if self._conversation_cache:
-            self._write_through_cache(
+            await self._write_through_cache(
                 conversation_id, message, max_messages, now, user_id
             )
 
-    def _write_through_cache(
+    async def _write_through_cache(
         self,
         conversation_id: str,
         message: dict,
@@ -131,6 +119,8 @@ class ConversationHandler:
         user_id: Optional[str],
     ) -> None:
         """Write-through cache sync."""
+        if not self._conversation_cache:
+            return
         cached = self._conversation_cache.get_conversation(conversation_id)
         cached_messages = cached.get("messages") if isinstance(cached, dict) else None
         if isinstance(cached_messages, list):
@@ -159,7 +149,7 @@ class ConversationHandler:
         else:
             self._conversation_cache.invalidate_conversation(conversation_id)
 
-    def get_context(
+    async def get_context(
         self,
         conversation_id: str,
         *,
@@ -167,6 +157,7 @@ class ConversationHandler:
         user_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Retrieve recent messages from conversation."""
+        # Try cache first
         if user_id is None and self._conversation_cache and message_limit > 0:
             cached = self._conversation_cache.get_conversation(conversation_id)
             cached_messages = (
@@ -203,111 +194,66 @@ class ConversationHandler:
                 ),
             )
 
-        collection = self._require_collection()
-        projection: dict[str, Any] = {"messages": 1}
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
-
-        self._log_mongo_read(
-            conversation_id=conversation_id, message_limit=message_limit
-        )
-        doc = collection.find_one(query, projection)
-        if not doc:
+        # Read from DynamoDB
+        conv = await self._repo.get_conversation(conversation_id, user_id)
+        if not conv:
             return []
 
-        messages = list(doc.get("messages", []))
+        messages = conv.get("messages", [])
+        if isinstance(messages, list):
+            messages = messages[-message_limit:] if message_limit > 0 else messages
+        else:
+            messages = []
+
+        # Cache if no user_id filter
         if user_id is None and self._conversation_cache and message_limit > 0:
             self._conversation_cache.cache_conversation(
                 {"_id": conversation_id, "messages": messages, "is_complete": True}
             )
-        return messages[-message_limit:] if message_limit > 0 else messages
+        return messages
 
-    def create_conversation(
-        self, conversation_id: str, *, user_id: str
-    ) -> dict[str, Any]:
-        """Create a new empty conversation for a user."""
-        collection = self._require_collection()
-        now = datetime.now(timezone.utc)
-        conversation = {
-            "_id": conversation_id,
-            "user_id": user_id,
-            "title": DEFAULT_TITLE,
-            "messages": [],
-            "message_count": 0,
-            "created_at": now,
-            "updated_at": now,
-        }
-        collection.insert_one(conversation)
-        return conversation
-
-    def list_conversations(
+    async def list_conversations(
         self, *, user_id: str, limit: int = DEFAULT_LIMIT
     ) -> list[dict[str, Any]]:
         """List conversation summaries for a user, newest first."""
-        collection = self._require_collection()
-        cursor = (
-            collection.find(
-                {"user_id": user_id},
+        conversations = await self._repo.list_conversations(user_id, limit)
+        results = []
+        for conv in conversations:
+            messages = conv.get("messages", [])
+            if isinstance(messages, list) and messages:
+                preview = messages[-1].get("content", "") if messages else ""
+            else:
+                preview = conv.get("last_message_preview", "")
+            results.append(
                 {
-                    "title": 1,
-                    "created_at": 1,
-                    "updated_at": 1,
-                    "message_count": 1,
-                    "messages": {"$slice": -1},
-                },
-            )
-            .sort("updated_at", DESCENDING)
-            .limit(limit)
-        )
-
-        conversations: list[dict[str, Any]] = []
-        for doc in cursor:
-            messages = list(doc.get("messages", []))
-            preview = messages[-1].get("content", "") if messages else ""
-            conversations.append(
-                {
-                    "conversation_id": doc["_id"],
-                    "title": doc.get("title", DEFAULT_TITLE),
-                    "preview": preview[:140],
-                    "created_at": doc.get("created_at"),
-                    "updated_at": doc.get("updated_at"),
-                    "message_count": int(doc.get("message_count", 0)),
+                    "conversation_id": conv.get("conversation_id"),
+                    "title": conv.get("title", DEFAULT_TITLE),
+                    "preview": preview[:140] if preview else "",
+                    "created_at": conv.get("created_at"),
+                    "updated_at": conv.get("updated_at"),
+                    "message_count": int(conv.get("message_count", 0)),
                 }
             )
-        return conversations
+        return results
 
-    def get_conversation(
+    async def get_conversation(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
         """Return a conversation document by id, optionally scoped to a user."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
-        return collection.find_one(query)
+        return await self._repo.get_conversation(conversation_id, user_id)
 
-    def conversation_exists(
+    async def conversation_exists(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> bool:
         """Return True when the conversation exists."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
-        return collection.count_documents(query, limit=1) > 0
+        return await self._repo.exists(conversation_id, user_id)
 
-    def get_latest_conversation_id(self, user_id: str) -> Optional[str]:
+    async def get_latest_conversation_id(self, user_id: str) -> Optional[str]:
         """Return the most recently updated conversation id for a user."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"user_id": user_id},
-            {"_id": 1},
-            sort=[("updated_at", DESCENDING)],
-        )
-        return str(doc["_id"]) if doc else None
+        conv = await self._repo.get_latest(user_id)
+        return conv.get("conversation_id") if conv else None
 
-    def search_conversations(
+    async def search_conversations(
         self,
         *,
         user_id: str,
@@ -317,9 +263,11 @@ class ConversationHandler:
         """Search conversations by text similarity."""
         query_text = " ".join((query or "").split()).strip()
         if not query_text:
-            return self.list_conversations(user_id=user_id, limit=limit)
+            return await self.list_conversations(user_id=user_id, limit=limit)
 
-        conversations = self.list_conversations(user_id=user_id, limit=max(limit, 50))
+        conversations = await self.list_conversations(
+            user_id=user_id, limit=max(limit, 50)
+        )
 
         exact_pattern = re.compile(
             rf"^{re.escape(query_text)}$",
@@ -333,14 +281,14 @@ class ConversationHandler:
         if exact_matches:
             return exact_matches[:limit]
 
-        query_embedding = self.embed_title(query_text)
+        query_embedding = await self.embed_title(query_text)
         if not query_embedding:
             return []
 
         scored: list[dict[str, Any]] = []
         for conversation in conversations:
             title = str(conversation.get("title") or "")
-            embedding = self.embed_title(title)
+            embedding = await self.embed_title(title)
             score = self.calculate_cosine_similarity(query_embedding, embedding)
             scored.append({**conversation, "similarity": score})
 
@@ -359,7 +307,6 @@ class ConversationHandler:
         """Calculate cosine similarity between two vectors."""
         if not left or not right or len(left) != len(right):
             return 0.0
-
         left_vec = np.asarray(left, dtype=np.float32)
         right_vec = np.asarray(right, dtype=np.float32)
         denom = float(np.linalg.norm(left_vec) * np.linalg.norm(right_vec))
@@ -367,7 +314,7 @@ class ConversationHandler:
             return 0.0
         return float(np.dot(left_vec, right_vec) / denom)
 
-    def embed_title(self, title: str) -> list[float]:
+    async def embed_title(self, title: str) -> list[float]:
         """Get embedding for title with caching."""
         normalized = " ".join((title or "").split()).strip()
         if not normalized:
@@ -375,60 +322,52 @@ class ConversationHandler:
         cached = self._embedding_cache.get(normalized)
         if cached is not None:
             return cached
-
         model = self._embedding_model
         if model is None:
             return []
-        embedding = model.encode(normalized, normalize_embeddings=True).tolist()
+        # Run CPU-bound encoding in thread pool to avoid blocking the event loop
+        loop = asyncio.get_running_loop()
+        embedding = await loop.run_in_executor(
+            None, lambda: model.encode(normalized, normalize_embeddings=True).tolist()
+        )
         self._embedding_cache[normalized] = embedding
         return embedding
 
-    def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
+    async def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
         """Delete a conversation document for a user (hard delete)."""
-        collection = self._require_collection()
-        result = collection.delete_one({"_id": conversation_id, "user_id": user_id})
-
+        result = await self._repo.delete_conversation(conversation_id, user_id)
         if self._conversation_cache:
             self._conversation_cache.invalidate_conversation(conversation_id)
+        return result
 
-        return bool(result.deleted_count)
-
-    def _update_title_from_first_message(
+    async def _update_title_from_first_message(
         self, conversation_id: str, content: str
     ) -> None:
         """Use the first user message as the conversation title."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"_id": conversation_id},
-            {"title": 1, "messages": {"$slice": 2}},
-        )
-        if not doc:
+        conv = await self._repo.get_conversation(conversation_id)
+        if not conv:
             return
-
-        title = str(doc.get("title") or "").strip()
+        title = str(conv.get("title") or "").strip()
         if title and title != DEFAULT_TITLE:
             return
-
+        messages = conv.get("messages", [])
+        if not isinstance(messages, list):
+            return
         user_messages = [
-            message
-            for message in doc.get("messages", [])
-            if message.get("role") == "user" and message.get("content")
+            m for m in messages if m.get("role") == "user" and m.get("content")
         ]
         if len(user_messages) != 1:
             return
-
         normalized = " ".join(content.split()).strip()
         if not normalized:
             return
-
-        collection.update_one(
-            {"_id": conversation_id},
-            {"$set": {"title": normalized[:60]}},
-        )
+        await self._repo.update_title(conversation_id, normalized[:60])
 
     def close(self) -> None:
         """Close database and cache connections."""
-        if self._mongo:
-            self._mongo.close()
         if self._conversation_cache:
             self._conversation_cache.close()
+
+    def create_index(self) -> None:
+        """No-op: DynamoDB indexes are created via Terraform."""
+        pass
