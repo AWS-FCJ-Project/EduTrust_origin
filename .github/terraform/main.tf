@@ -293,6 +293,11 @@ resource "aws_dynamodb_table" "users" {
     enabled = true
   }
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
   tags = {
     Name = var.dynamodb_users_table_name
   }
@@ -1151,6 +1156,7 @@ resource "random_password" "redis_auth_token" {
 }
 
 resource "aws_secretsmanager_secret" "redis_auth_token" {
+  # checkov:skip=CKV2_AWS_57: Automatic rotation is not implemented for this demo/project.
   count = var.redis_auth_token_enabled ? 1 : 0
   name  = "${var.ec2_instance_name}-redis-auth-token"
 
@@ -1176,12 +1182,13 @@ resource "aws_elasticache_replication_group" "redis" {
   parameter_group_name       = var.redis_parameter_group_name
   subnet_group_name          = aws_elasticache_subnet_group.redis.name
   security_group_ids         = [aws_security_group.redis.id]
-  num_cache_clusters         = 1
-  automatic_failover_enabled = false
-  multi_az_enabled           = false
+  num_cache_clusters         = 2
+  automatic_failover_enabled = true
+  multi_az_enabled           = true
 
-  at_rest_encryption_enabled = var.redis_at_rest_encryption_enabled
-  transit_encryption_enabled = var.redis_transit_encryption_enabled
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+  kms_key_id                 = aws_kms_key.secrets.arn
 
   auth_token = var.redis_auth_token_enabled ? random_password.redis_auth_token[0].result : null
 

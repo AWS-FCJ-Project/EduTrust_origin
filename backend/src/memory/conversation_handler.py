@@ -124,7 +124,9 @@ class ConversationHandler:
                     "updated_at": now,
                 }
             else:
-                conversation = self.create_conversation(conversation_id, user_id=user_id)
+                conversation = self.create_conversation(
+                    conversation_id, user_id=user_id
+                )
 
         messages = list(conversation.get("messages") or [])
         messages.append(message)
@@ -157,7 +159,9 @@ class ConversationHandler:
             ttl = self._ttl_seconds()
             self._require_redis().client.set(
                 self._conversation_key(conversation_id),
-                json.dumps(self._require_redis()._serialize(updated), ensure_ascii=False),
+                json.dumps(
+                    self._require_redis()._serialize(updated), ensure_ascii=False
+                ),
                 ex=ttl,
             )
 
@@ -266,7 +270,9 @@ class ConversationHandler:
             if not data:
                 return None
             conversation = json.loads(data)
-            if user_id is not None and str(conversation.get("user_id") or "") != str(user_id):
+            if user_id is not None and str(conversation.get("user_id") or "") != str(
+                user_id
+            ):
                 return None
             return conversation
         except Exception as e:
@@ -303,7 +309,9 @@ class ConversationHandler:
         if not query_text:
             return self.list_conversations(user_id=user_id, limit=limit)
 
-        conversations = self.list_conversations(user_id=user_id, limit=max(int(limit or 1), 1))
+        conversations = self.list_conversations(
+            user_id=user_id, limit=max(int(limit or 1), 1)
+        )
 
         exact_pattern = re.compile(
             rf"^{re.escape(query_text)}$",
