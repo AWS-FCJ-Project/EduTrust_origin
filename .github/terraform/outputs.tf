@@ -67,3 +67,44 @@ output "secrets_kms_key_arn" {
   description = "The ARN of the KMS key used for encrypting secrets"
   value       = aws_kms_key.secrets.arn
 }
+
+# --- DynamoDB Tables (Phase 02 Migration) ---
+output "dynamodb_users_table_arn" {
+  description = "ARN of the users DynamoDB table"
+  value       = aws_dynamodb_table.users.arn
+}
+
+output "dynamodb_classes_table_arn" {
+  description = "ARN of the classes DynamoDB table"
+  value       = aws_dynamodb_table.classes.arn
+}
+
+output "dynamodb_class_teacher_assignments_table_arn" {
+  description = "ARN of the class_teacher_assignments DynamoDB table"
+  value       = aws_dynamodb_table.class_teacher_assignments.arn
+}
+
+output "dynamodb_exams_table_arn" {
+  description = "ARN of the exams DynamoDB table"
+  value       = aws_dynamodb_table.exams.arn
+}
+
+output "dynamodb_submissions_table_arn" {
+  description = "ARN of the submissions DynamoDB table"
+  value       = aws_dynamodb_table.submissions.arn
+}
+
+output "dynamodb_violations_table_arn" {
+  description = "ARN of the violations DynamoDB table"
+  value       = aws_dynamodb_table.violations.arn
+}
+
+output "dynamodb_conversations_table_arn" {
+  description = "ARN of the conversations DynamoDB table"
+  value       = aws_dynamodb_table.conversations.arn
+}
+
+output "dynamodb_otps_table_arn" {
+  description = "ARN of the otps DynamoDB table"
+  value       = aws_dynamodb_table.otps.arn
+}

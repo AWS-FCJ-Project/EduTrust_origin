@@ -199,6 +199,16 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "s3-endpoint" }
 }
 
+# DynamoDB Gateway Endpoint (Free, improves DynamoDB access from private subnets)
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "dynamodb-endpoint" }
+}
+
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
@@ -497,6 +507,52 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
   name   = "${var.ec2_instance_name}-ssm-read-policy"
   role   = aws_iam_role.backend.id
   policy = data.aws_iam_policy_document.backend_ssm_read.json
+}
+
+# --- DynamoDB Permissions (Phase 02 Migration) ---
+data "aws_iam_policy_document" "backend_dynamodb" {
+  # Allow all DynamoDB operations on the app tables
+  # checkov:skip=CKV_AWS_109: Table-level ARNs are used, action set is intentionally broad for migration phase flexibility.
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:TransactWriteItems",
+      "dynamodb:DescribeTable",
+      "dynamodb:ListTables",
+    ]
+    resources = [
+      aws_dynamodb_table.users.arn,
+      "${aws_dynamodb_table.users.arn}/index/*",
+      aws_dynamodb_table.classes.arn,
+      "${aws_dynamodb_table.classes.arn}/index/*",
+      aws_dynamodb_table.class_teacher_assignments.arn,
+      "${aws_dynamodb_table.class_teacher_assignments.arn}/index/*",
+      aws_dynamodb_table.exams.arn,
+      "${aws_dynamodb_table.exams.arn}/index/*",
+      aws_dynamodb_table.submissions.arn,
+      "${aws_dynamodb_table.submissions.arn}/index/*",
+      aws_dynamodb_table.violations.arn,
+      "${aws_dynamodb_table.violations.arn}/index/*",
+      aws_dynamodb_table.conversations.arn,
+      "${aws_dynamodb_table.conversations.arn}/index/*",
+      aws_dynamodb_table.otps.arn,
+      "${aws_dynamodb_table.otps.arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "backend_dynamodb" {
+  name   = "${var.ec2_instance_name}-dynamodb-policy"
+  role   = aws_iam_role.backend.id
+  policy = data.aws_iam_policy_document.backend_dynamodb.json
 }
 
 # --- Load Balancer Configuration ---
