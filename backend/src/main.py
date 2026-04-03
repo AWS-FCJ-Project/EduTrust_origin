@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 
 import logfire
@@ -35,16 +34,6 @@ logfire.configure(
 )
 logfire.instrument_pydantic(record="failure")
 logfire.instrument_pydantic_ai()
-
-
-class _UvicornHealthCheckAccessLogFilter(logging.Filter):
-    """Reduce noise from ALB target group health checks in container logs."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return "GET /health " not in record.getMessage()
-
-
-logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter())
 
 
 @asynccontextmanager
