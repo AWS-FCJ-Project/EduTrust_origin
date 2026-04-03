@@ -1,5 +1,3 @@
-from typing import Optional
-
 from src.database.dynamodb_client import get_dynamodb_client
 
 
@@ -15,13 +13,13 @@ class ClassRepository:
     def _pk(self, class_id: str) -> dict:
         return {"class_id": {"S": class_id}}
 
-    async def get_by_id(self, class_id: str) -> Optional[dict]:
+    async def get_by_id(self, class_id: str) -> dict | None:
         item = await self._client.get_item(self._table(), self._pk(class_id))
         if item:
             item["_id"] = item.get("class_id")
         return item
 
-    async def get_by_name_grade(self, name: str, grade: int) -> Optional[dict]:
+    async def get_by_name_grade(self, name: str, grade: int) -> dict | None:
         lookup_key = f"{grade}#{name}"
         items = await self._client.query(
             self._table(),
@@ -76,7 +74,7 @@ class ClassRepository:
         await self._client.delete_item(self._table(), self._pk(class_id))
         return True
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         if "homeroom_teacher_id" in query:
             items = await self._client.query(
                 self._table(),

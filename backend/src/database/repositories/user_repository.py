@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Optional
 
 from src.database.dynamodb_client import get_dynamodb_client
 
@@ -16,13 +15,13 @@ class UserRepository:
     def _pk(self, user_id: str) -> dict:
         return {"user_id": {"S": user_id}}
 
-    async def get_by_id(self, user_id: str) -> Optional[dict]:
+    async def get_by_id(self, user_id: str) -> dict | None:
         item = await self._client.get_item(self._table(), self._pk(user_id))
         if item:
             item["_id"] = item.get("user_id")
         return item
 
-    async def get_by_email(self, email: str) -> Optional[dict]:
+    async def get_by_email(self, email: str) -> dict | None:
         items = await self._client.query(
             self._table(),
             index_name="email-index",
@@ -79,7 +78,7 @@ class UserRepository:
         await self._client.delete_item(self._table(), self._pk(user_id))
         return True
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         # For simple queries, use scan with filter (only for migration phase)
         key = query.get("email")
         if key:

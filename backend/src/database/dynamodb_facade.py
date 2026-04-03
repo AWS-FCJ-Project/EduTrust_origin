@@ -1,12 +1,10 @@
-from typing import Optional
-
-from src.database.repositories.class_handler import ClassRepository
-from src.database.repositories.conversation_handler import ConversationRepository
-from src.database.repositories.exam_handler import ExamRepository
-from src.database.repositories.otp_handler import OtpRepository
-from src.database.repositories.submission_handler import SubmissionRepository
-from src.database.repositories.user_handler import UserRepository
-from src.database.repositories.violation_handler import ViolationRepository
+from src.database.repositories.class_repository import ClassRepository
+from src.database.repositories.conversation_repository import ConversationRepository
+from src.database.repositories.exam_repository import ExamRepository
+from src.database.repositories.otp_repository import OtpRepository
+from src.database.repositories.submission_repository import SubmissionRepository
+from src.database.repositories.user_repository import UserRepository
+from src.database.repositories.violation_repository import ViolationRepository
 
 
 class PersistenceFacade:
@@ -17,13 +15,13 @@ class PersistenceFacade:
 
     def __init__(self, dynamodb_client=None):
         self._dynamodb_client = dynamodb_client
-        self._users: Optional[UserRepository] = None
-        self._classes: Optional[ClassRepository] = None
-        self._exams: Optional[ExamRepository] = None
-        self._submissions: Optional[SubmissionRepository] = None
-        self._violations: Optional[ViolationRepository] = None
-        self._conversations: Optional[ConversationRepository] = None
-        self._otps: Optional[OtpRepository] = None
+        self._users: UserRepository | None = None
+        self._classes: ClassRepository | None = None
+        self._exams: ExamRepository | None = None
+        self._submissions: SubmissionRepository | None = None
+        self._violations: ViolationRepository | None = None
+        self._conversations: ConversationRepository | None = None
+        self._otps: OtpRepository | None = None
 
     @property
     def users(self) -> UserRepository:

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from src.database.dynamodb_client import get_dynamodb_client
 
@@ -16,7 +16,7 @@ class ConversationRepository:
     def _pk(self, conversation_id: str) -> dict:
         return {"conversation_id": {"S": conversation_id}}
 
-    async def get_by_id(self, id: str) -> Optional[dict]:
+    async def get_by_id(self, id: str) -> dict | None:
         return await self._client.get_item(self._table(), self._pk(id))
 
     async def create(self, doc: dict) -> str:
@@ -36,7 +36,7 @@ class ConversationRepository:
         await self._client.delete_item(self._table(), self._pk(id))
         return True
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         return None
 
     async def find_many(self, query: dict, **kwargs) -> list[dict]:
@@ -79,8 +79,8 @@ class ConversationRepository:
         return conversation
 
     async def get_conversation(
-        self, conversation_id: str, user_id: Optional[str] = None
-    ) -> Optional[dict]:
+        self, conversation_id: str, user_id: str | None = None
+    ) -> dict | None:
         return await self._client.get_item(self._table(), self._pk(conversation_id))
 
     async def list_conversations(self, user_id: str, limit: int = 50) -> list[dict]:
@@ -94,7 +94,7 @@ class ConversationRepository:
         )
         return items
 
-    async def get_latest(self, user_id: str) -> Optional[dict]:
+    async def get_latest(self, user_id: str) -> dict | None:
         items = await self.list_conversations(user_id, limit=1)
         return items[0] if items else None
 
@@ -102,7 +102,7 @@ class ConversationRepository:
         self,
         conversation_id: str,
         message: dict,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         max_messages: int = 200,
     ) -> None:
         # Get current conversation
@@ -154,7 +154,7 @@ class ConversationRepository:
             {"title": title},
         )
 
-    async def exists(self, conversation_id: str, user_id: Optional[str] = None) -> bool:
+    async def exists(self, conversation_id: str, user_id: str | None = None) -> bool:
         conv = await self.get_conversation(conversation_id, user_id)
         return conv is not None
 

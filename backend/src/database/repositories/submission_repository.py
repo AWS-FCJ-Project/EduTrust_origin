@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Optional
 
 from src.database.dynamodb_client import get_dynamodb_client
 
@@ -19,7 +18,7 @@ class SubmissionRepository:
     def _pk_sk(self, exam_id: str, student_id: str) -> dict:
         return {"exam_id": {"S": exam_id}, "student_id": {"S": student_id}}
 
-    async def get_by_id(self, id: str) -> Optional[dict]:
+    async def get_by_id(self, id: str) -> dict | None:
         return None
 
     async def create(self, doc: dict) -> str:
@@ -48,7 +47,7 @@ class SubmissionRepository:
     async def delete(self, id: str) -> bool:
         return False
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         exam_id = query.get("exam_id")
         student_id = query.get("student_id")
         if exam_id and student_id:
@@ -67,9 +66,7 @@ class SubmissionRepository:
     async def delete_one(self, query: dict) -> any:
         return None
 
-    async def get_by_exam_student(
-        self, exam_id: str, student_id: str
-    ) -> Optional[dict]:
+    async def get_by_exam_student(self, exam_id: str, student_id: str) -> dict | None:
         return await self._client.get_item(
             self._table(), self._pk_sk(exam_id, student_id)
         )

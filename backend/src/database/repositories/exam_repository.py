@@ -1,5 +1,3 @@
-from typing import Optional
-
 from src.database.dynamodb_client import get_dynamodb_client
 
 
@@ -15,7 +13,7 @@ class ExamRepository:
     def _pk(self, exam_id: str) -> dict:
         return {"exam_id": {"S": exam_id}}
 
-    async def get_by_id(self, exam_id: str) -> Optional[dict]:
+    async def get_by_id(self, exam_id: str) -> dict | None:
         return await self._client.get_item(self._table(), self._pk(exam_id))
 
     async def create(self, doc: dict) -> str:
@@ -60,7 +58,7 @@ class ExamRepository:
         await self._client.delete_item(self._table(), self._pk(exam_id))
         return True
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         return None
 
     async def find_many(self, query: dict, **kwargs) -> list[dict]:

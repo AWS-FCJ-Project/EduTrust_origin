@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Optional
 
 from src.database.dynamodb_client import get_dynamodb_client
 
@@ -16,7 +15,7 @@ class ViolationRepository:
     def _pk(self, exam_id: str, student_id: str) -> dict:
         return {"exam_id": {"S": exam_id}, "student_id": {"S": student_id}}
 
-    async def get_by_id(self, id: str) -> Optional[dict]:
+    async def get_by_id(self, id: str) -> dict | None:
         return None
 
     async def create(self, doc: dict) -> str:
@@ -46,7 +45,7 @@ class ViolationRepository:
     async def delete(self, id: str) -> bool:
         return False
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         exam_id = query.get("exam_id")
         student_id = query.get("student_id")
         if exam_id and student_id:

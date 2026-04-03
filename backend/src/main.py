@@ -11,7 +11,7 @@ from src.conversation.conversation_cache import ConversationCache
 from src.conversation.conversation_handler import ConversationHandler
 from src.database.dynamodb_client import DynamoDBClient
 from src.database.redis_client import RedisClient
-from src.database.repositories.conversation_handler import ConversationRepository
+from src.database.repositories.conversation_repository import ConversationRepository
 from src.extensions import limiter
 from src.routers import (
     class_routes,
@@ -86,6 +86,16 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
+
+# Langfuse tracing (optional)
+langfuse_client = None
+try:
+    langfuse_sensitive = getattr(langfuse, "langfuse_sensitive", None)
+    if callable(langfuse_sensitive):
+        langfuse_client = langfuse_sensitive()  # Uses env vars LANGFUSE_*
+        langfuse_client.configure()
+except Exception:
+    langfuse_client = None
 
 
 app.add_middleware(

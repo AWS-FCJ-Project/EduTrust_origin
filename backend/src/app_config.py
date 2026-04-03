@@ -58,6 +58,11 @@ class AppConfig(BaseSettings):
     REDIS_KEY_PREFIX: Optional[str] = None
     REDIS_CHAT_TTL: Optional[int] = None
 
+    # Langfuse Settings
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_BASE_URL: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.conversation.conversation_cache import ConversationCache
-from src.database.repositories.conversation_handler import ConversationRepository
+from src.database.repositories.conversation_repository import ConversationRepository
 
 DEFAULT_TITLE = "New Chat"
 DEFAULT_LIMIT = 50

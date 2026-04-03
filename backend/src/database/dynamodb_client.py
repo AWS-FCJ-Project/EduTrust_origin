@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
 import boto3
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
@@ -40,8 +39,8 @@ class DynamoDBClient:
         return kwargs
 
     async def get_item(
-        self, table: str, key: dict, projection: Optional[str] = None
-    ) -> Optional[dict]:
+        self, table: str, key: dict, projection: str | None = None
+    ) -> dict | None:
         params: dict = {"TableName": self.table_name(table), "Key": key}
         if projection:
             params["ProjectionExpression"] = projection
@@ -52,7 +51,7 @@ class DynamoDBClient:
         return None
 
     async def put_item(
-        self, table: str, item: dict, condition: Optional[str] = None
+        self, table: str, item: dict, condition: str | None = None
     ) -> dict:
         params: dict = {
             "TableName": self.table_name(table),
@@ -67,8 +66,8 @@ class DynamoDBClient:
         table: str,
         key: dict,
         updates: dict,
-        condition: Optional[str] = None,
-        extra: Optional[dict] = None,
+        condition: str | None = None,
+        extra: dict | None = None,
     ) -> dict:
         params: dict = {"TableName": self.table_name(table), "Key": key}
         update_expr, expr_names, expr_values = self._build_update_expression(updates)
@@ -91,13 +90,13 @@ class DynamoDBClient:
     async def query(
         self,
         table: str,
-        index_name: Optional[str] = None,
-        key_condition: Optional[str] = None,
-        filter_expression: Optional[str] = None,
-        expression_values: Optional[dict] = None,
-        expression_names: Optional[dict] = None,
-        projection: Optional[str] = None,
-        limit: Optional[int] = None,
+        index_name: str | None = None,
+        key_condition: str | None = None,
+        filter_expression: str | None = None,
+        expression_values: dict | None = None,
+        expression_names: dict | None = None,
+        projection: str | None = None,
+        limit: int | None = None,
         scan_index_forward: bool = False,
     ) -> list[dict]:
         params: dict = {"TableName": self.table_name(table)}
@@ -134,10 +133,10 @@ class DynamoDBClient:
     async def scan(
         self,
         table: str,
-        filter_expression: Optional[str] = None,
-        expression_values: Optional[dict] = None,
-        expression_names: Optional[dict] = None,
-        projection: Optional[str] = None,
+        filter_expression: str | None = None,
+        expression_values: dict | None = None,
+        expression_names: dict | None = None,
+        projection: str | None = None,
     ) -> list[dict]:
         params: dict = {"TableName": self.table_name(table)}
         if filter_expression:
@@ -240,7 +239,7 @@ class DynamoDBClient:
         return sk_map.get(table, "")
 
 
-_dynamodb_client: Optional[DynamoDBClient] = None
+_dynamodb_client: DynamoDBClient | None = None
 
 
 def get_dynamodb_client() -> DynamoDBClient:

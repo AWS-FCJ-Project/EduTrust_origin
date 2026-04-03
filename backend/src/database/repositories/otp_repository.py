@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from src.database.dynamodb_client import get_dynamodb_client
 
@@ -28,7 +27,7 @@ class OtpRepository:
     async def delete(self, id: str) -> bool:
         raise NotImplementedError("Use delete_otp instead")
 
-    async def find_one(self, query: dict) -> Optional[dict]:
+    async def find_one(self, query: dict) -> dict | None:
         return None
 
     async def find_many(self, query: dict, **kwargs) -> list[dict]:
@@ -61,7 +60,7 @@ class OtpRepository:
         }
         await self._client.put_item(self._table(), item)
 
-    async def get_otp(self, email: str, purpose: str, otp: str) -> Optional[dict]:
+    async def get_otp(self, email: str, purpose: str, otp: str) -> dict | None:
         item = await self._client.get_item(self._table(), self._pk(email, purpose))
         if item and item.get("otp") == otp:
             # Parse expire_at from ISO string to datetime for caller convenience
