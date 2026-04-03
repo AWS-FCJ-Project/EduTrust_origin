@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from src.agent.unified_agent import UnifiedAgent
 from src.auth.dependencies import get_current_user
 from src.llm import LLM
-from src.schemas.unified_agent_schema import (UnifiedAgentRequestSchema,
-                                              UnifiedAgentResponseSchema)
+from src.schemas.unified_agent_schema import (
+    UnifiedAgentRequestSchema,
+    UnifiedAgentResponseSchema,
+)
 from src.streaming import Streaming
 
 router = APIRouter(prefix="/unified-agent", tags=["Unified Agent"])
@@ -30,14 +32,16 @@ async def ask_agent(
 ) -> UnifiedAgentResponseSchema:
     handler = orch.conversation_handler
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
+    if await handler.conversation_exists(request.conversation_id):
+        if not await handler.conversation_exists(
+            request.conversation_id, user_id=user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found",
             )
     else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+        await handler.create_conversation(request.conversation_id, user_id=user_id)
 
     answer = await orch.ask(
         question=request.question, conversation_id=request.conversation_id
@@ -55,14 +59,16 @@ async def ask_agent_streaming(
 ):
     handler = orch.conversation_handler
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
+    if await handler.conversation_exists(request.conversation_id):
+        if not await handler.conversation_exists(
+            request.conversation_id, user_id=user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found",
             )
     else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+        await handler.create_conversation(request.conversation_id, user_id=user_id)
 
     async def generate():
         try:

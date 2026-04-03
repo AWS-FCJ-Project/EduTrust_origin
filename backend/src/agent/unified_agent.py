@@ -6,7 +6,7 @@ import yaml
 from pydantic_ai import Agent
 from src.agent.tools import AgentTools
 from src.app_config import app_config
-from src.conversation.conversation_handler import ConversationHandler
+from src.conversation.conversation_handler_dynamodb import DynamoDBConversationHandler
 from src.llm import LLM
 from src.logger import log_agent_response, log_user_input
 from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent
@@ -18,7 +18,9 @@ from src.utils import get_current_datetime
 class UnifiedAgent:
     """Interface for main agent, sub agents, and execution logic."""
 
-    def __init__(self, llm: LLM, conversation_handler: ConversationHandler) -> None:
+    def __init__(
+        self, llm: LLM, conversation_handler: DynamoDBConversationHandler
+    ) -> None:
         self._llm = llm
         self._conversation_handler = conversation_handler
 
@@ -28,7 +30,7 @@ class UnifiedAgent:
         self._main_agent: Agent[MainAgentDeps] = self._initialize()
 
     @property
-    def conversation_handler(self) -> ConversationHandler:
+    def conversation_handler(self) -> DynamoDBConversationHandler:
         return self._conversation_handler
 
     def _load_agents_config(self) -> dict:
@@ -95,20 +97,20 @@ class UnifiedAgent:
 
     async def ask(self, question: str, conversation_id: str) -> str:
         """Run the main agent and return the full response."""
-        deps, prompt = self._build_prompt(question, conversation_id)
+        deps, prompt = await self._build_prompt(question, conversation_id)
         result = await self._main_agent.run(prompt, deps=deps)
         log_agent_response("MainAgent", result.output)
-        self._conversation_handler.add_message(
+        await self._conversation_handler.add_message(
             conversation_id, role="assistant", content=result.output
         )
-        self._conversation_handler.get_context(conversation_id, message_limit=10)
+        await self._conversation_handler.get_context(conversation_id, message_limit=10)
         return result.output
 
     async def ask_stream_with_tool_calls(
         self, question: str, conversation_id: str
     ) -> AsyncIterator[MainAgentStreamEvent]:
         """Stream main agent events: text deltas, tool calls/results, and final answer."""
-        deps, prompt = self._build_prompt(question, conversation_id)
+        deps, prompt = await self._build_prompt(question, conversation_id)
         streaming = Streaming(
             orchestrator=self._main_agent,
             deps=deps,
@@ -119,16 +121,16 @@ class UnifiedAgent:
         async for event in streaming.stream_events():
             yield event
 
-    def _build_prompt(
+    async def _build_prompt(
         self, question: str, conversation_id: str
     ) -> tuple[MainAgentDeps, str]:
         """Log input, store message, and assemble prompt with conversation context."""
         log_user_input(question, conversation_id)
 
-        context_messages = self._conversation_handler.get_context(
+        context_messages = await self._conversation_handler.get_context(
             conversation_id, message_limit=10
         )
-        self._conversation_handler.add_message(
+        await self._conversation_handler.add_message(
             conversation_id, role="user", content=question
         )
         context_text = "\n".join(
