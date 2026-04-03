@@ -77,6 +77,14 @@ The backend is located in the `backend/` directory.
     ```
     The backend API will be available at `http://localhost:8000`.
 
+### SQL Database (RDS)
+
+Backend now uses a SQL database via SQLAlchemy (e.g., PostgreSQL on RDS). Configure `DATABASE_URL` in `backend/.env` (see `backend/.env.example`), then run:
+
+```bash
+uv run uvicorn src.main:app --reload
+```
+
 ## Frontend Setup
 
 The frontend is located in the `frontend/` directory.

@@ -19,7 +19,7 @@ async def create_conversation(
 ):
     conversation_id = str(uuid4())
     user_id = str(current_user["_id"])
-    conversation = handler.create_conversation(conversation_id, user_id=user_id)
+    conversation = await handler.create_conversation(conversation_id, user_id=user_id)
     return ConversationResponseSchema(
         conversation_id=conversation_id,
         title=conversation.get("title", "New Chat"),
@@ -38,8 +38,8 @@ async def list_conversations(
 ):
     user_id = str(current_user["_id"])
     if query and query.strip():
-        return handler.search_conversations(user_id=user_id, query=query, limit=limit)
-    return handler.list_conversations(user_id=user_id, limit=limit)
+        return await handler.search_conversations(user_id=user_id, query=query, limit=limit)
+    return await handler.list_conversations(user_id=user_id, limit=limit)
 
 
 @router.get("/conversations/latest", response_model=ConversationResponseSchema)
@@ -49,14 +49,14 @@ async def get_latest_conversation(
     handler=Depends(get_conversation_handler),
 ):
     user_id = str(current_user["_id"])
-    conversation_id = handler.get_latest_conversation_id(user_id)
+    conversation_id = await handler.get_latest_conversation_id(user_id)
     if not conversation_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No conversation found"
         )
 
-    conversation = handler.get_conversation(conversation_id, user_id=user_id)
-    messages = handler.get_context(
+    conversation = await handler.get_conversation(conversation_id, user_id=user_id)
+    messages = await handler.get_context(
         conversation_id, message_limit=message_limit, user_id=user_id
     )
     return ConversationResponseSchema(
@@ -78,13 +78,13 @@ async def get_conversation(
     handler=Depends(get_conversation_handler),
 ):
     user_id = str(current_user["_id"])
-    conversation = handler.get_conversation(conversation_id, user_id=user_id)
+    conversation = await handler.get_conversation(conversation_id, user_id=user_id)
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
 
-    messages = handler.get_context(
+    messages = await handler.get_context(
         conversation_id, message_limit=message_limit, user_id=user_id
     )
     return ConversationResponseSchema(
@@ -105,7 +105,7 @@ async def delete_conversation(
     handler=Depends(get_conversation_handler),
 ) -> Response:
     user_id = str(current_user["_id"])
-    deleted = handler.delete_conversation(conversation_id, user_id=user_id)
+    deleted = await handler.delete_conversation(conversation_id, user_id=user_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"

@@ -62,10 +62,12 @@ class Streaming:
 
         reply = final_answer if final_answer is not None else "".join(text_parts)
         log_agent_response("Orchestrator", reply)
-        self._conversation_handler.add_message(
+        await self._conversation_handler.add_message(
             self._conversation_id, role="assistant", content=reply
         )
-        self._conversation_handler.get_context(self._conversation_id, message_limit=10)
+        await self._conversation_handler.get_context(
+            self._conversation_id, message_limit=10
+        )
 
     def _process_event(
         self, event: Any, text_parts: list[str]

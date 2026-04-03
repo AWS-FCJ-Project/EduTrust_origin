@@ -1,15 +1,9 @@
 import importlib
-from unittest.mock import MagicMock, patch
 
 
-def test_database_module():
-    with patch("motor.motor_asyncio.AsyncIOMotorClient") as mock_motor:
-        mock_motor.return_value = MagicMock()
-        import src.database
+def test_db_engine_created():
+    import src.db
 
-        importlib.reload(src.database)
-
-        assert src.database.client is not None
-        assert src.database.db is not None
-        assert src.database.users_collection is not None
-        mock_motor.assert_called_once()
+    importlib.reload(src.db)
+    engine = src.db.get_engine()
+    assert engine is not None

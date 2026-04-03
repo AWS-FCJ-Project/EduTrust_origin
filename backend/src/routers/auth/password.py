@@ -1,8 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from sqlalchemy import update
 from src.auth.auth_utils import hash_password
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
-from src.database import users_collection
+from src.deps import get_db_session
 from src.extensions import limiter
+from src.models import User
 from src.schemas.auth_schemas import ForgotPassword, ResetPassword
 
 router = APIRouter()
@@ -34,7 +36,7 @@ async def forgot_password(
         400: {"description": "Invalid or expired OTP"},
     },
 )
-async def reset_password(data: ResetPassword):
+async def reset_password(data: ResetPassword, session=Depends(get_db_session)):
     try:
         cognito_auth_service.confirm_forgot_password(
             data.email,
@@ -45,9 +47,8 @@ async def reset_password(data: ResetPassword):
         raise HTTPException(status_code=error.status_code, detail=error.message)
 
     hashed = hash_password(data.new_password)
-    await users_collection.update_one(
-        {"email": data.email},
-        {"$set": {"hashed_password": hashed}},
+    await session.execute(
+        update(User).where(User.email == data.email).values(hashed_password=hashed)
     )
 
     return {"message": "Password reset successfully"}

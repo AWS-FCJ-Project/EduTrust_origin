@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from sqlalchemy import select
 from src.auth.auth_utils import hash_password
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
-from src.database import classes_collection, users_collection
+from src.deps import get_db_session
 from src.extensions import limiter
+from src.models import Class, User
 from src.schemas.auth_schemas import UserRegister, UserRole
 
 router = APIRouter()
@@ -21,9 +23,12 @@ router = APIRouter()
     },
 )
 @limiter.limit("5/minute")
-async def register(request: Request, user: UserRegister):
+async def register(
+    request: Request, user: UserRegister, session=Depends(get_db_session)
+):
     del request
-    existing = await users_collection.find_one({"email": user.email})
+    existing = await session.execute(select(User).where(User.email == user.email))
+    existing = existing.scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -42,19 +47,18 @@ async def register(request: Request, user: UserRegister):
         raise HTTPException(status_code=error.status_code, detail=error.message)
 
     if user.role == UserRole.student and user.class_name and user.grade:
-        existing_class = await classes_collection.find_one(
-            {"name": user.class_name, "grade": user.grade}
+        existing_class = await session.execute(
+            select(Class).where(Class.name == user.class_name, Class.grade == user.grade)
         )
-        if not existing_class:
-            await classes_collection.insert_one(
-                {
-                    "name": user.class_name,
-                    "grade": user.grade,
-                    "school_year": "2026-2027",
-                    "homeroom_teacher_id": None,
-                    "subject_teachers": [],
-                    "status": "inactive",
-                }
+        if existing_class.scalar_one_or_none() is None:
+            session.add(
+                Class(
+                    name=user.class_name,
+                    grade=user.grade,
+                    school_year="2026-2027",
+                    homeroom_teacher_id=None,
+                    status="inactive",
+                )
             )
 
     user_doc = {
@@ -68,14 +72,18 @@ async def register(request: Request, user: UserRegister):
         "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
     }
-    await users_collection.insert_one(user_doc)
+    session.add(User(**user_doc))
 
     return {"message": "User registered successfully, you can now login."}
 
 
 @router.post("/multi-register", responses={400: {"description": "Bad Request"}})
 @limiter.limit("5/minute")
-async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]):
+async def register_bulk(
+    request: Request,
+    file: Annotated[UploadFile, File(...)],
+    session=Depends(get_db_session),
+):
     del request
     try:
         content = await file.read()
@@ -167,14 +175,12 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
 
     existing_emails: set[str] = set()
     if unique_users:
-        cursor = users_collection.find(
-            {"email": {"$in": list(unique_users.keys())}},
-            {"email": 1},
+        result = await session.execute(
+            select(User.email).where(User.email.in_(list(unique_users.keys())))
         )
-        existing_docs = await cursor.to_list(length=len(unique_users))
-        existing_emails = {doc["email"] for doc in existing_docs if "email" in doc}
+        existing_emails = {row[0] for row in result.all() if row and row[0]}
 
-    docs_to_insert = []
+    docs_to_insert: list[User] = []
     for email, (valid_user, row_number) in unique_users.items():
         if email in existing_emails:
             errors.append(f"Row {row_number}: Email {email} already registered")
@@ -194,42 +200,39 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             )
             continue
 
-        if (
-            valid_user.role == UserRole.student
-            and valid_user.class_name
-            and valid_user.grade
-        ):
-            existing_class = await classes_collection.find_one(
-                {"name": valid_user.class_name, "grade": valid_user.grade}
+        if valid_user.role == UserRole.student and valid_user.class_name and valid_user.grade:
+            existing_class = await session.execute(
+                select(Class).where(
+                    Class.name == valid_user.class_name, Class.grade == valid_user.grade
+                )
             )
-            if not existing_class:
-                await classes_collection.insert_one(
-                    {
-                        "name": valid_user.class_name,
-                        "grade": valid_user.grade,
-                        "school_year": "2026-2027",
-                        "homeroom_teacher_id": None,
-                        "subject_teachers": [],
-                        "status": "inactive",
-                    }
+            if existing_class.scalar_one_or_none() is None:
+                session.add(
+                    Class(
+                        name=valid_user.class_name,
+                        grade=valid_user.grade,
+                        school_year="2026-2027",
+                        homeroom_teacher_id=None,
+                        status="inactive",
+                    )
                 )
 
         docs_to_insert.append(
-            {
-                "email": valid_user.email,
-                "hashed_password": hashed,
-                "is_verified": True,
-                "name": valid_user.name,
-                "role": valid_user.role.value,
-                "class_name": valid_user.class_name,
-                "grade": valid_user.grade,
-                "cognito_sub": cognito_user.get("sub"),
-                "created_at": datetime.now(timezone.utc),
-            }
+            User(
+                email=valid_user.email,
+                hashed_password=hashed,
+                is_verified=True,
+                name=valid_user.name,
+                role=valid_user.role.value,
+                class_name=valid_user.class_name,
+                grade=valid_user.grade,
+                cognito_sub=cognito_user.get("sub"),
+                created_at=datetime.now(timezone.utc),
+            )
         )
 
     if docs_to_insert:
-        await users_collection.insert_many(docs_to_insert, ordered=False)
+        session.add_all(docs_to_insert)
 
     return {
         "message": f"Registration completed. Successfully registered {len(docs_to_insert)} users.",

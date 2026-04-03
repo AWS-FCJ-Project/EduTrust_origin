@@ -489,6 +489,10 @@ resource "aws_kms_key" "secrets" {
   enable_key_rotation     = true
   policy                  = data.aws_iam_policy_document.kms_secrets_policy.json
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.ec2_instance_name}-secrets-key"
   }
@@ -824,6 +828,10 @@ resource "aws_s3_bucket" "camera_detect" {
   # checkov:skip=CKV2_AWS_61: Lifecycle config is not required initially.
   # checkov:skip=CKV2_AWS_62: Event notifications are not required initially.
   bucket = var.camera_detect_bucket_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = {
     Name = "${var.ec2_instance_name}-camera-detect"

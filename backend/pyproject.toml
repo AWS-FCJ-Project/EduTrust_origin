@@ -15,14 +15,12 @@ dependencies = [
     "litellm>=1.77.2",
     "mem0ai>=0.1.116",
     "pydantic-settings>=2.10.1",
-    "pymongo>=4.16.0",
     "python-dotenv>=1.1.1",
     "uvicorn>=0.40.0",
     "isort>=7.0.0",
     "black>=26.1.0",
     "pre-commit>=4.5.1",
     "tavily-python>=0.5.0",
-    "motor",
     "passlib[bcrypt]",
     "python-multipart",
     "pydantic[email]==2.11.10",
@@ -39,6 +37,9 @@ dependencies = [
     "pandas>=3.0.1",
     "openpyxl>=3.1.5",
     "redis>=5.0.0",
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [dependency-groups]

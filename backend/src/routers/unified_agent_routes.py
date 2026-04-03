@@ -31,14 +31,14 @@ async def ask_agent(
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ) -> UnifiedAgentResponseSchema:
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
+    if await handler.conversation_exists(request.conversation_id):
+        if not await handler.conversation_exists(request.conversation_id, user_id=user_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found",
             )
     else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+        await handler.create_conversation(request.conversation_id, user_id=user_id)
 
     answer = await orch.ask(
         question=request.question, conversation_id=request.conversation_id
@@ -56,14 +56,14 @@ async def ask_agent_streaming(
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ):
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
+    if await handler.conversation_exists(request.conversation_id):
+        if not await handler.conversation_exists(request.conversation_id, user_id=user_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found",
             )
     else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+        await handler.create_conversation(request.conversation_id, user_id=user_id)
 
     async def generate():
         try:

@@ -21,12 +21,13 @@ class AppConfig(BaseSettings):
     LOGFIRE_TOKEN: Optional[str] = None
     EMBEDDING_MODEL: Optional[str] = None
 
-    # Database Settings
-    MONGO_URI: Optional[str] = None
-    MONGO_USERNAME: Optional[str] = None
-    MONGO_PASSWORD: Optional[str] = None
-    MONGO_PORT: Optional[str] = None
-    MONGO_DB_NAME: Optional[str] = None
+    # SQL Database Settings (e.g., Postgres on RDS)
+    # Examples:
+    # - Postgres: postgresql+asyncpg://user:pass@host:5432/dbname
+    # - Local dev: sqlite+aiosqlite:///./local.db
+    DATABASE_URL: Optional[str] = None
+    RDS_AUTO_CREATE_TABLES: Optional[bool] = False
+    SQL_ECHO: Optional[bool] = False
 
     # Auth Settings
     SECRET_KEY: Optional[str] = None

@@ -44,6 +44,11 @@ logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if app_config.RDS_AUTO_CREATE_TABLES:
+        from src.migrate import create_all
+
+        await create_all()
+
     redis_client = RedisClient()
     redis_client.connect_to_database()
     conversation_cache = ConversationCache(redis_client=redis_client)

@@ -1,49 +1,65 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 
-from src.database import db
+from sqlalchemy import delete, select, update
 
-otp_collection = db["otps"]
+from src.db import session_scope
+from src.models import Otp
 
 
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
     expire_at = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
 
-    await otp_collection.update_one(
-        {"email": email, "purpose": purpose},
-        {
-            "$set": {
-                "otp": otp,
-                "expire_at": expire_at,
-                "created_at": datetime.now(timezone.utc),
-            }
-        },
-        upsert=True,
-    )
+    async with session_scope() as session:
+        existing = await session.execute(
+            select(Otp).where(Otp.email == email, Otp.purpose == purpose)
+        )
+        row = existing.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if row is None:
+            session.add(
+                Otp(
+                    email=email,
+                    purpose=purpose,
+                    otp=otp,
+                    expire_at=expire_at,
+                    created_at=now,
+                )
+            )
+        else:
+            await session.execute(
+                update(Otp)
+                .where(Otp.id == row.id)
+                .values(otp=otp, expire_at=expire_at, created_at=now)
+            )
 
 
 async def verify_otp(email: str, otp: str, purpose: str) -> bool:
-    doc = await otp_collection.find_one(
-        {"email": email, "purpose": purpose, "otp": otp}
-    )
+    async with session_scope() as session:
+        result = await session.execute(
+            select(Otp).where(Otp.email == email, Otp.purpose == purpose, Otp.otp == otp)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
 
-    if not doc:
-        return False
+        expire_at = row.expire_at
+        if expire_at.tzinfo is None:
+            expire_at = expire_at.replace(tzinfo=timezone.utc)
 
-    expire_at = doc["expire_at"]
+        now = datetime.now(timezone.utc)
+        await session.execute(delete(Otp).where(Otp.id == row.id))
 
-    if expire_at.tzinfo is None:
-        expire_at = expire_at.replace(tzinfo=timezone.utc)
+        if expire_at < now:
+            return False
 
-    now = datetime.now(timezone.utc)
-
-    if expire_at < now:
-        await otp_collection.delete_one({"_id": doc["_id"]})
-        return False
-
-    await otp_collection.delete_one({"_id": doc["_id"]})
-    return True
+        return True
 
 
 async def cleanup_expired_otps():
+    async with session_scope() as session:
+        await session.execute(
+            delete(Otp).where(Otp.expire_at < datetime.now(timezone.utc))
+        )
 
-    await otp_collection.delete_many({"expire_at": {"$lt": datetime.now(timezone.utc)}})
