@@ -28,6 +28,11 @@ class AppConfig(BaseSettings):
     MONGO_PORT: Optional[str] = None
     MONGO_DB_NAME: Optional[str] = None
 
+    # DynamoDB Settings (Phase 02 - Migration from MongoDB)
+    DYNAMODB_TABLE_PREFIX: Optional[str] = "edutrust-backend"
+    DYNAMODB_REGION: Optional[str] = "ap-southeast-1"
+    DYNAMODB_ENDPOINT: Optional[str] = None  # For local testing: http://localhost:8000
+
     # Auth Settings
     SECRET_KEY: Optional[str] = None
 

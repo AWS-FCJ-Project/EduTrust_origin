@@ -42,6 +42,8 @@ dependencies = [
     "openpyxl>=3.1.5",
     "redis>=5.0.0",
     "tokenizers>=0.22.0,<=0.23.0",
+    # DynamoDB - Phase 03 Migration
+    "boto3>=1.42.14",
 ]
 
 [dependency-groups]

@@ -23,7 +23,7 @@ class RedisClient:
         from src.app_config import app_config
 
         self.host = host or app_config.REDIS_CLIENT_HOST
-        self.port = port or app_config.REDIS_CLIENT_PORT
+        self.port = port or app_config.REDIS_PORT
         self.db = db if db is not None else app_config.REDIS_DB
         self.password = password or app_config.REDIS_CLIENT_PASSWORD
         self.use_tls = tls if tls is not None else app_config.REDIS_TLS
