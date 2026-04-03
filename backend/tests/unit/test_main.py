@@ -2,16 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture(autouse=True)
-def mock_dependencies():
-    with patch("src.main.ConversationHandler"):
-        yield
-
-
-from src.main import app
 from src.auth.jwt_handler import create_access_token
+from src.main import app
 
 client = TestClient(app)
 

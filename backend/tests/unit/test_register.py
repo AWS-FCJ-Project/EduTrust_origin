@@ -4,16 +4,6 @@ from unittest.mock import AsyncMock, patch
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture(autouse=True)
-def mock_dependencies():
-    with patch("src.main.ConversationHandler"), patch(
-        "src.extensions.limiter.limit", side_effect=lambda *args, **kwargs: lambda f: f
-    ):
-        yield
-
-
 from src.main import app
 
 client = TestClient(app)

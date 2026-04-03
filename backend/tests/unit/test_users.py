@@ -8,14 +8,6 @@ from src.main import app
 client = TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def mock_dependencies():
-    with patch("src.main.ConversationHandler"), patch(
-        "src.extensions.limiter.limit", side_effect=lambda *args, **kwargs: lambda f: f
-    ):
-        yield
-
-
 @pytest.fixture
 def mock_user_session():
     def _mock(role="admin"):

@@ -3,13 +3,17 @@ from unittest.mock import MagicMock, patch
 
 
 def test_database_module():
-    with patch("motor.motor_asyncio.AsyncIOMotorClient") as mock_motor:
-        mock_motor.return_value = MagicMock()
-        import src.database
+    """Test that the database module exports the correct classes for DynamoDB."""
+    import src.database
 
-        importlib.reload(src.database)
+    importlib.reload(src.database)
 
-        assert src.database.client is not None
-        assert src.database.db is not None
-        assert src.database.users_collection is not None
-        mock_motor.assert_called_once()
+    # Verify DynamoDB facade is exported
+    assert hasattr(src.database, "PersistenceFacade")
+    assert hasattr(src.database, "UserRepository")
+    assert hasattr(src.database, "ClassRepository")
+    assert hasattr(src.database, "ExamRepository")
+    assert hasattr(src.database, "SubmissionRepository")
+    assert hasattr(src.database, "ViolationRepository")
+    assert hasattr(src.database, "ConversationRepository")
+    assert hasattr(src.database, "OtpRepository")
