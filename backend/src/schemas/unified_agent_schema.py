@@ -1,7 +1,7 @@
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from src.conversation.conversation_handler import DynamoDBConversationHandler
+from src.conversation.conversation_handler import ConversationHandler
 
 
 class UnifiedAgentRequestSchema(BaseModel):
@@ -16,7 +16,7 @@ class UnifiedAgentResponseSchema(BaseModel):
 
 class MainAgentDeps(BaseModel):
     conversation_id: str
-    conversation_handler: DynamoDBConversationHandler
+    conversation_handler: ConversationHandler
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

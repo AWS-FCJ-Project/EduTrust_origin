@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from src.auth.dependencies import get_current_user
-from src.conversation.conversation_handler import DynamoDBConversationHandler
+from src.conversation.conversation_handler import ConversationHandler
 from src.schemas.conversation_schema import (
     ConversationResponseSchema,
     ConversationSummarySchema,
@@ -14,14 +14,14 @@ router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
 
 def get_conversation_handler(
     request: Request,
-) -> DynamoDBConversationHandler:
+) -> ConversationHandler:
     return request.app.state.conversation_handler
 
 
 @router.post("/conversations", response_model=ConversationResponseSchema)
 async def create_conversation(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
 ):
     conversation_id = str(uuid4())
     conversation = await handler.create_conversation(
@@ -39,7 +39,7 @@ async def create_conversation(
 @router.get("/conversations", response_model=list[ConversationSummarySchema])
 async def list_conversations(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
     limit: int = 50,
 ):
     return await handler.list_conversations(
@@ -50,7 +50,7 @@ async def list_conversations(
 @router.get("/conversations/latest", response_model=ConversationResponseSchema)
 async def get_latest_conversation(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
     message_limit: int = 50,
 ):
     user_id = str(current_user["_id"])
@@ -79,7 +79,7 @@ async def get_latest_conversation(
 async def get_conversation(
     conversation_id: str,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
     message_limit: int = 0,
 ):
     user_id = str(current_user["_id"])
@@ -107,7 +107,7 @@ async def get_conversation(
 async def delete_conversation(
     conversation_id: str,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
 ) -> Response:
     deleted = await handler.delete_conversation(
         conversation_id, user_id=str(current_user["_id"])

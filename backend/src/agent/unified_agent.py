@@ -6,7 +6,7 @@ import yaml
 from pydantic_ai import Agent
 from src.agent.tools import AgentTools
 from src.app_config import app_config
-from src.conversation.conversation_handler import DynamoDBConversationHandler
+from src.conversation.conversation_handler import ConversationHandler
 from src.llm import LLM
 from src.logger import log_agent_response, log_user_input
 from src.schemas.unified_agent_schema import MainAgentDeps, MainAgentStreamEvent
@@ -18,9 +18,7 @@ from src.utils import get_current_datetime
 class UnifiedAgent:
     """Interface for main agent, sub agents, and execution logic."""
 
-    def __init__(
-        self, llm: LLM, conversation_handler: DynamoDBConversationHandler
-    ) -> None:
+    def __init__(self, llm: LLM, conversation_handler: ConversationHandler) -> None:
         self._llm = llm
         self._conversation_handler = conversation_handler
 
@@ -30,7 +28,7 @@ class UnifiedAgent:
         self._main_agent: Agent[MainAgentDeps] = self._initialize()
 
     @property
-    def conversation_handler(self) -> DynamoDBConversationHandler:
+    def conversation_handler(self) -> ConversationHandler:
         return self._conversation_handler
 
     def _load_agents_config(self) -> dict:

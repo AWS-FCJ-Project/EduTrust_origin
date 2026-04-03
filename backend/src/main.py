@@ -8,7 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from src.app_config import app_config
 from src.conversation.conversation_cache import ConversationCache
-from src.conversation.conversation_handler import DynamoDBConversationHandler
+from src.conversation.conversation_handler import ConversationHandler
 from src.database.dynamodb_client import DynamoDBClient
 from src.database.redis_client import RedisClient
 from src.database.repositories.conversation_handler import ConversationRepository
@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
     conversation_cache = ConversationCache(redis_client=redis_client)
 
     conversation_repo = ConversationRepository(dynamo_client)
-    app.state.conversation_handler = DynamoDBConversationHandler(
+    app.state.conversation_handler = ConversationHandler(
         conversation_repo=conversation_repo,
         conversation_cache=conversation_cache,
     )

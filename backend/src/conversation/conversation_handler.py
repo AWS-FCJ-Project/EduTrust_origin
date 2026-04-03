@@ -1,5 +1,5 @@
 """
-DynamoDB-backed ConversationHandler for Phase 03.
+ConversationHandler for managing conversations with optional caching.
 Delegates persistence to ConversationRepository while keeping
 cache for read optimization.
 """
@@ -10,13 +10,15 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.conversation.conversation_cache import ConversationCache
-from src.conversation.conversation_constants import DEFAULT_LIMIT, DEFAULT_TITLE
 from src.database.repositories.conversation_handler import ConversationRepository
+
+DEFAULT_TITLE = "New Chat"
+DEFAULT_LIMIT = 50
 
 logger = logging.getLogger(__name__)
 
 
-class DynamoDBConversationHandler:
+class ConversationHandler:
     """
     Handler for storing conversations in DynamoDB with optional caching.
     Provides search functionality with regex.
