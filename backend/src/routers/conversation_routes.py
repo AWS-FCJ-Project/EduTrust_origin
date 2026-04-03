@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from src.auth.dependencies import get_current_user
-from src.conversation.conversation_handler import ConversationHandler
+from src.conversation.conversation_handler_dynamodb import DynamoDBConversationHandler
 from src.schemas.conversation_schema import (
     ConversationResponseSchema,
     ConversationSummarySchema,
@@ -12,17 +12,19 @@ from src.schemas.conversation_schema import (
 router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
 
 
-def get_conversation_handler(request: Request) -> ConversationHandler:
+def get_conversation_handler(
+    request: Request,
+) -> DynamoDBConversationHandler:
     return request.app.state.conversation_handler
 
 
 @router.post("/conversations", response_model=ConversationResponseSchema)
-def create_conversation(
+async def create_conversation(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
 ):
     conversation_id = str(uuid4())
-    conversation = handler.create_conversation(
+    conversation = await handler.create_conversation(
         conversation_id, user_id=str(current_user["_id"])
     )
     return ConversationResponseSchema(
@@ -35,29 +37,31 @@ def create_conversation(
 
 
 @router.get("/conversations", response_model=list[ConversationSummarySchema])
-def list_conversations(
+async def list_conversations(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
     limit: int = 50,
 ):
-    return handler.list_conversations(user_id=str(current_user["_id"]), limit=limit)
+    return await handler.list_conversations(
+        user_id=str(current_user["_id"]), limit=limit
+    )
 
 
 @router.get("/conversations/latest", response_model=ConversationResponseSchema)
-def get_latest_conversation(
+async def get_latest_conversation(
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
     message_limit: int = 50,
 ):
     user_id = str(current_user["_id"])
-    conversation_id = handler.get_latest_conversation_id(user_id)
+    conversation_id = await handler.get_latest_conversation_id(user_id)
     if not conversation_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No conversation found"
         )
 
-    conversation = handler.get_conversation(conversation_id, user_id=user_id)
-    messages = handler.get_context(
+    conversation = await handler.get_conversation(conversation_id, user_id=user_id)
+    messages = await handler.get_context(
         conversation_id, message_limit=message_limit, user_id=user_id
     )
     return ConversationResponseSchema(
@@ -72,20 +76,20 @@ def get_latest_conversation(
 @router.get(
     "/conversations/{conversation_id}", response_model=ConversationResponseSchema
 )
-def get_conversation(
+async def get_conversation(
     conversation_id: str,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
     message_limit: int = 0,
 ):
     user_id = str(current_user["_id"])
-    conversation = handler.get_conversation(conversation_id, user_id=user_id)
+    conversation = await handler.get_conversation(conversation_id, user_id=user_id)
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
 
-    messages = handler.get_context(
+    messages = await handler.get_context(
         conversation_id, message_limit=message_limit, user_id=user_id
     )
     return ConversationResponseSchema(
@@ -100,12 +104,12 @@ def get_conversation(
 @router.delete(
     "/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-def delete_conversation(
+async def delete_conversation(
     conversation_id: str,
     current_user: Annotated[dict, Depends(get_current_user)],
-    handler: Annotated[ConversationHandler, Depends(get_conversation_handler)],
+    handler: Annotated[DynamoDBConversationHandler, Depends(get_conversation_handler)],
 ) -> Response:
-    deleted = handler.delete_conversation(
+    deleted = await handler.delete_conversation(
         conversation_id, user_id=str(current_user["_id"])
     )
     if not deleted:

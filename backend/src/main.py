@@ -10,14 +10,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from src.app_config import app_config
 from src.conversation.conversation_cache import ConversationCache
-from src.conversation.conversation_handler import ConversationHandler
-from src.database.class_handler import ClassHandler
-from src.database.exam_handler import ExamHandler
-from src.database.mongo_client import MongoClient
 from src.database.redis_client import RedisClient
 from src.extensions import limiter
-from src.routers import (class_routes, conversation_routes, exam_routes,
-                         translate_routes, unified_agent_routes)
+from src.routers import (
+    class_routes,
+    conversation_routes,
+    exam_routes,
+    translate_routes,
+    unified_agent_routes,
+)
 from src.routers.auth import login, password, register
 
 try:
@@ -48,12 +49,6 @@ logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mongo_client = MongoClient(
-        connection_string=app_config.MONGO_URI,
-        username=app_config.MONGO_USERNAME,
-        password=app_config.MONGO_PASSWORD,
-        db_name=app_config.MONGO_DB_NAME,
-    )
     redis_client = RedisClient(
         host=app_config.REDIS_CLIENT_HOST,
         password=app_config.REDIS_CLIENT_PASSWORD,
@@ -63,26 +58,40 @@ async def lifespan(app: FastAPI):
         key_prefix=app_config.REDIS_KEY_PREFIX,
         chat_ttl=app_config.REDIS_CHAT_TTL,
     )
-    mongo_client.connect_to_database()
     redis_client.connect_to_database()
 
-    # Init handlers
-    app.state.exam_handler = ExamHandler(mongo_client.get_database())
-    app.state.class_handler = ClassHandler(mongo_client.get_database())
+    # Persistence facade - Phase 03 uses DynamoDB
+    from src.persistence import PersistenceFacade
+    from src.persistence.dynamodb_client import DynamoDBClient
+
+    dynamo_client = DynamoDBClient()
+    app.state.persistence = PersistenceFacade(dynamo_client)
+
+    # Initialize violation logger with persistence (camera flow needs this)
+    from src.detection.violation_logger import set_violation_logger_persistence
+
+    set_violation_logger_persistence(app.state.persistence)
 
     embedding_model = SentenceTransformer(app_config.EMBEDDING_MODEL)
     conversation_cache = ConversationCache(redis_client=redis_client)
 
-    app.state.conversation_handler = ConversationHandler(
-        mongo_client=mongo_client,
+    # DynamoDB-backed conversation handler (Phase 03)
+    from src.conversation.conversation_handler_dynamodb import (
+        DynamoDBConversationHandler,
+    )
+    from src.persistence.repositories.conversation_repository import (
+        ConversationRepository,
+    )
+
+    conversation_repo = ConversationRepository(dynamo_client)
+    app.state.conversation_handler = DynamoDBConversationHandler(
+        conversation_repo=conversation_repo,
         embedding_model=embedding_model,
         conversation_cache=conversation_cache,
     )
-    app.state.conversation_handler.create_index()
     yield
     if app.state.conversation_handler:
         app.state.conversation_handler.close()
-    mongo_client.close()
     redis_client.close()
 
 
