@@ -25,7 +25,7 @@ aws-fcj-project/
 │   │   └── llms.yaml
 │   ├── src/
 │   │   ├── crew/                   # Orchestrator + tool wiring
-│   │   ├── memory/                 # MongoDB conversation storage
+│   │   ├── memory/                 # Redis conversation storage (ephemeral TTL)
 │   │   ├── routers/                # API routes
 │   │   ├── schemas/                # Endpoint schemas
 │   │   ├── search_services/        # Web search services
@@ -77,6 +77,21 @@ The backend is located in the `backend/` directory.
     ```
     The backend API will be available at `http://localhost:8000`.
 
+### Conversation storage (Redis only, 30-minute TTL)
+
+Conversations are stored in Redis only (no DB persistence). Redis keys use a sliding TTL (default `REDIS_CHAT_TTL=1800`): if a user is inactive for 30 minutes, the conversation is auto-cleared by Redis expiration.
+
+Configure these env vars in `backend/.env` (see `backend/.env.example`):
+- `REDIS_CLIENT_HOST`, `REDIS_PORT`, `REDIS_DB`
+- `REDIS_CLIENT_PASSWORD` (if needed), `REDIS_TLS` (true/false)
+- `REDIS_KEY_PREFIX` (optional), `REDIS_CHAT_TTL` (seconds)
+
+If you provision Redis via Terraform (`.github/terraform/`), after `terraform apply` copy values from Terraform outputs:
+- `redis_primary_endpoint` -> `REDIS_CLIENT_HOST`
+- `redis_port` -> `REDIS_PORT`
+- `redis_transit_encryption_enabled` -> `REDIS_TLS`
+- `redis_auth_token_secret_arn` -> fetch secret value -> `REDIS_CLIENT_PASSWORD` (only when auth is enabled)
+
 ## Frontend Setup
 
 The frontend is located in the `frontend/` directory.
@@ -114,3 +129,7 @@ This repo supports automated provisioning + deployment of the backend to AWS EC2
 -   CI/CD is implemented via GitHub Actions in `.github/workflows/`.
 
 See `/docs/deployment.md` for the end-to-end architecture, required GitHub secrets, and the deploy flow.
+
+Note: Terraform also provisions a DynamoDB table (default `edutrust-users`) intended for serverless user/profile storage. The current backend code still uses MongoDB for user/class/exam data; migrating those collections to DynamoDB is a follow-up step.
+
+Terraform can also provision a minimal ElastiCache Redis (1 node). When using in-VPC Redis, set `.github/terraform/variables.tf` input `redis_egress_cidr_blocks` to your VPC CIDR (so the backend SG can reach Redis on port 6379).

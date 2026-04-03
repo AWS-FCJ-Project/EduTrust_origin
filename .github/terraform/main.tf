@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "6.34.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.7.2"
+    }
   }
 
   backend "s3" {
@@ -199,6 +203,16 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "s3-endpoint" }
 }
 
+# DynamoDB Gateway Endpoint (avoids NAT egress for DynamoDB traffic)
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "dynamodb-endpoint" }
+}
+
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
@@ -256,6 +270,32 @@ resource "aws_vpc_endpoint" "logs" {
   private_dns_enabled = true
 
   tags = { Name = "logs-endpoint" }
+}
+
+# --- DynamoDB (User data) ---
+resource "aws_dynamodb_table" "users" {
+  name         = var.dynamodb_users_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+  range_key    = "sk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = {
+    Name = var.dynamodb_users_table_name
+  }
 }
 
 # --- End Network Configuration ---
@@ -1078,6 +1118,74 @@ resource "aws_security_group" "backend" {
   tags = {
     Name = "${var.ec2_instance_name}-sg"
   }
+}
+
+# --- ElastiCache Redis (cheapest: 1 node) ---
+resource "aws_security_group" "redis" {
+  name        = "${var.ec2_instance_name}-redis-sg"
+  description = "Security group for ElastiCache Redis"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "Redis from backend"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend.id]
+  }
+
+  tags = { Name = "${var.ec2_instance_name}-redis-sg" }
+}
+
+resource "aws_elasticache_subnet_group" "redis" {
+  name       = "${var.ec2_instance_name}-redis-subnets"
+  subnet_ids = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+
+  tags = { Name = "${var.ec2_instance_name}-redis-subnets" }
+}
+
+resource "random_password" "redis_auth_token" {
+  count   = var.redis_auth_token_enabled ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "redis_auth_token" {
+  count = var.redis_auth_token_enabled ? 1 : 0
+  name  = "${var.ec2_instance_name}-redis-auth-token"
+
+  kms_key_id = aws_kms_key.secrets.arn
+
+  tags = { Name = "${var.ec2_instance_name}-redis-auth-token" }
+}
+
+resource "aws_secretsmanager_secret_version" "redis_auth_token" {
+  count     = var.redis_auth_token_enabled ? 1 : 0
+  secret_id = aws_secretsmanager_secret.redis_auth_token[0].id
+
+  secret_string = random_password.redis_auth_token[0].result
+}
+
+resource "aws_elasticache_replication_group" "redis" {
+  replication_group_id       = "${var.ec2_instance_name}-redis"
+  description                = "EduTrust Redis (ephemeral conversation cache)"
+  engine                     = "redis"
+  engine_version             = var.redis_engine_version
+  node_type                  = var.redis_node_type
+  port                       = 6379
+  parameter_group_name       = var.redis_parameter_group_name
+  subnet_group_name          = aws_elasticache_subnet_group.redis.name
+  security_group_ids         = [aws_security_group.redis.id]
+  num_cache_clusters         = 1
+  automatic_failover_enabled = false
+  multi_az_enabled           = false
+
+  at_rest_encryption_enabled = var.redis_at_rest_encryption_enabled
+  transit_encryption_enabled = var.redis_transit_encryption_enabled
+
+  auth_token = var.redis_auth_token_enabled ? random_password.redis_auth_token[0].result : null
+
+  tags = { Name = "${var.ec2_instance_name}-redis" }
 }
 
 data "aws_ami" "base_ami" {

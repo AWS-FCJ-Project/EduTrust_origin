@@ -1,36 +1,34 @@
-import math
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import pymongo
-from src.app_config import app_config
 from src.logger import logger
 from src.memory.conversation_cache import ConversationCache
+from src.memory.redis_client import RedisClient
 
 
 class ConversationHandler:
-    """Handler for storing conversations in MongoDB with optional caching."""
+    """
+    Conversation storage backed by Redis (single active conversation per user).
+
+    Design goals:
+    - Do not persist conversations in a database.
+    - Keep only 1 active conversation per user.
+    - Auto-clean after 30 minutes of inactivity via Redis TTL (sliding TTL).
+
+    Notes:
+    - We keep the existing public API used by routes/agent code.
+    - This class relies on Redis being connected in app lifespan.
+    """
 
     def __init__(
         self,
-        connection_string: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        db_name: Optional[str] = None,
-        collection_name: Optional[str] = "conversations",
+        *,
+        redis_client: RedisClient,
         conversation_cache: Optional[ConversationCache] = None,
     ):
-        """Initialize with MongoDB config and optional cache."""
-        self.client: Optional[pymongo.MongoClient] = None
-        self.db: Optional[pymongo.database.Database] = None
-        self.collection: Optional[pymongo.collection.Collection] = None
-
-        self.connection_string = connection_string or app_config.MONGO_URI
-        self.username = username or app_config.MONGO_USERNAME
-        self.password = password or app_config.MONGO_PASSWORD
-        self.db_name = db_name or app_config.MONGO_DB_NAME
-        self.collection_name = collection_name
+        self._redis = redis_client
         self._conversation_cache = conversation_cache
 
     def _log_cache(
@@ -49,48 +47,37 @@ class ConversationHandler:
             cached_messages,
         )
 
-    def _log_mongo_read(self, *, conversation_id: str, message_limit: int) -> None:
-        logger.info(
-            "conversation_mongo read conversation_id=%s message_limit=%s",
-            conversation_id,
-            message_limit,
+    def connect_to_database(self) -> None:
+        """No-op (Redis connection is established by RedisClient)."""
+        if not self._redis.is_healthy():
+            self._redis.connect_to_database()
+
+    def _require_redis(self) -> RedisClient:
+        if not self._redis.is_healthy():
+            raise RuntimeError("Redis is not connected.")
+        return self._redis
+
+    def _conversation_key(self, conversation_id: str) -> str:
+        return self._require_redis().build_key("chat", "conversation", conversation_id)
+
+    def _user_current_key(self, user_id: str) -> str:
+        return self._require_redis().build_key("chat", "user", user_id, "current")
+
+    def _ttl_seconds(self) -> Optional[int]:
+        return self._require_redis()._ttl_seconds()
+
+    def _touch_user_current(self, user_id: str, conversation_id: str) -> None:
+        ttl = self._ttl_seconds()
+        self._require_redis().client.set(
+            self._user_current_key(user_id), conversation_id, ex=ttl
         )
 
-    def connect_to_database(self) -> None:
-        """Connect to MongoDB server."""
-        try:
-            if self.connection_string.startswith("mongodb://"):
-                self.client = pymongo.MongoClient(
-                    self.connection_string + "/?directConnection=true",
-                    username=self.username,
-                    password=self.password,
-                    retryWrites=False,
-                    tlsAllowInvalidHostnames=True,
-                )
-            else:
-                self.client = pymongo.MongoClient(
-                    self.connection_string,
-                    retryWrites=True,
-                    w="majority",
-                )
-            ping_result = self.client.admin.command("ping")
-            print(f"Ping result: {ping_result}")
-            self.db = self.client[self.db_name]
-            self.collection = self.db[self.collection_name]
-            self.collection.create_index(
-                [("user_id", pymongo.ASCENDING), ("updated_at", pymongo.DESCENDING)]
-            )
-            print(f"Connected to database: {self.db_name}")
-        except Exception as e:
-            print(f"Error connecting to database: {e}")
+    def _get_user_current(self, user_id: str) -> Optional[str]:
+        val = self._require_redis().client.get(self._user_current_key(user_id))
+        return str(val) if val else None
 
-    def _require_collection(self) -> pymongo.collection.Collection:
-        """Get MongoDB collection, connecting if needed."""
-        if self.collection is None:
-            self.connect_to_database()
-        if self.collection is None:
-            raise RuntimeError("Mongo collection not initialized.")
-        return self.collection
+    def _delete_conversation_key(self, conversation_id: str) -> None:
+        self._require_redis().client.delete(self._conversation_key(conversation_id))
 
     def add_message(
         self,
@@ -102,77 +89,81 @@ class ConversationHandler:
         max_messages: Optional[int] = 200,
         **extra: Any,
     ) -> None:
-        """Append message to conversation, creating it if needed."""
-        collection = self._require_collection()
+        """Append a message to the active conversation stored in Redis."""
         now = datetime.now(timezone.utc)
 
-        # MongoDB is the source of truth: always write there first.
         message: dict[str, Any] = {
             "role": role,
             "content": content,
             "created_at": extra.pop("created_at", now),
             **extra,
         }
-        push_value: dict[str, Any] = {"$each": [message]}
-        if max_messages is not None:
-            push_value["$slice"] = -max_messages
 
-        set_on_insert: dict[str, Any] = {
-            "_id": conversation_id,
-            "title": "New Chat",
-            "created_at": now,
-        }
+        # Enforce single active conversation per user:
+        # - If user has no current conversation, bind to this one.
+        # - If user has a different current conversation, treat this id as the new one
+        #   (and delete old) so storage remains 1 conversation/user.
         if user_id is not None:
-            set_on_insert["user_id"] = user_id
+            current_id = self._get_user_current(user_id)
+            if current_id and current_id != conversation_id:
+                self._delete_conversation_key(current_id)
 
-        collection.update_one(
-            {"_id": conversation_id},
-            {
-                "$setOnInsert": set_on_insert,
-                "$set": {"updated_at": now},
-                "$inc": {"message_count": 1},
-                "$push": {"messages": push_value},
-            },
-            upsert=True,
-        )
+        conversation = self.get_conversation(conversation_id, user_id=user_id)
+        if not conversation:
+            if user_id is None:
+                # Best-effort: callers in this codebase normally create the conversation
+                # in the request layer (where user_id is known). If they didn't, we still
+                # initialize a conversation but cannot enforce 1 conversation/user.
+                conversation = {
+                    "_id": conversation_id,
+                    "user_id": None,
+                    "title": "New Chat",
+                    "messages": [],
+                    "message_count": 0,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            else:
+                conversation = self.create_conversation(conversation_id, user_id=user_id)
 
-        if role == "user":
-            self._update_title_from_first_message(conversation_id, content)
+        messages = list(conversation.get("messages") or [])
+        messages.append(message)
+        if isinstance(max_messages, int) and max_messages > 0:
+            messages = messages[-max_messages:]
+
+        title = str(conversation.get("title") or "New Chat")
+        if role == "user" and (not title or title == "New Chat"):
+            normalized = " ".join((content or "").split()).strip()
+            if normalized:
+                title = normalized[:60]
+
+        updated = {
+            **conversation,
+            "title": title or "New Chat",
+            "updated_at": now,
+            "message_count": int(conversation.get("message_count") or 0) + 1,
+            "messages": messages,
+        }
 
         if self._conversation_cache:
-            # Write-through cache: if Redis already has this conversation, keep it
-            # in sync so the next get_context() can hit Redis (no immediate Mongo read).
-            cached = self._conversation_cache.get_conversation(conversation_id)
-            cached_messages = (
-                cached.get("messages") if isinstance(cached, dict) else None
+            self._conversation_cache.cache_conversation(updated)
+            self._log_cache(
+                "write",
+                conversation_id=conversation_id,
+                cached_messages=len(messages),
             )
-            if isinstance(cached_messages, list):
-                is_complete = (
-                    bool(cached.get("is_complete"))
-                    if isinstance(cached, dict)
-                    else False
-                )
-                cached_messages.append(message)
-                if max_messages is not None and max_messages > 0:
-                    cached_messages = cached_messages[-max_messages:]
-                self._conversation_cache.cache_conversation(
-                    {
-                        "_id": conversation_id,
-                        "user_id": cached.get("user_id"),
-                        "title": cached.get("title", "New Chat"),
-                        "created_at": cached.get("created_at"),
-                        "updated_at": now,
-                        "messages": cached_messages,
-                        "is_complete": is_complete,
-                    }
-                )
-                self._log_cache(
-                    "write_through",
-                    conversation_id=conversation_id,
-                    cached_messages=len(cached_messages),
-                )
-            else:
-                self._conversation_cache.invalidate_conversation(conversation_id)
+        else:
+            # Fallback: still write to Redis even without the cache wrapper.
+            ttl = self._ttl_seconds()
+            self._require_redis().client.set(
+                self._conversation_key(conversation_id),
+                json.dumps(self._require_redis()._serialize(updated), ensure_ascii=False),
+                ex=ttl,
+            )
+
+        effective_user_id = user_id or updated.get("user_id")
+        if effective_user_id is not None:
+            self._touch_user_current(str(effective_user_id), conversation_id)
 
     def get_context(
         self,
@@ -181,73 +172,31 @@ class ConversationHandler:
         message_limit: int = 10,
         user_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        """Retrieve recent messages from conversation."""
-        if user_id is None and self._conversation_cache and message_limit > 0:
-            # Cache-aside: try Redis first; if cache is missing/short, fall back to Mongo
-            # and repopulate Redis (marked is_complete=True).
-            cached = self._conversation_cache.get_conversation(conversation_id)
-            cached_messages = (
-                cached.get("messages") if isinstance(cached, dict) else None
-            )
-            is_complete = (
-                bool(cached.get("is_complete")) if isinstance(cached, dict) else False
-            )
-            if (
-                isinstance(cached_messages, list)
-                and len(cached_messages) >= message_limit
-            ):
-                self._log_cache(
-                    "hit",
-                    conversation_id=conversation_id,
-                    message_limit=message_limit,
-                    cached_messages=len(cached_messages),
-                )
-                return cached_messages[-message_limit:]
-            if isinstance(cached_messages, list) and is_complete:
-                self._log_cache(
-                    "hit_complete",
-                    conversation_id=conversation_id,
-                    message_limit=message_limit,
-                    cached_messages=len(cached_messages),
-                )
-                return cached_messages[-message_limit:]
-            self._log_cache(
-                "miss",
-                conversation_id=conversation_id,
-                message_limit=message_limit,
-                cached_messages=(
-                    len(cached_messages) if isinstance(cached_messages, list) else None
-                ),
-            )
-
-        collection = self._require_collection()
-        projection: dict[str, Any]
-        projection = {"messages": 1}
-        query: dict[str, Any] = {"_id": conversation_id}
+        """Retrieve recent messages from the Redis-backed conversation."""
         if user_id is not None:
-            query["user_id"] = user_id
+            current_id = self._get_user_current(user_id)
+            if current_id and current_id != conversation_id:
+                return []
 
-        self._log_mongo_read(
-            conversation_id=conversation_id, message_limit=message_limit
-        )
-        doc = collection.find_one(query, projection)
-        if not doc:
+        conversation = self.get_conversation(conversation_id, user_id=user_id)
+        if not conversation:
             return []
-
-        messages = list(doc.get("messages", []))
-        if user_id is None and self._conversation_cache and message_limit > 0:
-            self._conversation_cache.cache_conversation(
-                {"_id": conversation_id, "messages": messages, "is_complete": True}
-            )
-        return messages[-message_limit:] if message_limit > 0 else messages
+        messages = list(conversation.get("messages") or [])
+        if message_limit <= 0:
+            return messages
+        return messages[-message_limit:]
 
     def create_conversation(
         self, conversation_id: str, *, user_id: str
     ) -> dict[str, Any]:
-        """Create a new empty conversation for a user."""
-        collection = self._require_collection()
+        """Create (or replace) the single active conversation for a user in Redis."""
         now = datetime.now(timezone.utc)
-        conversation = {
+
+        current_id = self._get_user_current(user_id)
+        if current_id and current_id != conversation_id:
+            self._delete_conversation_key(current_id)
+
+        conversation: dict[str, Any] = {
             "_id": conversation_id,
             "user_id": user_id,
             "title": "New Chat",
@@ -256,74 +205,91 @@ class ConversationHandler:
             "created_at": now,
             "updated_at": now,
         }
-        collection.insert_one(conversation)
+
+        if self._conversation_cache:
+            self._conversation_cache.cache_conversation(conversation)
+        else:
+            ttl = self._ttl_seconds()
+            self._require_redis().client.set(
+                self._conversation_key(conversation_id),
+                json.dumps(
+                    self._require_redis()._serialize(conversation), ensure_ascii=False
+                ),
+                ex=ttl,
+            )
+
+        self._touch_user_current(user_id, conversation_id)
         return conversation
 
     def list_conversations(
         self, *, user_id: str, limit: int = 50
     ) -> list[dict[str, Any]]:
-        """List conversation summaries for a user, newest first."""
-        collection = self._require_collection()
-        cursor = (
-            collection.find(
-                {"user_id": user_id},
-                {
-                    "title": 1,
-                    "created_at": 1,
-                    "updated_at": 1,
-                    "message_count": 1,
-                    "messages": {"$slice": -1},
-                },
-            )
-            .sort("updated_at", pymongo.DESCENDING)
-            .limit(limit)
-        )
-
-        conversations: list[dict[str, Any]] = []
-        for doc in cursor:
-            messages = list(doc.get("messages", []))
-            preview = messages[-1].get("content", "") if messages else ""
-            conversations.append(
-                {
-                    "conversation_id": doc["_id"],
-                    "title": doc.get("title", "New Chat"),
-                    "preview": preview[:140],
-                    "created_at": doc.get("created_at"),
-                    "updated_at": doc.get("updated_at"),
-                    "message_count": int(doc.get("message_count", 0)),
-                }
-            )
-        return conversations
+        """Return at most 1 conversation summary (single active conversation per user)."""
+        current_id = self._get_user_current(user_id)
+        if not current_id:
+            return []
+        conversation = self.get_conversation(current_id, user_id=user_id)
+        if not conversation:
+            return []
+        messages = list(conversation.get("messages") or [])
+        preview = messages[-1].get("content", "") if messages else ""
+        return [
+            {
+                "conversation_id": conversation.get("_id") or current_id,
+                "title": conversation.get("title", "New Chat"),
+                "preview": (preview or "")[:140],
+                "created_at": conversation.get("created_at"),
+                "updated_at": conversation.get("updated_at"),
+                "message_count": int(conversation.get("message_count", 0) or 0),
+            }
+        ][: max(1, int(limit or 1))]
 
     def get_conversation(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
-        """Return a conversation document by id, optionally scoped to a user."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
+        """Return a conversation document by id, optionally scoped to the user's active conversation."""
+        if self._conversation_cache:
+            cached = self._conversation_cache.get_conversation(conversation_id)
+            if isinstance(cached, dict):
+                if user_id is None or str(cached.get("user_id") or "") == str(user_id):
+                    return cached
+
         if user_id is not None:
-            query["user_id"] = user_id
-        return collection.find_one(query)
+            current_id = self._get_user_current(user_id)
+            if current_id and current_id != conversation_id:
+                return None
+
+        try:
+            data = self._require_redis().client.get(
+                self._conversation_key(conversation_id)
+            )
+            if not data:
+                return None
+            conversation = json.loads(data)
+            if user_id is not None and str(conversation.get("user_id") or "") != str(user_id):
+                return None
+            return conversation
+        except Exception as e:
+            logger.error(
+                "conversation_redis get error conversation_id=%s error=%s",
+                conversation_id,
+                e,
+            )
+            return None
 
     def conversation_exists(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> bool:
-        """Return True when the conversation exists."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
+        """Return True when the conversation exists (and is the user's active one if user_id is provided)."""
         if user_id is not None:
-            query["user_id"] = user_id
-        return collection.count_documents(query, limit=1) > 0
+            current_id = self._get_user_current(user_id)
+            if current_id != conversation_id:
+                return False
+        return bool(self.get_conversation(conversation_id, user_id=user_id))
 
     def get_latest_conversation_id(self, user_id: str) -> Optional[str]:
-        """Return the most recently updated conversation id for a user."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"user_id": user_id},
-            {"_id": 1},
-            sort=[("updated_at", pymongo.DESCENDING)],
-        )
-        return str(doc["_id"]) if doc else None
+        """Return the single active conversation id for a user (if any)."""
+        return self._get_user_current(user_id)
 
     def search_conversations(
         self,
@@ -332,11 +298,12 @@ class ConversationHandler:
         query: str,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
+        # With 1 active conversation per user, search is a lightweight title filter.
         query_text = " ".join((query or "").split()).strip()
         if not query_text:
             return self.list_conversations(user_id=user_id, limit=limit)
 
-        conversations = self.list_conversations(user_id=user_id, limit=max(limit, 50))
+        conversations = self.list_conversations(user_id=user_id, limit=max(int(limit or 1), 1))
 
         exact_pattern = re.compile(
             rf"^{re.escape(query_text)}$",
@@ -363,55 +330,24 @@ class ConversationHandler:
         return contains_matches[:limit]
 
     def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
-        """Delete a conversation document for a user (hard delete)."""
-        collection = self._require_collection()
-        result = collection.delete_one({"_id": conversation_id, "user_id": user_id})
+        """Delete the active conversation for a user (hard delete from Redis)."""
+        current_id = self._get_user_current(user_id)
+        if current_id != conversation_id:
+            return False
+
+        deleted = (
+            self._require_redis().client.delete(self._conversation_key(conversation_id))
+            > 0
+        )
+        self._require_redis().client.delete(self._user_current_key(user_id))
 
         if self._conversation_cache:
             self._conversation_cache.invalidate_conversation(conversation_id)
 
-        return bool(result.deleted_count)
-
-    def _update_title_from_first_message(
-        self, conversation_id: str, content: str
-    ) -> None:
-        """Use the first user message as the conversation title."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"_id": conversation_id},
-            {"title": 1, "messages": {"$slice": 2}},
-        )
-        if not doc:
-            return
-
-        title = str(doc.get("title") or "").strip()
-        if title and title != "New Chat":
-            return
-
-        user_messages = [
-            message
-            for message in doc.get("messages", [])
-            if message.get("role") == "user" and message.get("content")
-        ]
-        if len(user_messages) != 1:
-            return
-
-        normalized = " ".join(content.split()).strip()
-        if not normalized:
-            return
-
-        collection.update_one(
-            {"_id": conversation_id},
-            {"$set": {"title": normalized[:60]}},
-        )
+        return bool(deleted)
 
     def close(self) -> None:
-        """Close database and cache connections."""
-        if self.client is not None:
-            self.client.close()
-        self.client = None
-        self.db = None
-        self.collection = None
+        """Close cache connection (Redis handled by RedisClient)."""
         if self._conversation_cache:
             self._conversation_cache.close()
             self._conversation_cache = None
