@@ -5,7 +5,6 @@ from typing import Annotated
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from src.auth.auth_utils import hash_password
-from src.database import classes_collection, users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import UserRegister, UserRole
 
@@ -21,22 +20,23 @@ router = APIRouter()
 )
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserRegister):
-    existing = await users_collection.find_one({"email": user.email})
+    persistence = request.app.state.persistence
+    existing = await persistence.users.get_by_email(user.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(user.password)
     default_name = user.email.split("@", 1)[0]
     if user.role == UserRole.student and user.class_name and user.grade:
-        existing_class = await classes_collection.find_one(
-            {"name": user.class_name, "grade": user.grade}
+        existing_class = await persistence.classes.get_by_name_grade(
+            user.class_name, user.grade
         )
         if not existing_class:
-            await classes_collection.insert_one(
+            await persistence.classes.insert_one(
                 {
                     "name": user.class_name,
                     "grade": user.grade,
-                    "school_year": "2026-2027",  # Default for now
+                    "school_year": "2026-2027",
                     "homeroom_teacher_id": None,
                     "subject_teachers": [],
                     "status": "inactive",
@@ -53,7 +53,7 @@ async def register(request: Request, user: UserRegister):
         "grade": user.grade if user.role == UserRole.student else None,
         "created_at": datetime.now(timezone.utc),
     }
-    await users_collection.insert_one(user_doc)
+    await persistence.users.insert_one(user_doc)
 
     return {"message": "User registered successfully, you can now login."}
 
@@ -81,10 +81,11 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             status_code=400, detail="File must contain 'email' and 'password' columns"
         )
 
+    persistence = request.app.state.persistence
     errors = []
     unique_users = {}
     for index, row in df.iterrows():
-        row_number = index + 2
+        row_number = int(index) + 2
         row_email_raw = row["email"]
         row_password_raw = row["password"]
 
@@ -151,12 +152,10 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
 
     existing_emails: set[str] = set()
     if unique_users:
-        cursor = users_collection.find(
-            {"email": {"$in": list(unique_users.keys())}},
-            {"email": 1},
-        )
-        existing_docs = await cursor.to_list(length=len(unique_users))
-        existing_emails = {doc["email"] for doc in existing_docs if "email" in doc}
+        for email in unique_users.keys():
+            existing = await persistence.users.get_by_email(email)
+            if existing:
+                existing_emails.add(email)
 
     docs_to_insert = []
     for email, (valid_user, row_number) in unique_users.items():
@@ -171,11 +170,11 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             and valid_user.class_name
             and valid_user.grade
         ):
-            existing_class = await classes_collection.find_one(
-                {"name": valid_user.class_name, "grade": valid_user.grade}
+            existing_class = await persistence.classes.get_by_name_grade(
+                valid_user.class_name, valid_user.grade
             )
             if not existing_class:
-                await classes_collection.insert_one(
+                await persistence.classes.insert_one(
                     {
                         "name": valid_user.class_name,
                         "grade": valid_user.grade,
@@ -200,7 +199,8 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
         )
 
     if docs_to_insert:
-        await users_collection.insert_many(docs_to_insert, ordered=False)
+        for doc in docs_to_insert:
+            await persistence.users.insert_one(doc)
 
     return {
         "message": f"Registration completed. Successfully registered {len(docs_to_insert)} users.",

@@ -1,12 +1,10 @@
 from datetime import datetime, timezone
 from typing import List
 
-from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
 from src.auth.auth_utils import verify_password
 from src.auth.dependencies import get_current_user as get_current_user_from_token
 from src.auth.jwt_handler import create_access_token
-from src.database import classes_collection, users_collection
 from src.extensions import limiter
 from src.schemas.auth_schemas import (
     AdminResponse,
@@ -37,13 +35,12 @@ router = APIRouter()
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin) -> LoginResponse:
     """Authenticate user and return access token."""
-    db_user = await users_collection.find_one({"email": user.email})
+    persistence = request.app.state.persistence
+    db_user = await persistence.users.get_by_email(user.email)
     if not db_user or not verify_password(user.password, db_user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    await users_collection.update_one(
-        {"email": user.email}, {"$set": {"last_login": datetime.now(timezone.utc)}}
-    )
+    await persistence.users.update_last_login(user.email)
 
     access_token = create_access_token(data={"sub": user.email})
 
@@ -69,15 +66,16 @@ async def get_user_info(
 
 @router.get("/users/students", response_model=List[StudentResponse])
 async def list_students(
+    request: Request,
     user: dict = Depends(get_current_user_from_token),
 ) -> List[StudentResponse]:
     """List all students (admin/teacher only)."""
     if user["role"] not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    students = []
-    async for s in users_collection.find({"role": UserRole.student.value}):
-        students.append(StudentResponse(**user_helper(s)))
+    persistence = request.app.state.persistence
+    students_docs = await persistence.users.list_by_role(UserRole.student.value)
+    students = [StudentResponse(**user_helper(s)) for s in students_docs]
     return students
 
 
@@ -85,13 +83,14 @@ async def list_students(
 async def update_user(
     user_id: str,
     update_data: UserUpdate,
+    request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> UpdateUserResponse:
     """Update user info (admin only)."""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update users")
 
-    if not ObjectId.is_valid(user_id):
+    if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
     update_dict = {
@@ -112,12 +111,13 @@ async def update_user(
     if not update_dict:
         return UpdateUserResponse(message="No changes provided")
 
+    persistence = request.app.state.persistence
     if "class_name" in update_dict and "grade" in update_dict:
-        existing_class = await classes_collection.find_one(
-            {"name": update_dict["class_name"], "grade": update_dict["grade"]}
+        existing_class = await persistence.classes.get_by_name_grade(
+            update_dict["class_name"], update_dict["grade"]
         )
         if not existing_class:
-            await classes_collection.insert_one(
+            await persistence.classes.insert_one(
                 {
                     "name": update_dict["class_name"],
                     "grade": update_dict["grade"],
@@ -128,11 +128,9 @@ async def update_user(
                 }
             )
 
-    result = await users_collection.update_one(
-        {"_id": ObjectId(user_id)}, {"$set": update_dict}
-    )
+    result = await persistence.users.update(user_id, update_dict)
 
-    if result.matched_count == 0:
+    if not result:
         raise HTTPException(status_code=404, detail="User not found")
 
     return UpdateUserResponse(message="User updated successfully")
@@ -140,29 +138,27 @@ async def update_user(
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(
-    user_id: str, current_user: dict = Depends(get_current_user_from_token)
+    user_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_token),
 ) -> MessageResponse:
     """Delete user (admin only)."""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete users")
 
-    if not ObjectId.is_valid(user_id):
+    if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
-    target_user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    persistence = request.app.state.persistence
+    target_user = await persistence.users.get_by_id(user_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     if target_user["role"] == "teacher":
-        await classes_collection.update_many(
-            {"homeroom_teacher_id": user_id},
-            {"$set": {"homeroom_teacher_id": None, "status": "inactive"}},
-        )
-        await classes_collection.update_many(
-            {}, {"$pull": {"subject_teachers": {"teacher_id": user_id}}}
-        )
+        await persistence.classes.clear_homeroom_teacher(user_id)
+        await persistence.classes.pull_subject_teacher(user_id)
 
-    await users_collection.delete_one({"_id": ObjectId(user_id)})
+    await persistence.users.delete(user_id)
     return MessageResponse(message="User deleted successfully")
 
 
@@ -174,25 +170,30 @@ async def logout() -> MessageResponse:
 
 @router.get("/users/teachers", response_model=List[TeacherResponse])
 async def list_teachers(
+    request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> List[TeacherResponse]:
     """List all teachers with their assigned classes."""
     if current_user.get("role") not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    persistence = request.app.state.persistence
+    teachers_docs = await persistence.users.list_by_role("teacher")
     teachers = []
-    async for t in users_collection.find({"role": "teacher"}):
+    for t in teachers_docs:
         t_id = str(t["_id"])
         assigned_classes = []
 
-        async for c in classes_collection.find({"homeroom_teacher_id": t_id}):
+        homeroom_classes = await persistence.classes.list_by_homeroom_teacher(t_id)
+        for c in homeroom_classes:
             assigned_classes.append(
                 TeacherClassAssignment(
                     id=str(c["_id"]), name=c["name"], role="Homeroom Teacher"
                 )
             )
 
-        async for c in classes_collection.find({"subject_teachers.teacher_id": t_id}):
+        all_classes = await persistence.classes.list_all()
+        for c in all_classes:
             for st in c.get("subject_teachers", []):
                 if st["teacher_id"] == t_id:
                     assigned_classes.append(
@@ -218,19 +219,21 @@ async def list_teachers(
 
 @router.get("/users/admins", response_model=List[AdminResponse])
 async def list_admins(
+    request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> List[AdminResponse]:
     """List all admins (admin only)."""
     if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Permission denied")
+        raise HTTPException(status_code=403, detail="Only admins can delete users")
 
-    admins = []
-    async for a in users_collection.find({"role": "admin"}):
-        admins.append(
-            AdminResponse(
-                id=str(a["_id"]),
-                name=a.get("name"),
-                email=a["email"],
-            )
+    persistence = request.app.state.persistence
+    admins_docs = await persistence.users.list_by_role("admin")
+    admins = [
+        AdminResponse(
+            id=str(a["_id"]),
+            name=a.get("name"),
+            email=a["email"],
         )
+        for a in admins_docs
+    ]
     return admins

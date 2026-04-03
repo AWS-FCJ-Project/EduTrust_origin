@@ -1,7 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.auth.jwt_handler import decode_token
-from src.database import users_collection
 
 security = HTTPBearer()
 
@@ -27,11 +26,16 @@ async def get_current_user_email(
     return email
 
 
-async def get_current_user(email: str = Depends(get_current_user_email)):
-    user = await users_collection.find_one({"email": email})
+async def get_current_user(
+    request: Request,
+    email: str = Depends(get_current_user_email),
+):
+    persistence = request.app.state.persistence
+    user = await persistence.users.get_by_email(email)
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return user
