@@ -229,7 +229,7 @@ class UserRepository:
             uid = student.get("user_id")
             if not uid:
                 continue
-            update_data = {k: v for k, v in update_fields.items() if v is None}
+            update_data = {k: v for k, v in update_fields.items() if v is not None}
             if update_data:
                 await self.update(uid, update_data)
                 count += 1

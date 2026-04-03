@@ -228,7 +228,10 @@ class DynamoDBClient:
         return pk_map.get(table, "id")
 
     def make_sk(self, table: str, value: str) -> dict:
-        return {self._sk_name(table): {"S": value}}
+        sk_name = self._sk_name(table)
+        if not sk_name:
+            return {}
+        return {sk_name: {"S": value}}
 
     def _sk_name(self, table: str) -> str:
         sk_map = {

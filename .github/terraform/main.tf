@@ -509,6 +509,264 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
   policy = data.aws_iam_policy_document.backend_ssm_read.json
 }
 
+# --- DynamoDB Tables (Phase 02 Migration) ---
+resource "aws_dynamodb_table" "users" {
+  name         = "${var.dynamodb_table_prefix}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_id"
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "email"
+    type = "S"
+  }
+  attribute {
+    name = "role"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "email-index"
+    hash_key        = "email"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "role-index"
+    hash_key        = "role"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "class-id-index"
+    hash_key        = "class_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-users"
+  }
+}
+
+resource "aws_dynamodb_table" "classes" {
+  name         = "${var.dynamodb_table_prefix}-classes"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "class_id"
+
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "lookup_key"
+    type = "S"
+  }
+  attribute {
+    name = "homeroom_teacher_id"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "class-lookup-index"
+    hash_key        = "lookup_key"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "homeroom-teacher-index"
+    hash_key        = "homeroom_teacher_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-classes"
+  }
+}
+
+resource "aws_dynamodb_table" "class_teacher_assignments" {
+  name         = "${var.dynamodb_table_prefix}-class_teacher_assignments"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "teacher_id"
+  range_key    = "assignment_key"
+
+  attribute {
+    name = "teacher_id"
+    type = "S"
+  }
+  attribute {
+    name = "assignment_key"
+    type = "S"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-class-teacher-assignments"
+  }
+}
+
+resource "aws_dynamodb_table" "exams" {
+  name         = "${var.dynamodb_table_prefix}-exams"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "teacher_id"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "start_time"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "teacher-index"
+    hash_key        = "teacher_id"
+    range_key       = "start_time"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "class-index"
+    hash_key        = "class_id"
+    range_key       = "start_time"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-exams"
+  }
+}
+
+resource "aws_dynamodb_table" "submissions" {
+  name         = "${var.dynamodb_table_prefix}-submissions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+  range_key    = "student_id"
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "student_id"
+    type = "S"
+  }
+  attribute {
+    name = "submitted_at"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "student-index"
+    hash_key        = "student_id"
+    range_key       = "submitted_at"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-submissions"
+  }
+}
+
+resource "aws_dynamodb_table" "violations" {
+  name         = "${var.dynamodb_table_prefix}-violations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+  range_key    = "student_id"
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "student_id"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "violation_time"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "class-time-index"
+    hash_key        = "class_id"
+    range_key       = "violation_time"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-violations"
+  }
+}
+
+resource "aws_dynamodb_table" "conversations" {
+  name         = "${var.dynamodb_table_prefix}-conversations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "conversation_id"
+
+  attribute {
+    name = "conversation_id"
+    type = "S"
+  }
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "updated_at"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "user-updated-index"
+    hash_key        = "user_id"
+    range_key       = "updated_at"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-conversations"
+  }
+}
+
+resource "aws_dynamodb_table" "otps" {
+  name         = "${var.dynamodb_table_prefix}-otps"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "otp_key"
+
+  attribute {
+    name = "otp_key"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expire_at_epoch"
+    enabled        = true
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-otps"
+  }
+}
+
 # --- DynamoDB Permissions (Phase 02 Migration) ---
 data "aws_iam_policy_document" "backend_dynamodb" {
   # Allow all DynamoDB operations on the app tables
