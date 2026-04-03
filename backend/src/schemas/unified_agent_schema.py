@@ -6,7 +6,6 @@ from src.memory.conversation_handler import ConversationHandler
 
 class UnifiedAgentRequestSchema(BaseModel):
     question: str
-    conversation_id: str
 
 
 class UnifiedAgentResponseSchema(BaseModel):

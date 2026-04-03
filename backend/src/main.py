@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     conversation_cache = ConversationCache(redis_client=redis_client)
 
     state.conversation_handler = ConversationHandler(
-        conversation_cache=conversation_cache
+        redis_client=redis_client, conversation_cache=conversation_cache
     )
     state.conversation_handler.connect_to_database()
     yield

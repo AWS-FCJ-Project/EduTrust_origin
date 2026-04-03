@@ -54,7 +54,8 @@ class AppConfig(BaseSettings):
     REDIS_DB: Optional[int] = None
     REDIS_TLS: Optional[bool] = False
     REDIS_KEY_PREFIX: Optional[str] = None
-    REDIS_CHAT_TTL: Optional[int] = None
+    # Default: 30 minutes inactivity TTL for chat conversation cache/storage.
+    REDIS_CHAT_TTL: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

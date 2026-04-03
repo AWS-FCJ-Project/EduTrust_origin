@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from src.agent.unified_agent import UnifiedAgent
@@ -31,21 +32,13 @@ async def ask_agent(
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ) -> UnifiedAgentResponseSchema:
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found",
-            )
-    else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+    conversation_id = handler.get_latest_conversation_id(user_id)
+    if not conversation_id:
+        conversation_id = str(uuid4())
+        handler.create_conversation(conversation_id, user_id=user_id)
 
-    answer = await orch.ask(
-        question=request.question, conversation_id=request.conversation_id
-    )
-    return UnifiedAgentResponseSchema(
-        answer=answer, conversation_id=request.conversation_id
-    )
+    answer = await orch.ask(question=request.question, conversation_id=conversation_id)
+    return UnifiedAgentResponseSchema(answer=answer, conversation_id=conversation_id)
 
 
 @router.post("/ask/streaming")
@@ -56,19 +49,15 @@ async def ask_agent_streaming(
     orch: Annotated[UnifiedAgent, Depends(get_orchestrator)],
 ):
     user_id = str(current_user["_id"])
-    if handler.conversation_exists(request.conversation_id):
-        if not handler.conversation_exists(request.conversation_id, user_id=user_id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found",
-            )
-    else:
-        handler.create_conversation(request.conversation_id, user_id=user_id)
+    conversation_id = handler.get_latest_conversation_id(user_id)
+    if not conversation_id:
+        conversation_id = str(uuid4())
+        handler.create_conversation(conversation_id, user_id=user_id)
 
     async def generate():
         try:
             async for event in orch.ask_stream_with_tool_calls(
-                question=request.question, conversation_id=request.conversation_id
+                question=request.question, conversation_id=conversation_id
             ):
                 yield Streaming.sse_json({"type": event.type, "content": event.content})
 
