@@ -1,17 +1,14 @@
 """
 DynamoDB-backed ConversationHandler for Phase 03.
 Delegates persistence to ConversationRepository while keeping
-cache and embedding for read optimization.
+cache for read optimization.
 """
 
-import asyncio
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import numpy as np
-from sentence_transformers import SentenceTransformer
 from src.conversation.conversation_cache import ConversationCache
 from src.conversation.conversation_constants import DEFAULT_LIMIT, DEFAULT_TITLE
 from src.database.repositories.conversation_handler import ConversationRepository
@@ -22,20 +19,17 @@ logger = logging.getLogger(__name__)
 class DynamoDBConversationHandler:
     """
     Handler for storing conversations in DynamoDB with optional caching.
-    Provides search functionality with embeddings.
+    Provides search functionality with regex.
     All methods are async to safely integrate with ASGI/FastAPI.
     """
 
     def __init__(
         self,
         conversation_repo: ConversationRepository,
-        embedding_model: SentenceTransformer,
         conversation_cache: Optional[ConversationCache] = None,
     ):
         self._repo = conversation_repo
-        self._embedding_model = embedding_model
         self._conversation_cache = conversation_cache
-        self._embedding_cache: dict[str, list[float]] = {}
 
     def _log_cache(
         self,
@@ -260,7 +254,7 @@ class DynamoDBConversationHandler:
         query: str,
         limit: int = DEFAULT_LIMIT,
     ) -> list[dict[str, Any]]:
-        """Search conversations by text similarity."""
+        """Search conversations by title regex match."""
         query_text = " ".join((query or "").split()).strip()
         if not query_text:
             return await self.list_conversations(user_id=user_id, limit=limit)
@@ -269,69 +263,13 @@ class DynamoDBConversationHandler:
             user_id=user_id, limit=max(limit, 50)
         )
 
-        exact_pattern = re.compile(
-            rf"^{re.escape(query_text)}$",
-            flags=re.IGNORECASE,
-        )
-        exact_matches = [
-            conversation
-            for conversation in conversations
-            if exact_pattern.match(str(conversation.get("title") or "").strip())
+        pattern = re.compile(re.escape(query_text), flags=re.IGNORECASE)
+        matched = [
+            conv
+            for conv in conversations
+            if pattern.search(str(conv.get("title") or "").strip())
         ]
-        if exact_matches:
-            return exact_matches[:limit]
-
-        query_embedding = await self.embed_title(query_text)
-        if not query_embedding:
-            return []
-
-        scored: list[dict[str, Any]] = []
-        for conversation in conversations:
-            title = str(conversation.get("title") or "")
-            embedding = await self.embed_title(title)
-            score = self.calculate_cosine_similarity(query_embedding, embedding)
-            scored.append({**conversation, "similarity": score})
-
-        scored.sort(
-            key=lambda item: (
-                float(item.get("similarity") or 0.0),
-                str(item.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        return [item for item in scored if (item.get("similarity") or 0) > 0][:limit]
-
-    def calculate_cosine_similarity(
-        self, left: list[float], right: list[float]
-    ) -> float:
-        """Calculate cosine similarity between two vectors."""
-        if not left or not right or len(left) != len(right):
-            return 0.0
-        left_vec = np.asarray(left, dtype=np.float32)
-        right_vec = np.asarray(right, dtype=np.float32)
-        denom = float(np.linalg.norm(left_vec) * np.linalg.norm(right_vec))
-        if denom <= 0:
-            return 0.0
-        return float(np.dot(left_vec, right_vec) / denom)
-
-    async def embed_title(self, title: str) -> list[float]:
-        """Get embedding for title with caching."""
-        normalized = " ".join((title or "").split()).strip()
-        if not normalized:
-            return []
-        cached = self._embedding_cache.get(normalized)
-        if cached is not None:
-            return cached
-        model = self._embedding_model
-        if model is None:
-            return []
-        # Run CPU-bound encoding in thread pool to avoid blocking the event loop
-        loop = asyncio.get_running_loop()
-        embedding = await loop.run_in_executor(
-            None, lambda: model.encode(normalized, normalize_embeddings=True).tolist()
-        )
-        self._embedding_cache[normalized] = embedding
-        return embedding
+        return matched[:limit]
 
     async def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
         """Delete a conversation document for a user (hard delete)."""

@@ -4,12 +4,14 @@ import logfire
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sentence_transformers import SentenceTransformer
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from src.app_config import app_config
 from src.conversation.conversation_cache import ConversationCache
+from src.conversation.conversation_handler import DynamoDBConversationHandler
+from src.database.dynamodb_client import DynamoDBClient
 from src.database.redis_client import RedisClient
+from src.database.repositories.conversation_handler import ConversationRepository
 from src.extensions import limiter
 from src.routers import (
     class_routes,
@@ -49,29 +51,20 @@ async def lifespan(app: FastAPI):
     )
     redis_client.connect_to_database()
 
-    # Persistence facade - Phase 03 uses DynamoDB
     from src.database import PersistenceFacade
-    from src.database.dynamodb_client import DynamoDBClient
 
     dynamo_client = DynamoDBClient()
     app.state.persistence = PersistenceFacade(dynamo_client)
 
-    # Initialize violation logger with persistence (camera flow needs this)
     from src.detection.violation_logger import set_violation_logger_persistence
 
     set_violation_logger_persistence(app.state.persistence)
 
-    embedding_model = SentenceTransformer(app_config.EMBEDDING_MODEL)
     conversation_cache = ConversationCache(redis_client=redis_client)
-
-    # DynamoDB-backed conversation handler (Phase 03)
-    from src.conversation.conversation_handler import DynamoDBConversationHandler
-    from src.database.repositories.conversation_handler import ConversationRepository
 
     conversation_repo = ConversationRepository(dynamo_client)
     app.state.conversation_handler = DynamoDBConversationHandler(
         conversation_repo=conversation_repo,
-        embedding_model=embedding_model,
         conversation_cache=conversation_cache,
     )
     yield
