@@ -114,8 +114,9 @@ class UserRepository:
         items = await self._client.query(
             self._table(),
             index_name="role-index",
-            key_condition="role = :role",
+            key_condition="#role = :role",
             expression_values={":role": {"S": role}},
+            expression_names={"#role": "role"},
         )
         for item in items:
             item["_id"] = item.get("user_id")
@@ -135,12 +136,13 @@ class UserRepository:
         # Use scan with filter since class_id not directly queryable by name
         all_students = await self._client.scan(
             self._table(),
-            filter_expression="role = :role AND class_name = :cn AND grade = :g",
+            filter_expression="#role = :role AND class_name = :cn AND grade = :g",
             expression_values={
                 ":role": {"S": "student"},
                 ":cn": {"S": class_name},
                 ":g": {"N": str(grade)},
             },
+            expression_names={"#role": "role"},
         )
         for item in all_students:
             item["_id"] = item.get("user_id")
@@ -160,8 +162,9 @@ class UserRepository:
     async def list_available_students(self, class_name: str, grade: int) -> list[dict]:
         all_students = await self._client.scan(
             self._table(),
-            filter_expression="role = :role",
+            filter_expression="#role = :role",
             expression_values={":role": {"S": "student"}},
+            expression_names={"#role": "role"},
         )
         # Filter out students in the given class
         for item in all_students:
@@ -194,9 +197,10 @@ class UserRepository:
 
         role_filter = filter_query.get("role")
         if role_filter:
+            expr_names["#role"] = "role"
             fi = len(expr_values)
             expr_values[f":fv{fi}"] = {"S": role_filter}
-            filter_parts.append(f"role = :fv{fi}")
+            filter_parts.append(f"#role = :fv{fi}")
 
         cn = filter_query.get("class_name")
         if cn:
