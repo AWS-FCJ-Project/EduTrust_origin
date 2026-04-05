@@ -90,6 +90,10 @@ async def create_exam(
 async def get_exams(current_user: dict = Depends(get_current_user)):
     role = current_user.get("role")
     user_id = str(current_user["_id"])
+    raw_user_id = current_user.get("_id")
+    student_id_values = (
+        [user_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [user_id]
+    )
 
     query = {}
     if role == "admin":
@@ -128,7 +132,7 @@ async def get_exams(current_user: dict = Depends(get_current_user)):
         e_dict = exam_helper(exam)
         if role == "student":
             submission = await submissions_collection.find_one(
-                {"exam_id": e_dict["id"], "student_id": user_id}
+                {"exam_id": e_dict["id"], "student_id": {"$in": student_id_values}}
             )
             if submission:
                 e_dict["status"] = submission.get("status")
@@ -177,8 +181,13 @@ async def get_exam_status(exam_id: str, current_user: dict = Depends(get_current
     if not ObjectId.is_valid(exam_id):
         raise HTTPException(status_code=400, detail="Invalid exam ID")
 
+    raw_user_id = current_user.get("_id")
+    student_id = str(raw_user_id)
+    student_id_values = (
+        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
+    )
     submission = await submissions_collection.find_one(
-        {"exam_id": exam_id, "student_id": str(current_user["_id"])}
+        {"exam_id": exam_id, "student_id": {"$in": student_id_values}}
     )
 
     if not submission:
@@ -204,15 +213,20 @@ async def submit_exam(
     if not ObjectId.is_valid(exam_id):
         raise HTTPException(status_code=400, detail="Invalid exam ID")
 
+    raw_user_id = current_user.get("_id")
+    student_id = str(raw_user_id)
+    student_id_values = (
+        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
+    )
     existing = await submissions_collection.find_one(
-        {"exam_id": exam_id, "student_id": str(current_user["_id"])}
+        {"exam_id": exam_id, "student_id": {"$in": student_id_values}}
     )
     if existing:
         return {"message": "Exam already submitted", "already_submitted": True}
 
     new_submission = submission_data.model_dump()
     new_submission["exam_id"] = exam_id
-    new_submission["student_id"] = str(current_user["_id"])
+    new_submission["student_id"] = student_id
     new_submission["submitted_at"] = datetime.now(timezone.utc)
 
     exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
@@ -252,10 +266,14 @@ async def get_my_results(current_user: dict = Depends(get_current_user)):
             status_code=403, detail="Only students can view their results"
         )
 
-    student_id = str(current_user["_id"])
-    submissions = await submissions_collection.find({"student_id": student_id}).to_list(
-        None
+    raw_user_id = current_user.get("_id")
+    student_id = str(raw_user_id)
+    student_id_values = (
+        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
     )
+    submissions = await submissions_collection.find(
+        {"student_id": {"$in": student_id_values}}
+    ).to_list(None)
 
     results = []
     for sub in submissions:

@@ -120,7 +120,7 @@ const ExamListPage = () => {
                         { id: 'pending', label: 'Chưa làm' },
                         { id: 'completed', label: 'Đã hoàn thành' },
                         { id: 'failed', label: 'Bị hủy' }
-                    ].concat([{ id: 'ended', label: 'ÄÃ£ káº¿t thÃºc' }]).map(tab => (
+                    ].concat([{ id: 'ended', label: 'Đã kết thúc' }]).map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
@@ -186,7 +186,7 @@ const ExamListPage = () => {
                                                 if (ended) {
                                                     return (
                                                         <div className="bg-gray-100 text-gray-500 px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 cursor-not-allowed border border-gray-200">
-                                                            <XCircle size={18} /> ÄÃ£ káº¿t thÃºc
+                                                            <XCircle size={18} /> Đã kết thúc
                                                         </div>
                                                     );
                                                 }
