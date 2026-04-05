@@ -41,6 +41,7 @@ const TeacherExams: React.FC = () => {
     const [classes, setClasses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
+    const [expandedClasses, setExpandedClasses] = useState<Record<string, boolean>>({});
     
     // Modals state
     const [editingExam, setEditingExam] = useState<ExamItem | null>(null);
@@ -286,6 +287,10 @@ const TeacherExams: React.FC = () => {
         </div>
     );
 
+    const toggleClassExpanded = (classId: string) => {
+        setExpandedClasses((prev) => ({ ...prev, [classId]: !prev[classId] }));
+    };
+
     // Grouping logic
     const examsByClassId: Record<string, ExamItem[]> = exams.reduce((acc, exam) => {
         if (!acc[exam.class_id]) acc[exam.class_id] = [];
@@ -339,11 +344,46 @@ const TeacherExams: React.FC = () => {
                 <div className="space-y-16">
                     {classes.map((cls) => {
                         const classExams = examsByClassId[cls.id] || [];
+                        const sortedClassExams = [...classExams].sort((a, b) => {
+                            const now = currentTime;
+                            const aStart = new Date(a.start_time);
+                            const aEnd = new Date(a.end_time);
+                            const bStart = new Date(b.start_time);
+                            const bEnd = new Date(b.end_time);
+
+                            const stageRank = (start: Date, end: Date) => {
+                                if (now >= start && now <= end) return 0; // open
+                                if (now < start) return 1; // upcoming
+                                return 2; // closed
+                            };
+
+                            const aRank = stageRank(aStart, aEnd);
+                            const bRank = stageRank(bStart, bEnd);
+                            if (aRank !== bRank) return aRank - bRank;
+
+                            // Within same stage:
+                            // - open: closer to end first (more urgent)
+                            // - upcoming: sooner start first
+                            // - closed: newest first
+                            if (aRank === 0) return aEnd.getTime() - bEnd.getTime();
+                            if (aRank === 1) return aStart.getTime() - bStart.getTime();
+                            return bStart.getTime() - aStart.getTime();
+                        });
+                        const isExpanded = !!expandedClasses[cls.id];
                         return (
                             <section key={cls.id} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                                 {/* Class Header with Background */}
                                 <div className="bg-gray-50/80 backdrop-blur-sm rounded-[2rem] p-6 border border-gray-100 flex items-center justify-between group shadow-sm">
-                                    <div className="flex items-center gap-4">
+                                    <div
+                                        className="flex items-center gap-4 cursor-pointer select-none"
+                                        onClick={() => toggleClassExpanded(cls.id)}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") toggleClassExpanded(cls.id);
+                                        }}
+                                        aria-expanded={isExpanded}
+                                    >
                                         <div className="w-2 h-12 bg-[#5B0019] rounded-full"></div>
                                         <div>
                                             <div className="flex items-center gap-3 mb-0.5">
@@ -365,9 +405,9 @@ const TeacherExams: React.FC = () => {
                                 </div>
 
                                 {/* Exams Grid for this Class */}
-                                {classExams.length > 0 ? (
+                                {isExpanded ? (sortedClassExams.length > 0 ? (
                                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                                        {classExams.map((exam) => (
+                                        {sortedClassExams.map((exam) => (
                                             <div key={exam.id} className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-2xl transition-all p-8 group/card relative overflow-hidden flex flex-col">
                                                 {/* Subject Badge */}
                                                 <div className="absolute top-0 right-0 p-8">
@@ -456,7 +496,7 @@ const TeacherExams: React.FC = () => {
                                             <Plus size={14} /> Tạo đề ngay
                                         </Link>
                                     </div>
-                                )}
+                                )) : null}
                             </section>
                         );
                     })}
