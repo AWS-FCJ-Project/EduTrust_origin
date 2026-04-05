@@ -36,19 +36,35 @@ const ExamListPage = () => {
         fetchExams();
     }, []);
 
+    const isExamEnded = (exam: any) => {
+        const endTime = exam?.end_time ? new Date(exam.end_time) : null;
+        if (!endTime || Number.isNaN(endTime.getTime())) return false;
+        return new Date() > endTime;
+    };
+
     const filteredExams = exams.filter(exam => {
         const matchesSearch = exam.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
             exam.subject.toLowerCase().includes(searchTerm.toLowerCase());
+
+        const ended = isExamEnded(exam);
         
         let matchesTab = true;
-        if (activeTab === 'pending') matchesTab = (exam.status === 'pending');
+        if (activeTab === 'pending') matchesTab = (exam.status === 'pending' && !ended);
         else if (activeTab === 'completed') matchesTab = (exam.status === 'completed');
         else if (activeTab === 'failed') matchesTab = (exam.status === 'failed');
+        else if (activeTab === 'ended') matchesTab = ended;
 
         return matchesSearch && matchesTab;
     });
 
-    const getStatusBadge = (status: string) => {
+    const sortedFilteredExams = [...filteredExams].sort(
+        (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+    );
+
+    const getStatusBadge = (status: string, ended: boolean) => {
+        if (ended && status === 'pending') {
+            return <span className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black uppercase tracking-wider border border-gray-200">Đã kết thúc</span>;
+        }
         switch (status) {
             case 'pending':
                 return <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-wider">Chưa làm</span>;
@@ -104,7 +120,7 @@ const ExamListPage = () => {
                         { id: 'pending', label: 'Chưa làm' },
                         { id: 'completed', label: 'Đã hoàn thành' },
                         { id: 'failed', label: 'Bị hủy' }
-                    ].map(tab => (
+                    ].concat([{ id: 'ended', label: 'ÄÃ£ káº¿t thÃºc' }]).map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
@@ -125,8 +141,8 @@ const ExamListPage = () => {
                             <div key={i} className="bg-white/40 h-64 rounded-[3rem] animate-pulse border border-gray-100/50"></div>
                         ))
                     ) : (
-                        filteredExams.length > 0 ? (
-                            filteredExams.map(exam => (
+                        sortedFilteredExams.length > 0 ? (
+                            sortedFilteredExams.map(exam => (
                                 <div
                                     key={exam.id}
                                     className="bg-white rounded-[3rem] p-8 border border-gray-100/60 shadow-2xl shadow-gray-200/40 hover:shadow-[#5B0019]/10 hover:-translate-y-1 transition-all duration-500 flex flex-col relative overflow-hidden group"
@@ -143,7 +159,7 @@ const ExamListPage = () => {
                                                 {exam.title}
                                             </h3>
                                         </div>
-                                        {getStatusBadge(exam.status)}
+                                        {getStatusBadge(exam.status, isExamEnded(exam))}
                                     </div>
 
                                     <div className="flex flex-wrap items-center gap-3 mb-8">
@@ -166,6 +182,14 @@ const ExamListPage = () => {
 
                                         {exam.status === 'pending' ? (
                                             (() => {
+                                                const ended = isExamEnded(exam);
+                                                if (ended) {
+                                                    return (
+                                                        <div className="bg-gray-100 text-gray-500 px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 cursor-not-allowed border border-gray-200">
+                                                            <XCircle size={18} /> ÄÃ£ káº¿t thÃºc
+                                                        </div>
+                                                    );
+                                                }
                                                 const isStarted = new Date() >= new Date(exam.start_time);
                                                 return isStarted ? (
                                                     <Link

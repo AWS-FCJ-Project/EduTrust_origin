@@ -76,13 +76,11 @@ async def login(request: Request, user: UserLogin):
         )
 
     return {
-        "access_token": id_token,
+        # Only return what the frontend needs for authenticated API calls.
+        # Refresh/access tokens are intentionally not exposed to the browser.
         "id_token": id_token,
-        "provider_access_token": auth_result.get("AccessToken"),
-        "refresh_token": auth_result.get("RefreshToken"),
         "expires_in": auth_result.get("ExpiresIn"),
         "token_type": "bearer",
-        "email": user.email,
     }
 
 
