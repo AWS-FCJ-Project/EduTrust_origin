@@ -373,17 +373,17 @@ const TeacherExams: React.FC = () => {
                         return (
                             <section key={cls.id} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                                 {/* Class Header with Background */}
-                                <div className="bg-gray-50/80 backdrop-blur-sm rounded-[2rem] p-6 border border-gray-100 flex items-center justify-between group shadow-sm">
-                                    <div
-                                        className="flex items-center gap-4 cursor-pointer select-none"
-                                        onClick={() => toggleClassExpanded(cls.id)}
-                                        role="button"
-                                        tabIndex={0}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") toggleClassExpanded(cls.id);
-                                        }}
-                                        aria-expanded={isExpanded}
-                                    >
+                                <div
+                                    className="bg-gray-50/80 backdrop-blur-sm rounded-[2rem] p-6 border border-gray-100 flex items-center justify-between group shadow-sm cursor-pointer select-none transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+                                    onClick={() => toggleClassExpanded(cls.id)}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") toggleClassExpanded(cls.id);
+                                    }}
+                                    aria-expanded={isExpanded}
+                                >
+                                    <div className="flex items-center gap-4">
                                         <div className="w-2 h-12 bg-[#5B0019] rounded-full"></div>
                                         <div>
                                             <div className="flex items-center gap-3 mb-0.5">
@@ -398,6 +398,7 @@ const TeacherExams: React.FC = () => {
                                     
                                     <Link 
                                         href={`/dashboard/exams/create?class_id=${cls.id}`}
+                                        onClick={(e) => e.stopPropagation()}
                                         className="px-6 py-4 bg-[#5B0019] text-white rounded-2xl transition-all shadow-md hover:shadow-xl hover:bg-black flex items-center gap-2 font-black text-xs uppercase tracking-widest active:scale-95"
                                     >
                                         <Plus size={18} /> Thêm đề cho lớp
