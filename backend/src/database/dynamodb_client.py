@@ -36,6 +36,9 @@ class DynamoDBClient:
         kwargs: dict = {"region_name": app_config.DYNAMODB_REGION or "ap-southeast-1"}
         if app_config.DYNAMODB_ENDPOINT:
             kwargs["endpoint_url"] = app_config.DYNAMODB_ENDPOINT
+        if app_config.AWS_ACCESS_KEY_ID and app_config.AWS_SECRET_ACCESS_KEY:
+            kwargs["aws_access_key_id"] = app_config.AWS_ACCESS_KEY_ID
+            kwargs["aws_secret_access_key"] = app_config.AWS_SECRET_ACCESS_KEY
         return kwargs
 
     async def get_item(
