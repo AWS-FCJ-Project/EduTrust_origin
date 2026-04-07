@@ -141,7 +141,7 @@ class UserRepository:
             expression_values={
                 ":role": {"S": "student"},
                 ":cn": {"S": class_name},
-                ":g": {"N": str(grade)},
+                ":g": {"S": str(grade)},
             },
             expression_names={"#role": "role"},
         )
@@ -212,7 +212,7 @@ class UserRepository:
         g = filter_query.get("grade")
         if g is not None:
             fi = len(expr_values)
-            expr_values[f":fv{fi}"] = {"N": str(g)}
+            expr_values[f":fv{fi}"] = {"S": str(g)}
             filter_parts.append(f"grade = :fv{fi}")
 
         if not filter_parts:
@@ -239,6 +239,50 @@ class UserRepository:
                 await self.update(uid, update_data)
                 count += 1
         return count
+
+    async def insert_many(self, docs: list[dict]) -> list[str]:
+        """
+        Insert multiple users using DynamoDB batch write.
+        Chunks into batches of 25 (DynamoDB limit).
+        Returns list of created user IDs.
+        """
+        if not docs:
+            return []
+
+        BATCH_SIZE = 25
+        user_ids = []
+
+        for i in range(0, len(docs), BATCH_SIZE):
+            batch = docs[i : i + BATCH_SIZE]
+            items = []
+            for doc in batch:
+                user_id = doc.get("user_id") or self._generate_id()
+                user_ids.append(user_id)
+                item = {
+                    "user_id": user_id,
+                    "_id": user_id,
+                    "email": doc.get("email", ""),
+                    "hashed_password": doc.get("hashed_password", ""),
+                    "cognito_sub": doc.get("cognito_sub") or "",
+                    "is_verified": str(doc.get("is_verified", True)).lower(),
+                    "name": doc.get("name", ""),
+                    "role": doc.get("role", "student"),
+                    "class_name": doc.get("class_name") or "",
+                    "grade": (
+                        str(doc.get("grade")) if doc.get("grade") is not None else ""
+                    ),
+                    "subjects": doc.get("subjects", []),
+                    "created_at": doc.get(
+                        "created_at", datetime.now(timezone.utc).isoformat()
+                    ),
+                    "last_login": doc.get("last_login") or "",
+                }
+                item = {k: v for k, v in item.items() if v != "" and v is not None}
+                items.append(item)
+
+            await self._client.batch_write(self._table(), items)
+
+        return user_ids
 
     async def update_last_login(self, email: str) -> None:
         user = await self.get_by_email(email)

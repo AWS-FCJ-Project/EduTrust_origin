@@ -1,3 +1,4 @@
+import asyncio
 import io
 from datetime import datetime, timezone
 from typing import Annotated
@@ -10,6 +11,9 @@ from src.extensions import limiter
 from src.schemas.auth_schemas import UserRegister, UserRole
 
 router = APIRouter()
+
+# Bounded concurrency limit for DB operations
+MAX_CONCURRENT_DB_OPS = 10
 
 
 @router.post(
@@ -166,9 +170,19 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
 
     existing_emails: set[str] = set()
     if unique_users:
-        for email in unique_users.keys():
-            existing = await persistence.users.get_by_email(email)
-            if existing:
+        # Bounded concurrency for email checks
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_DB_OPS)
+
+        async def check_email(email: str) -> tuple[str, bool]:
+            async with semaphore:
+                existing = await persistence.users.get_by_email(email)
+                return email, existing is not None
+
+        results = await asyncio.gather(
+            *[check_email(email) for email in unique_users.keys()]
+        )
+        for email, exists in results:
+            if exists:
                 existing_emails.add(email)
 
     docs_to_insert = []
@@ -225,8 +239,8 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
         )
 
     if docs_to_insert:
-        for doc in docs_to_insert:
-            await persistence.users.insert_one(doc)
+        # Batch write users
+        await persistence.users.insert_many(docs_to_insert)
 
     return {
         "message": f"Registration completed. Successfully registered {len(docs_to_insert)} users.",

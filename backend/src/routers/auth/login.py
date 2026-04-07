@@ -268,7 +268,7 @@ async def list_admins(
     current_user: dict = Depends(get_current_user_from_token),
 ) -> List[AdminResponse]:
     if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can delete users")
+        raise HTTPException(status_code=403, detail="Only admins can view admin list")
 
     persistence = request.app.state.persistence
     admins_docs = await persistence.users.list_by_role("admin")

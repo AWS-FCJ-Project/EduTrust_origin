@@ -137,3 +137,32 @@ class ClassRepository:
                 remaining = [t for t in teachers if t.get("teacher_id") != teacher_id]
                 if len(remaining) != len(teachers):
                     await self.update(cls["class_id"], {"subject_teachers": remaining})
+
+    async def list_by_subject_teacher(self, teacher_id: str) -> list[dict]:
+        """List all classes where teacher is a subject teacher."""
+        all_classes = await self.list_all()
+        result = []
+        for cls in all_classes:
+            teachers = cls.get("subject_teachers", [])
+            if any(
+                t.get("teacher_id") == teacher_id
+                for t in teachers
+                if isinstance(t, dict)
+            ):
+                result.append(cls)
+        return result
+
+    async def list_by_teacher_any_role(self, teacher_id: str) -> list[dict]:
+        """List all classes where teacher is either homeroom or subject teacher."""
+        homeroom_classes = await self.list_by_teacher(teacher_id)
+        subject_classes = await self.list_by_subject_teacher(teacher_id)
+
+        # Merge and deduplicate by class_id
+        seen = {c.get("class_id") for c in homeroom_classes}
+        result = list(homeroom_classes)
+        for cls in subject_classes:
+            cid = cls.get("class_id")
+            if cid not in seen:
+                result.append(cls)
+                seen.add(cid)
+        return result

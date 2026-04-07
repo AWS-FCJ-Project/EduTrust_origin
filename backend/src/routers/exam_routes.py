@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated, List
@@ -213,29 +214,42 @@ async def get_exams(
         user = await persistence.users.get_by_id(user_id)
         if not user:
             return []
-        user_class = user.get("class_name")
+        user_class_name = user.get("class_name")
         user_grade = user.get("grade")
-        if not user_class or not user_grade:
+        if not user_class_name or not user_grade:
             return []
-        # Get all exams and filter by class
-        all_exams = await persistence.exams.list_all()
+
+        # Get class_id via lookup
+        cls = await persistence.classes.get_by_name_grade(
+            user_class_name, int(user_grade)
+        )
+        if not cls:
+            return []
+
+        # Fetch exams for class + all student submissions in parallel
+        class_id = cls.get("class_id")
+        exams_task = persistence.exams.list_by_class(class_id)
+        submissions_task = persistence.submissions.list_by_student(user_id)
+
+        class_exams, student_submissions = await asyncio.gather(
+            exams_task, submissions_task
+        )
+
+        # Build submission lookup by exam_id
+        submission_by_exam = {sub.get("exam_id"): sub for sub in student_submissions}
+
         filtered = []
-        for exam in all_exams:
-            if exam.get("class_name") == user_class and str(exam.get("grade")) == str(
-                user_grade
-            ):
-                # Check submission status
-                submission = await persistence.submissions.get_by_exam_student(
-                    exam.get("exam_id"), user_id
-                )
-                exam_dict = exam_response_helper(exam)
-                if submission:
-                    exam_dict["status"] = submission.get("status", "completed")
-                    exam_dict["submitted_at"] = submission.get("submitted_at")
-                    exam_dict["violation_count"] = submission.get("violation_count", 0)
-                else:
-                    exam_dict["status"] = "pending"
-                filtered.append(exam_dict)
+        for exam in class_exams:
+            exam_id = exam.get("exam_id")
+            exam_dict = exam_response_helper(exam)
+            submission = submission_by_exam.get(exam_id)
+            if submission:
+                exam_dict["status"] = submission.get("status", "completed")
+                exam_dict["submitted_at"] = submission.get("submitted_at")
+                exam_dict["violation_count"] = int(submission.get("violation_count", 0))
+            else:
+                exam_dict["status"] = "pending"
+            filtered.append(exam_dict)
         return filtered
 
     if role == "teacher":
@@ -352,15 +366,8 @@ async def submit_exam(
     if submission_data.status.value == "completed":
         await persistence.violations.delete_by_exam_student(exam_id, user_id)
 
-    # Update exam counters
-    await persistence.exams.update(
-        exam_id,
-        {
-            "submission_count": str(int(exam.get("submission_count", 0) or 0) + 1),
-            "score_total": str(float(exam.get("score_total", 0) or 0) + score),
-            "highest_score": str(max(float(exam.get("highest_score", 0) or 0), score)),
-        },
-    )
+    # Update exam counters atomically with optimistic locking
+    await persistence.exams.update_counters_safe(exam_id, score)
 
     return ExamSubmissionResponse(
         exam_id=exam_id,
@@ -690,17 +697,8 @@ async def get_all_violations(
 
     # If teacher, filter by their classes
     if role == "teacher":
-        teacher_classes = await persistence.classes.list_by_teacher(user_id)
-        class_ids = [c.get("class_id") for c in teacher_classes]
-        class_ids.extend(
-            [
-                c.get("class_id")
-                for c in teacher_classes
-                if c.get("subject_teachers")
-                for st in c.get("subject_teachers", [])
-                if st.get("teacher_id") == user_id
-            ]
-        )
+        teacher_classes = await persistence.classes.list_by_teacher_any_role(user_id)
+        class_ids = [c.get("class_id") for c in teacher_classes if c.get("class_id")]
 
         all_violations = []
         for cid in set(class_ids):

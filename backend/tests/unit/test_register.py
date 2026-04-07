@@ -19,6 +19,7 @@ def mock_persistence(client):
     users = SimpleNamespace(
         get_by_email=AsyncMock(),
         insert_one=AsyncMock(),
+        insert_many=AsyncMock(),
     )
     classes = SimpleNamespace(
         get_by_name_grade=AsyncMock(),
@@ -53,8 +54,11 @@ def test_multi_register_csv(client, mock_persistence):
         assert "Successfully registered 1 users." in data["message"]
         assert len(data["errors"]) == 1
 
-        assert mock_persistence.users.insert_one.await_count == 1
-        doc = mock_persistence.users.insert_one.call_args.args[0]
+        # insert_many is called once with batch of docs
+        assert mock_persistence.users.insert_many.await_count == 1
+        docs = mock_persistence.users.insert_many.call_args.args[0]
+        assert len(docs) == 1
+        doc = docs[0]
         assert "password_plain" not in doc
         assert "hashed_password" in doc
         assert doc["cognito_sub"] == "cognito-sub-test"
@@ -93,9 +97,11 @@ def test_multi_register_excel(client, mock_persistence):
         data = response.json()
         assert "Successfully registered 2 users." in data["message"]
 
-        assert mock_persistence.users.insert_one.await_count == 2
-        for call in mock_persistence.users.insert_one.call_args_list:
-            doc = call.args[0]
+        # insert_many is called once with batch of docs
+        assert mock_persistence.users.insert_many.await_count == 1
+        docs = mock_persistence.users.insert_many.call_args.args[0]
+        assert len(docs) == 2
+        for doc in docs:
             assert "password_plain" not in doc
             assert "hashed_password" in doc
             assert doc["cognito_sub"] == "cognito-sub-test"

@@ -98,3 +98,56 @@ class ExamRepository:
         self, teacher_id: str, sort_field: str = "start_time"
     ) -> list[dict]:
         return await self.list_by_teacher(teacher_id)
+
+    async def update_counters_safe(self, exam_id: str, score: float) -> bool:
+        """
+        Atomically update exam counters with optimistic locking.
+        Retries up to 5 times on conditional check failure.
+        Returns True if update succeeded, False otherwise.
+        """
+        MAX_RETRIES = 5
+
+        for attempt in range(MAX_RETRIES):
+            exam = await self.get_by_id(exam_id)
+            if not exam:
+                return False
+
+            current_submission_count = int(exam.get("submission_count", 0) or 0)
+            current_score_total = float(exam.get("score_total", 0) or 0)
+            current_highest_score = float(exam.get("highest_score", 0) or 0)
+
+            new_submission_count = current_submission_count + 1
+            new_score_total = current_score_total + score
+            new_highest_score = max(current_highest_score, score)
+
+            # Build condition expression for optimistic locking
+            condition = "submission_count = :old_sc AND score_total = :old_st AND highest_score = :old_hs"
+            expr_values = {
+                ":old_sc": {"S": str(current_submission_count)},
+                ":old_st": {"S": str(current_score_total)},
+                ":old_hs": {"S": str(current_highest_score)},
+                ":new_sc": {"S": str(new_submission_count)},
+                ":new_st": {"S": str(new_score_total)},
+                ":new_hs": {"S": str(new_highest_score)},
+            }
+
+            try:
+                await self._client.update_item(
+                    self._table(),
+                    self._pk(exam_id),
+                    {
+                        "submission_count": str(new_submission_count),
+                        "score_total": str(new_score_total),
+                        "highest_score": str(new_highest_score),
+                    },
+                    condition=condition,
+                    extra={"ExpressionAttributeValues": expr_values},
+                )
+                return True
+            except Exception as e:
+                # ConditionalCheckFailed - retry
+                if "ConditionalCheckFailed" in str(e) and attempt < MAX_RETRIES - 1:
+                    continue
+                return False
+
+        return False
