@@ -2,13 +2,12 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from src.auth.auth_utils import verify_password
+from src.auth.auth_utils import hash_password, verify_password
+from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.auth.dependencies import get_current_user as get_current_user_from_token
-from src.auth.jwt_handler import create_access_token
 from src.extensions import limiter
 from src.schemas.auth_schemas import (
     AdminResponse,
-    LoginResponse,
     MessageResponse,
     StudentResponse,
     TeacherClassAssignment,
@@ -26,27 +25,64 @@ router = APIRouter()
 
 @router.post(
     "/login",
-    response_model=LoginResponse,
     responses={
         401: {"description": "Invalid credentials"},
         429: {"description": "Too Many Requests"},
     },
 )
 @limiter.limit("5/minute")
-async def login(request: Request, user: UserLogin) -> LoginResponse:
-    """Authenticate user and return access token."""
+async def login(request: Request, user: UserLogin):
     persistence = request.app.state.persistence
     db_user = await persistence.users.get_by_email(user.email)
-    if not db_user or not verify_password(user.password, db_user["hashed_password"]):
+    if not db_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    await persistence.users.update_last_login(user.email)
+    try:
+        auth_result = cognito_auth_service.authenticate_user(user.email, user.password)
+    except CognitoAuthError as error:
+        hashed_password = db_user.get("hashed_password")
+        can_migrate = bool(
+            hashed_password and verify_password(user.password, hashed_password)
+        )
+        if not can_migrate:
+            raise HTTPException(status_code=error.status_code, detail=error.message)
 
-    access_token = create_access_token(data={"sub": user.email})
+        cognito_user = cognito_auth_service.ensure_user(
+            user.email,
+            user.password,
+            name=db_user.get("name"),
+            role=db_user.get("role"),
+            email_verified=bool(db_user.get("is_verified", True)),
+        )
+        update_fields = {"last_login": datetime.now(timezone.utc)}
+        if cognito_user.get("sub"):
+            update_fields["cognito_sub"] = cognito_user["sub"]
+        user_id = str(db_user.get("user_id") or db_user.get("_id") or "")
+        await persistence.users.update(user_id, update_fields)
+        auth_result = cognito_auth_service.authenticate_user(user.email, user.password)
+    else:
+        cognito_auth_service.sync_user_group(user.email, db_user.get("role"))
+        update_fields = {"last_login": datetime.now(timezone.utc)}
+        cognito_user = cognito_auth_service.get_user(user.email)
+        if cognito_user and cognito_user.get("sub"):
+            update_fields["cognito_sub"] = cognito_user["sub"]
+        user_id = str(db_user.get("user_id") or db_user.get("_id") or "")
+        await persistence.users.update(user_id, update_fields)
 
-    return LoginResponse(
-        access_token=access_token, token_type="bearer", email=user.email
-    )
+    id_token = auth_result.get("IdToken")
+    if not id_token:
+        raise HTTPException(
+            status_code=500,
+            detail="Cognito did not return an ID token",
+        )
+
+    return {
+        # Only return what the frontend needs for authenticated API calls.
+        # Refresh/access tokens are intentionally not exposed to the browser.
+        "id_token": id_token,
+        "expires_in": auth_result.get("ExpiresIn"),
+        "token_type": "bearer",
+    }
 
 
 @router.get(
@@ -60,7 +96,6 @@ async def login(request: Request, user: UserLogin) -> LoginResponse:
 async def get_user_info(
     user: dict = Depends(get_current_user_from_token),
 ) -> UserInfoResponse:
-    """Get current user info."""
     return UserInfoResponse(**user_helper(user))
 
 
@@ -69,14 +104,12 @@ async def list_students(
     request: Request,
     user: dict = Depends(get_current_user_from_token),
 ) -> List[StudentResponse]:
-    """List all students (admin/teacher only)."""
-    if user["role"] not in ["admin", "teacher"]:
+    if user.get("role") not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     persistence = request.app.state.persistence
     students_docs = await persistence.users.list_by_role(UserRole.student.value)
-    students = [StudentResponse(**user_helper(s)) for s in students_docs]
-    return students
+    return [StudentResponse(**user_helper(s)) for s in students_docs]
 
 
 @router.patch("/users/{user_id}", response_model=UpdateUserResponse)
@@ -86,12 +119,16 @@ async def update_user(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> UpdateUserResponse:
-    """Update user info (admin only)."""
-    if current_user["role"] != "admin":
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update users")
 
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    persistence = request.app.state.persistence
+    target_user = await persistence.users.get_by_id(user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     update_dict = {
         k: v
@@ -102,16 +139,27 @@ async def update_user(
         and not (k == "grade" and v == 0)
     }
 
+    if "email" in update_dict and update_dict["email"] != target_user.get("email"):
+        raise HTTPException(
+            status_code=400,
+            detail="Updating email is not supported while Cognito auth is enabled.",
+        )
+
     if "password" in update_dict:
         new_password = update_dict.pop("password")
-        from src.auth.auth_utils import hash_password
-
+        cognito_auth_service.set_user_password(target_user["email"], new_password)
         update_dict["hashed_password"] = hash_password(new_password)
+
+    if "role" in update_dict:
+        cognito_auth_service.sync_user_group(
+            target_user["email"],
+            str(update_dict["role"]),
+            current_group=str(target_user.get("role") or ""),
+        )
 
     if not update_dict:
         return UpdateUserResponse(message="No changes provided")
 
-    persistence = request.app.state.persistence
     if "class_name" in update_dict and "grade" in update_dict:
         existing_class = await persistence.classes.get_by_name_grade(
             update_dict["class_name"], update_dict["grade"]
@@ -128,9 +176,8 @@ async def update_user(
                 }
             )
 
-    result = await persistence.users.update(user_id, update_dict)
-
-    if not result:
+    ok = await persistence.users.update(user_id, update_dict)
+    if not ok:
         raise HTTPException(status_code=404, detail="User not found")
 
     return UpdateUserResponse(message="User updated successfully")
@@ -142,8 +189,7 @@ async def delete_user(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> MessageResponse:
-    """Delete user (admin only)."""
-    if current_user["role"] != "admin":
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete users")
 
     if not user_id or not user_id.strip():
@@ -154,17 +200,17 @@ async def delete_user(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if target_user["role"] == "teacher":
+    if target_user.get("role") == "teacher":
         await persistence.classes.clear_homeroom_teacher(user_id)
         await persistence.classes.pull_subject_teacher(user_id)
 
+    cognito_auth_service.delete_user(target_user["email"])
     await persistence.users.delete(user_id)
     return MessageResponse(message="User deleted successfully")
 
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout() -> MessageResponse:
-    """Logout user (client-side handles token removal)."""
     return MessageResponse(message="Client should remove the token to logout")
 
 
@@ -173,7 +219,6 @@ async def list_teachers(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> List[TeacherResponse]:
-    """List all teachers with their assigned classes."""
     if current_user.get("role") not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -222,13 +267,12 @@ async def list_admins(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ) -> List[AdminResponse]:
-    """List all admins (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete users")
 
     persistence = request.app.state.persistence
     admins_docs = await persistence.users.list_by_role("admin")
-    admins = [
+    return [
         AdminResponse(
             id=str(a["_id"]),
             name=a.get("name"),
@@ -236,4 +280,3 @@ async def list_admins(
         )
         for a in admins_docs
     ]
-    return admins

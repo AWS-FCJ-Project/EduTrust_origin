@@ -5,6 +5,7 @@ from typing import Annotated
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from src.auth.auth_utils import hash_password
+from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.extensions import limiter
 from src.schemas.auth_schemas import UserRegister, UserRole
 
@@ -27,6 +28,18 @@ async def register(request: Request, user: UserRegister):
 
     hashed = hash_password(user.password)
     default_name = user.email.split("@", 1)[0]
+    name = (user.name or "").strip() or default_name
+
+    try:
+        cognito_user = cognito_auth_service.ensure_user(
+            user.email,
+            user.password,
+            name=name,
+            role=(user.role or UserRole.student).value,
+        )
+    except CognitoAuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
     if user.role == UserRole.student and user.class_name and user.grade:
         existing_class = await persistence.classes.get_by_name_grade(
             user.class_name, user.grade
@@ -47,10 +60,11 @@ async def register(request: Request, user: UserRegister):
         "email": user.email,
         "hashed_password": hashed,
         "is_verified": True,
-        "name": (user.name or "").strip() or default_name,
+        "name": name,
         "role": (user.role or UserRole.student).value,
         "class_name": user.class_name if user.role == UserRole.student else None,
         "grade": user.grade if user.role == UserRole.student else None,
+        "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
     }
     await persistence.users.insert_one(user_doc)
@@ -185,6 +199,17 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                     }
                 )
 
+        try:
+            cognito_user = cognito_auth_service.ensure_user(
+                valid_user.email,
+                valid_user.password,
+                name=valid_user.name,
+                role=valid_user.role.value,
+            )
+        except CognitoAuthError as error:
+            errors.append(f"Row {row_number}: {error.message}")
+            continue
+
         docs_to_insert.append(
             {
                 "email": valid_user.email,
@@ -194,6 +219,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 "role": valid_user.role.value,
                 "class_name": valid_user.class_name,
                 "grade": valid_user.grade,
+                "cognito_sub": cognito_user.get("sub"),
                 "created_at": datetime.now(timezone.utc),
             }
         )

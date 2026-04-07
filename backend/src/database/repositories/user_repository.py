@@ -40,6 +40,7 @@ class UserRepository:
             "_id": user_id,
             "email": doc.get("email", ""),
             "hashed_password": doc.get("hashed_password", ""),
+            "cognito_sub": doc.get("cognito_sub") or "",
             "is_verified": str(doc.get("is_verified", True)).lower(),
             "name": doc.get("name", ""),
             "role": doc.get("role", "student"),

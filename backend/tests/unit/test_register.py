@@ -1,6 +1,6 @@
 import io
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
@@ -41,19 +41,24 @@ def test_multi_register_csv(client, mock_persistence):
         None,
     ]
 
-    files = {"file": ("users.csv", csv_content, "text/csv")}
-    response = client.post("/multi-register", files=files)
+    with patch(
+        "src.routers.auth.register.cognito_auth_service.ensure_user",
+        return_value={"sub": "cognito-sub-test"},
+    ) as mock_ensure_user:
+        files = {"file": ("users.csv", csv_content, "text/csv")}
+        response = client.post("/multi-register", files=files)
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "Successfully registered 1 users." in data["message"]
-    assert len(data["errors"]) == 1
+        assert response.status_code == 200
+        data = response.json()
+        assert "Successfully registered 1 users." in data["message"]
+        assert len(data["errors"]) == 1
 
-    # Verify password_plain is NOT in the documents to be inserted
-    assert mock_persistence.users.insert_one.await_count == 1
-    doc = mock_persistence.users.insert_one.call_args.args[0]
-    assert "password_plain" not in doc
-    assert "hashed_password" in doc
+        assert mock_persistence.users.insert_one.await_count == 1
+        doc = mock_persistence.users.insert_one.call_args.args[0]
+        assert "password_plain" not in doc
+        assert "hashed_password" in doc
+        assert doc["cognito_sub"] == "cognito-sub-test"
+        assert mock_ensure_user.call_count == 1
 
 
 def test_multi_register_excel(client, mock_persistence):
@@ -71,24 +76,30 @@ def test_multi_register_excel(client, mock_persistence):
     df.to_excel(excel_file, index=False)
     excel_file.seek(0)
 
-    files = {
-        "file": (
-            "users.xlsx",
-            excel_file.read(),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    }
-    response = client.post("/multi-register", files=files)
+    with patch(
+        "src.routers.auth.register.cognito_auth_service.ensure_user",
+        return_value={"sub": "cognito-sub-test"},
+    ) as mock_ensure_user:
+        files = {
+            "file": (
+                "users.xlsx",
+                excel_file.read(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        }
+        response = client.post("/multi-register", files=files)
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "Successfully registered 2 users." in data["message"]
+        assert response.status_code == 200
+        data = response.json()
+        assert "Successfully registered 2 users." in data["message"]
 
-    assert mock_persistence.users.insert_one.await_count == 2
-    for call in mock_persistence.users.insert_one.call_args_list:
-        doc = call.args[0]
-        assert "password_plain" not in doc
-        assert "hashed_password" in doc
+        assert mock_persistence.users.insert_one.await_count == 2
+        for call in mock_persistence.users.insert_one.call_args_list:
+            doc = call.args[0]
+            assert "password_plain" not in doc
+            assert "hashed_password" in doc
+            assert doc["cognito_sub"] == "cognito-sub-test"
+        assert mock_ensure_user.call_count == 2
 
 
 def test_multi_register_invalid_format(client):
@@ -118,12 +129,18 @@ def test_register_single_security(client, mock_persistence):
     mock_persistence.users.get_by_email.return_value = None
     mock_persistence.classes.get_by_name_grade.return_value = None
 
-    response = client.post("/register", json=user_data)
-    assert response.status_code == 200
+    with patch(
+        "src.routers.auth.register.cognito_auth_service.ensure_user",
+        return_value={"sub": "cognito-sub-test"},
+    ) as mock_ensure_user:
+        response = client.post("/register", json=user_data)
+        assert response.status_code == 200
 
-    assert mock_persistence.classes.insert_one.await_count == 1
-    assert mock_persistence.users.insert_one.await_count == 1
+        assert mock_persistence.classes.insert_one.await_count == 1
+        assert mock_persistence.users.insert_one.await_count == 1
 
-    doc = mock_persistence.users.insert_one.call_args.args[0]
-    assert "password_plain" not in doc
-    assert "hashed_password" in doc
+        doc = mock_persistence.users.insert_one.call_args.args[0]
+        assert "password_plain" not in doc
+        assert "hashed_password" in doc
+        assert doc["cognito_sub"] == "cognito-sub-test"
+        assert mock_ensure_user.called

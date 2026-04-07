@@ -1,9 +1,8 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from src.auth.jwt_handler import create_access_token
 from src.main import app
 
 
@@ -14,11 +13,11 @@ def client():
 
 
 @pytest.fixture
-def mock_persistence(client):
+def mock_persistence():
     users = SimpleNamespace(get_by_email=AsyncMock())
     persistence = SimpleNamespace(users=users)
     app.state.persistence = persistence
-    yield persistence
+    return persistence
 
 
 def test_root(client):
@@ -39,29 +38,46 @@ def test_me_requires_bearer_token(client):
 
 
 def test_me_returns_user_profile(client, mock_persistence):
-    token = create_access_token(data={"sub": "me@example.com"})
-
     mock_persistence.users.get_by_email.return_value = {
         "_id": "user-id-1",
+        "user_id": "user-id-1",
         "email": "me@example.com",
         "is_verified": True,
         "name": "Me",
         "role": "admin",
     }
 
-    response = client.get("/user-info", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["email"] == "me@example.com"
-    assert data["id"] == "user-id-1"
-    assert data["name"] == "Me"
-    assert data["role"] == "admin"
+    with patch(
+        "src.auth.dependencies.cognito_auth_service.verify_token",
+        return_value={
+            "email": "me@example.com",
+            "sub": "cognito-sub-1",
+            "token_use": "id",
+        },
+    ):
+        response = client.get(
+            "/user-info", headers={"Authorization": "Bearer id-token"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "me@example.com"
+        assert data["id"] == "user-id-1"
+        assert data["name"] == "Me"
+        assert data["role"] == "admin"
 
 
-def test_me_404_when_user_missing(client, mock_persistence):
-    token = create_access_token(data={"sub": "missing@example.com"})
-
+def test_me_401_when_user_missing(client, mock_persistence):
     mock_persistence.users.get_by_email.return_value = None
 
-    response = client.get("/user-info", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 401
+    with patch(
+        "src.auth.dependencies.cognito_auth_service.verify_token",
+        return_value={
+            "email": "missing@example.com",
+            "sub": "cognito-sub-2",
+            "token_use": "id",
+        },
+    ):
+        response = client.get(
+            "/user-info", headers={"Authorization": "Bearer missing-id-token"}
+        )
+        assert response.status_code == 404

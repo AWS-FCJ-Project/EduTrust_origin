@@ -1,7 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from src.app_config import app_config
-from src.auth.auth_utils import generate_otp, hash_password
-from src.auth.email_service import send_email
+from src.auth.auth_utils import hash_password
+from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.extensions import limiter
 from src.schemas.auth_schemas import ForgotPassword, ResetPassword
 
@@ -18,19 +17,12 @@ router = APIRouter()
 async def forgot_password(
     request: Request, data: ForgotPassword, background_tasks: BackgroundTasks
 ):
-    persistence = request.app.state.persistence
-    user = await persistence.users.get_by_email(data.email)
-    if not user:
-        return {"message": "If email exists, OTP sent."}
-
-    otp = generate_otp()
-    await persistence.otps.save_otp(
-        data.email, "password_reset", otp, app_config.OTP_EXPIRE_SECONDS
-    )
-
-    background_tasks.add_task(
-        send_email, data.email, "Reset Password", f"Your OTP is {otp}"
-    )
+    del request
+    del background_tasks
+    try:
+        cognito_auth_service.forgot_password(data.email)
+    except CognitoAuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
 
     return {"message": "If email exists, OTP sent."}
 
@@ -42,24 +34,21 @@ async def forgot_password(
     },
 )
 async def reset_password(request: Request, data: ResetPassword):
+    try:
+        cognito_auth_service.confirm_forgot_password(
+            data.email,
+            data.otp,
+            data.new_password,
+        )
+    except CognitoAuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
     persistence = request.app.state.persistence
-    otp_doc = await persistence.otps.get_otp(data.email, "password_reset", data.otp)
-
-    if not otp_doc:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-
-    from datetime import datetime, timezone
-
-    expire_at = otp_doc["expire_at"]
-    now = datetime.now(timezone.utc)
-    if expire_at < now:
-        await persistence.otps.delete_otp(data.email, "password_reset")
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-
-    hashed = hash_password(data.new_password)
-    await persistence.users.update_one(
-        {"email": data.email}, {"$set": {"hashed_password": hashed}}
-    )
-    await persistence.otps.delete_otp(data.email, "password_reset")
+    user = await persistence.users.get_by_email(data.email)
+    if user:
+        user_id = str(user.get("user_id") or user.get("_id") or "")
+        await persistence.users.update(
+            user_id, {"hashed_password": hash_password(data.new_password)}
+        )
 
     return {"message": "Password reset successfully"}

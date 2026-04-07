@@ -21,13 +21,6 @@ class AppConfig(BaseSettings):
     LOGFIRE_TOKEN: Optional[str] = None
     EMBEDDING_MODEL: Optional[str] = None
 
-    # Database Settings
-    MONGO_URI: Optional[str] = None
-    MONGO_USERNAME: Optional[str] = None
-    MONGO_PASSWORD: Optional[str] = None
-    MONGO_PORT: Optional[str] = None
-    MONGO_DB_NAME: Optional[str] = None
-
     # DynamoDB Settings (Phase 02 - Migration from MongoDB)
     DYNAMODB_TABLE_PREFIX: Optional[str] = "edutrust-backend"
     DYNAMODB_REGION: Optional[str] = "ap-southeast-1"
@@ -35,6 +28,9 @@ class AppConfig(BaseSettings):
 
     # Auth Settings
     SECRET_KEY: Optional[str] = None
+    COGNITO_USER_POOL_ID: Optional[str] = None
+    COGNITO_APP_CLIENT_ID: Optional[str] = None
+    COGNITO_REGION: Optional[str] = None
 
     # Email for OTP
     EMAIL_SENDER: Optional[str] = None
@@ -47,6 +43,7 @@ class AppConfig(BaseSettings):
     AWS_REGION: Optional[str] = "ap-southeast-1"
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
     S3_BUCKET_NAME: Optional[str] = None
 
     # Redis Settings

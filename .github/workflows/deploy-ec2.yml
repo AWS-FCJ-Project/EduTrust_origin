@@ -417,33 +417,102 @@ jobs:
             ${{ runner.os }}-terraform-
 
       - name: Update Launch Template with new tag
+        id: tf_plan
         working-directory: ${{ env.TF_DIR }}
         env:
           TF_VARS: ${{ secrets.TERRAFORM_VARIABLES }}
           TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
+          set -euo pipefail
           printf "%s\n" "$TF_VARS" > terraform.tfvars
           terraform init
-          terraform apply -auto-approve -input=false -var="backend_image_tag=$IMAGE_TAG"
+          set +e
+          terraform plan -detailed-exitcode -input=false -out=tfplan -var="backend_image_tag=$IMAGE_TAG"
+          plan_exit_code=$?
+          set -e
+
+          case "$plan_exit_code" in
+            0)
+              echo "No infrastructure changes detected."
+              echo "terraform_has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "launch_template_changed=false" >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "Infrastructure changes detected. Inspecting Terraform plan..."
+              terraform show -json tfplan > tfplan.json
+              if jq -e '
+                .resource_changes[]
+                | select(.address == "aws_launch_template.backend")
+                | select(
+                    (.change.actions | index("create")) or
+                    (.change.actions | index("update")) or
+                    (.change.actions | index("replace")) or
+                    (.change.actions | index("delete"))
+                  )
+              ' tfplan.json >/dev/null; then
+                echo "Launch template changes detected."
+                echo "launch_template_changed=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "Launch template unchanged."
+                echo "launch_template_changed=false" >> "$GITHUB_OUTPUT"
+              fi
+              echo "terraform_has_changes=true" >> "$GITHUB_OUTPUT"
+              terraform apply -auto-approve -input=false tfplan
+              ;;
+            *)
+              echo "terraform plan failed with exit code ${plan_exit_code}" >&2
+              exit "$plan_exit_code"
+              ;;
+          esac
 
       - name: Start ASG Instance Refresh
+        if: ${{ steps.tf_plan.outputs.launch_template_changed == 'true' }}
         run: |
           set -euo pipefail
 
           asg="${ASG_NAME}"
+          region="${AWS_REGION}"
+          tg_arn="${BACKEND_TARGET_GROUP_ARN}"
 
           inprogress_id() {
             aws autoscaling describe-instance-refreshes \
+              --region "${region}" \
               --auto-scaling-group-name "${asg}" \
               --query "InstanceRefreshes[?Status=='InProgress'] | [0].InstanceRefreshId" \
               --output text 2>/dev/null || true
           }
 
+          healthy_targets_before_refresh() {
+            local states
+            states="$(aws elbv2 describe-target-health \
+              --region "${region}" \
+              --target-group-arn "${tg_arn}" \
+              --query 'TargetHealthDescriptions[*].TargetHealth.State' \
+              --output text 2>/dev/null || true)"
+            echo "${states}" | tr '\t' '\n' | grep -c '^healthy$' || true
+          }
+
+          refresh_history_count() {
+            aws autoscaling describe-instance-refreshes \
+              --region "${region}" \
+              --auto-scaling-group-name "${asg}" \
+              --query 'length(InstanceRefreshes)' \
+              --output text 2>/dev/null || echo 0
+          }
+
+          bootstrap_healthy_count="$(healthy_targets_before_refresh)"
+          existing_refresh_history="$(refresh_history_count)"
+          if [ "${bootstrap_healthy_count}" -eq 0 ] && [ "${existing_refresh_history}" -eq 0 ]; then
+            echo "No healthy targets detected yet. Treating this as initial bootstrap and skipping instance refresh."
+            echo "ROLLING_REFRESH_STARTED=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
           echo "Checking for in-progress instance refresh for ASG: ${asg}"
           current_refresh_id="$(inprogress_id)"
           if [ -n "${current_refresh_id}" ] && [ "${current_refresh_id}" != "None" ]; then
             echo "A refresh (${current_refresh_id}) is already in progress. Cancelling it..."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name "${asg}" || true
+            aws autoscaling cancel-instance-refresh --region "${region}" --auto-scaling-group-name "${asg}" || true
             echo "Waiting for cancellation to process..."
             for _ in $(seq 1 20); do
               sleep 15
@@ -458,11 +527,13 @@ jobs:
 
           echo "Starting new instance refresh for ASG: ${asg}"
           refresh_id="$(aws autoscaling start-instance-refresh \
+            --region "${region}" \
             --auto-scaling-group-name "${asg}" \
-            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 90}' \
             --query "InstanceRefreshId" \
             --output text)"
           echo "Instance Refresh ID: ${refresh_id}"
+          echo "ROLLING_REFRESH_STARTED=true" >> "$GITHUB_ENV"
 
           started_at="$(date +%s)"
           last_pct=""
@@ -472,15 +543,18 @@ jobs:
           # which checks target group health + /health end-to-end.
           max_wait_seconds=$((60 * 60))       # 60 minutes
           stuck_100_seconds=$((10 * 60))      # 10 minutes at 100% but still InProgress
+          stuck_no_progress_seconds=$((7 * 60)) # 7 minutes with no % progress
 
           while true; do
             status="$(aws autoscaling describe-instance-refreshes \
+              --region "${region}" \
               --auto-scaling-group-name "${asg}" \
               --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].Status" \
               --output text)"
 
             pct="$(aws autoscaling describe-instance-refreshes \
+              --region "${region}" \
               --auto-scaling-group-name "${asg}" \
               --instance-refresh-ids "${refresh_id}" \
               --query "InstanceRefreshes[0].PercentageComplete" \
@@ -502,6 +576,7 @@ jobs:
               Failed|Cancelled|TimedOut)
                 echo "Instance refresh ${status}."
                 reason="$(aws autoscaling describe-instance-refreshes \
+                  --region "${region}" \
                   --auto-scaling-group-name "${asg}" \
                   --instance-refresh-ids "${refresh_id}" \
                   --query "InstanceRefreshes[0].StatusReason" \
@@ -516,9 +591,20 @@ jobs:
                   break
                 fi
 
+                # If refresh isn't making progress (commonly stuck at 50% due to an unhealthy new target),
+                # proceed to rollout verification which prints target health and /health diagnostics.
+                if [ $((now - last_change_at)) -ge ${stuck_no_progress_seconds} ]; then
+                  echo "Refresh has made no progress for >=7m (current ${pct}%). Dumping diagnostics and proceeding to rollout verification."
+                  aws elbv2 describe-target-health --region "${region}" --target-group-arn "${tg_arn}" --output table || true
+                  aws autoscaling describe-scaling-activities --region "${region}" --auto-scaling-group-name "${asg}" --max-items 10 --output table || true
+                  aws autoscaling describe-instance-refreshes --region "${region}" --auto-scaling-group-name "${asg}" --instance-refresh-ids "${refresh_id}" --output table || true
+                  break
+                fi
+
                 if [ $((now - started_at)) -ge ${max_wait_seconds} ]; then
                   echo "Timed out waiting for instance refresh after ${max_wait_seconds}s; proceeding to rollout verification."
                   aws autoscaling describe-instance-refreshes \
+                    --region "${region}" \
                     --auto-scaling-group-name "${asg}" \
                     --instance-refresh-ids "${refresh_id}" \
                     --output table || true
@@ -533,6 +619,12 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Skip ASG Instance Refresh
+        if: ${{ steps.tf_plan.outputs.launch_template_changed != 'true' }}
+        run: |
+          echo "Launch template did not change in Terraform plan, so instance refresh is skipped."
+          echo "ROLLING_REFRESH_STARTED=false" >> "$GITHUB_ENV"
 
       - name: Verify rollout (ECR image exists, targets healthy, /health OK)
         shell: bash
@@ -606,12 +698,12 @@ jobs:
             aws elbv2 describe-target-health --region "${region}" --target-group-arn "${tg_arn}" --output table || true
             aws autoscaling describe-scaling-activities --region "${region}" --auto-scaling-group-name "${asg}" --max-items 10 --output table || true
 
-            if [ "${attempt}" -eq 1 ]; then
+            if [ "${attempt}" -eq 1 ] && [ "${ROLLING_REFRESH_STARTED:-false}" = "true" ]; then
               echo "Forcing another instance refresh to repull/start the image..."
               refresh_id="$(aws autoscaling start-instance-refresh \
                 --region "${region}" \
                 --auto-scaling-group-name "${asg}" \
-                --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
+                --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 90}' \
                 --query 'InstanceRefreshId' \
                 --output text)"
               echo "Instance Refresh ID: ${refresh_id}"
@@ -638,6 +730,8 @@ jobs:
                   *) sleep 30 ;;
                 esac
               done
+            elif [ "${attempt}" -eq 1 ]; then
+              echo "Skipping forced instance refresh because this deploy is bootstrapping the ASG for the first time."
             fi
           done
 
