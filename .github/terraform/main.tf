@@ -493,6 +493,87 @@ data "aws_iam_policy_document" "kms_secrets_policy" {
   }
 }
 
+data "aws_iam_policy_document" "kms_dynamodb_policy" {
+  # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_356:KMS key policy requires resources=["*"] which means "this key" in context. Cannot use specific ARN (circular reference).
+
+  statement {
+    sid    = "AllowRootAdminAccess"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AllowDynamoDBServiceUsage"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["dynamodb.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["dynamodb.${var.aws_region}.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid    = "AllowBackendRoleUsage"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.backend.arn]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = ["*"]
+  }
+}
+
 resource "aws_kms_key" "secrets" {
   description             = "KMS key for encrypting SSM parameters and other secrets"
   deletion_window_in_days = 7
@@ -507,6 +588,22 @@ resource "aws_kms_key" "secrets" {
 resource "aws_kms_alias" "secrets" {
   name          = "alias/${var.ec2_instance_name}-secrets"
   target_key_id = aws_kms_key.secrets.key_id
+}
+
+resource "aws_kms_key" "dynamodb" {
+  description             = "KMS key for encrypting DynamoDB tables"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.kms_dynamodb_policy.json
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-key"
+  }
+}
+
+resource "aws_kms_alias" "dynamodb" {
+  name          = "alias/${var.ec2_instance_name}-dynamodb"
+  target_key_id = aws_kms_key.dynamodb.key_id
 }
 
 # --- Backend Secrets (SSM Parameter) ---
@@ -589,6 +686,15 @@ resource "aws_dynamodb_table" "users" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "user_id"
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
   attribute {
     name = "user_id"
     type = "S"
@@ -634,6 +740,15 @@ resource "aws_dynamodb_table" "classes" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "class_id"
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
   attribute {
     name = "class_id"
     type = "S"
@@ -670,6 +785,15 @@ resource "aws_dynamodb_table" "class_teacher_assignments" {
   hash_key     = "teacher_id"
   range_key    = "assignment_key"
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
   attribute {
     name = "teacher_id"
     type = "S"
@@ -688,6 +812,15 @@ resource "aws_dynamodb_table" "exams" {
   name         = "${var.dynamodb_table_prefix}-exams"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "exam_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 
   attribute {
     name = "exam_id"
@@ -731,6 +864,15 @@ resource "aws_dynamodb_table" "submissions" {
   hash_key     = "exam_id"
   range_key    = "student_id"
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
   attribute {
     name = "exam_id"
     type = "S"
@@ -761,6 +903,15 @@ resource "aws_dynamodb_table" "violations" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "exam_id"
   range_key    = "student_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 
   attribute {
     name = "exam_id"
@@ -796,6 +947,15 @@ resource "aws_dynamodb_table" "conversations" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "conversation_id"
 
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
   attribute {
     name = "conversation_id"
     type = "S"
@@ -825,6 +985,15 @@ resource "aws_dynamodb_table" "otps" {
   name         = "${var.dynamodb_table_prefix}-otps"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "otp_key"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 
   attribute {
     name = "otp_key"
