@@ -137,11 +137,13 @@ class UserRepository:
         # Use scan with filter since class_id not directly queryable by name
         all_students = await self._client.scan(
             self._table(),
-            filter_expression="#role = :role AND class_name = :cn AND grade = :g",
+            # grade may be stored as Number or String depending on migration path; match both
+            filter_expression="#role = :role AND class_name = :cn AND (grade = :gS OR grade = :gN)",
             expression_values={
                 ":role": {"S": "student"},
                 ":cn": {"S": class_name},
-                ":g": {"S": str(grade)},
+                ":gS": {"S": str(grade)},
+                ":gN": {"N": str(grade)},
             },
             expression_names={"#role": "role"},
         )
@@ -212,8 +214,9 @@ class UserRepository:
         g = filter_query.get("grade")
         if g is not None:
             fi = len(expr_values)
-            expr_values[f":fv{fi}"] = {"S": str(g)}
-            filter_parts.append(f"grade = :fv{fi}")
+            expr_values[f":fv{fi}S"] = {"S": str(g)}
+            expr_values[f":fv{fi}N"] = {"N": str(g)}
+            filter_parts.append(f"(grade = :fv{fi}S OR grade = :fv{fi}N)")
 
         if not filter_parts:
             return 0

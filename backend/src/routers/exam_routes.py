@@ -108,6 +108,22 @@ async def can_access_exam(
         if user:
             student_class_name = user.get("class_name", "")
             student_grade = user.get("grade")
+
+            # Prefer class_id match (works even if exam lacks denormalized class_name/grade)
+            try:
+                cls = await persistence.classes.get_by_name_grade(
+                    student_class_name, int(student_grade)
+                )
+            except Exception:
+                cls = None
+            if (
+                cls
+                and cls.get("class_id")
+                and exam.get("class_id") == cls.get("class_id")
+            ):
+                return True, exam
+
+            # Legacy fallback: compare denormalized class_name/grade
             exam_class_name = exam.get("class_name", "")
             exam_grade = exam.get("grade")
             if student_class_name == exam_class_name and str(student_grade) == str(
@@ -180,9 +196,17 @@ async def create_exam(
     else:
         secret_key = str(secret_key).strip().upper()
 
+    teacher_id = user_id
+    # If admin creates an exam, assign teacher_id to homeroom teacher (if present) so it shows in teacher views.
+    if role == "admin" and class_info and class_info.get("homeroom_teacher_id"):
+        teacher_id = class_info.get("homeroom_teacher_id")
+
     exam_doc = {
         **exam_data.model_dump(),
-        "teacher_id": user_id,
+        "teacher_id": teacher_id,
+        # denormalize for student access + UI
+        "class_name": class_info.get("name") if class_info else "",
+        "grade": class_info.get("grade") if class_info else "",
         "secret_key": secret_key,
         "submission_count": "0",
         "score_total": "0",
@@ -253,8 +277,34 @@ async def get_exams(
         return filtered
 
     if role == "teacher":
-        exams = await persistence.exams.list_by_teacher(user_id)
-        return [exam_response_helper(e) for e in exams]
+        # Include exams created by the teacher + exams for classes they teach (incl. subject teacher)
+        teacher_exams = await persistence.exams.list_by_teacher(user_id)
+
+        # Scan classes once to find subject-teacher assignments (ClassRepo only indexes homeroom).
+        all_classes = await persistence.classes.list_all()
+        class_ids = []
+        for c in all_classes:
+            if c.get("homeroom_teacher_id") == user_id:
+                class_ids.append(c.get("class_id"))
+                continue
+            for st in c.get("subject_teachers", []):
+                if isinstance(st, dict) and st.get("teacher_id") == user_id:
+                    class_ids.append(c.get("class_id"))
+                    break
+
+        class_ids = [cid for cid in class_ids if cid]
+        class_exam_lists = await asyncio.gather(
+            *[persistence.exams.list_by_class(cid) for cid in sorted(set(class_ids))]
+        )
+        class_exams = [e for sublist in class_exam_lists for e in sublist]
+
+        merged: dict[str, dict] = {}
+        for e in teacher_exams + class_exams:
+            eid = e.get("exam_id") or e.get("id")
+            if eid:
+                merged[eid] = e
+
+        return [exam_response_helper(e) for e in merged.values()]
 
     raise HTTPException(status_code=403, detail="Invalid role")
 
