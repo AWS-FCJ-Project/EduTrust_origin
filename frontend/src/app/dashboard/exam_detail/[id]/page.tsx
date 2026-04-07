@@ -320,6 +320,7 @@ const ExamPage = () => {
                             <p className="text-gray-500 font-medium mb-4">Bài thi sẽ bắt đầu vào lúc:</p>
                             <p className="text-2xl font-black text-[#5B0019] mb-12">
                                 {new Date(lockData.info).toLocaleString('vi-VN', { 
+                                    timeZone: 'Asia/Ho_Chi_Minh',
                                     hour: '2-digit', 
                                     minute: '2-digit',
                                     day: '2-digit',

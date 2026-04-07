@@ -196,6 +196,11 @@ async def create_exam(
     else:
         secret_key = str(secret_key).strip().upper()
 
+    def _to_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     teacher_id = user_id
     # If admin creates an exam, assign teacher_id to homeroom teacher (if present) so it shows in teacher views.
     if role == "admin" and class_info and class_info.get("homeroom_teacher_id"):
@@ -207,6 +212,9 @@ async def create_exam(
         # denormalize for student access + UI
         "class_name": class_info.get("name") if class_info else "",
         "grade": class_info.get("grade") if class_info else "",
+        # ensure timezone-aware datetimes are persisted consistently
+        "start_time": _to_utc(exam_data.start_time),
+        "end_time": _to_utc(exam_data.end_time),
         "secret_key": secret_key,
         "submission_count": "0",
         "score_total": "0",
@@ -661,6 +669,16 @@ async def update_exam(
     update_dict = {k: v for k, v in exam_data.model_dump().items() if v is not None}
     if not update_dict:
         return ExamUpdateResponse(message="No changes provided")
+
+    def _to_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    if "start_time" in update_dict and isinstance(update_dict["start_time"], datetime):
+        update_dict["start_time"] = _to_utc(update_dict["start_time"])
+    if "end_time" in update_dict and isinstance(update_dict["end_time"], datetime):
+        update_dict["end_time"] = _to_utc(update_dict["end_time"])
 
     await persistence.exams.update(exam_id, update_dict)
     return ExamUpdateResponse(message="Exam updated successfully")

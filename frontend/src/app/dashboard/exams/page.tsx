@@ -441,11 +441,11 @@ const TeacherExams: React.FC = () => {
                                                     <div className="pt-6 space-y-2">
                                                         <div className="flex items-center gap-3 text-xs font-bold text-gray-500">
                                                             <Calendar size={14} className="text-[#5B0019]" />
-                                                            <span>Bắt đầu: {new Date(exam.start_time).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(',', ' lúc')}</span>
+                                                            <span>Bắt đầu: {new Date(exam.start_time).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(',', ' lúc')}</span>
                                                         </div>
                                                         <div className="flex items-center gap-3 text-xs font-bold text-gray-500">
                                                             <Clock size={14} className="text-gray-400" />
-                                                            <span>Kết thúc: {new Date(exam.end_time).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(',', ' lúc')}</span>
+                                                            <span>Kết thúc: {new Date(exam.end_time).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(',', ' lúc')}</span>
                                                         </div>
                                                     </div>
                                                 </div>

@@ -364,6 +364,7 @@ export default function StaffResultsPage() {
                                                 </td>
                                                 <td className="px-6 py-5 text-right font-medium text-gray-400 text-xs">
                                                     {sub.submitted_at ? new Date(sub.submitted_at).toLocaleString('vi-VN', {
+                                                        timeZone: 'Asia/Ho_Chi_Minh',
                                                         day: '2-digit', month: '2-digit', year: 'numeric',
                                                         hour: '2-digit', minute: '2-digit'
                                                     }) : 'N/A'}
