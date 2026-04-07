@@ -576,6 +576,8 @@ async def get_exam(
                 "is_locked": True,
                 "submission_status": submission.get("status"),
                 "violation_count": submission.get("violation_count", 0),
+                "start_time": exam.get("start_time", ""),
+                "end_time": exam.get("end_time", ""),
                 "lock_reason": (
                     "disqualified"
                     if submission.get("status") == "failed"
@@ -590,20 +592,16 @@ async def get_exam(
         # Parse start/end times
         if isinstance(start_time, str):
             try:
-                from datetime import datetime
-
                 start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            except:
+            except Exception:
                 start_dt = now
         else:
             start_dt = start_time
 
         if isinstance(end_time, str):
             try:
-                from datetime import datetime
-
                 end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-            except:
+            except Exception:
                 end_dt = now
         else:
             end_dt = end_time
@@ -616,6 +614,7 @@ async def get_exam(
                 "is_locked": True,
                 "lock_reason": "not_started",
                 "start_time": start_time,
+                "end_time": end_time,
             }
         if now > end_dt:
             return {
@@ -624,8 +623,16 @@ async def get_exam(
                 "subject": exam.get("subject"),
                 "is_locked": True,
                 "lock_reason": "expired",
+                "start_time": start_time,
                 "end_time": end_time,
             }
+
+        # Student can access exam content
+        return {
+            **exam_response_helper(exam, include_secret=False),
+            "is_locked": False,
+            "lock_reason": None,
+        }
 
     include_secret = role in ["teacher", "admin"]
     return exam_response_helper(exam, include_secret=include_secret)
