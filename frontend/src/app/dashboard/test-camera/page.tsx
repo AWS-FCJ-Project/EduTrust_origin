@@ -170,7 +170,7 @@ export default function CameraTestPage() {
         return inter / (area1 + area2 - inter);
     };
 
-    const runModel = async () => {
+    async function runModel() {
         if (!videoRef.current || !sessionRef.current || videoRef.current.videoWidth === 0) {
             animationFrameIdRef.current = requestAnimationFrame(runModel);
             return;
@@ -192,7 +192,7 @@ export default function CameraTestPage() {
             console.error("Inference Error:", e);
         }
         animationFrameIdRef.current = requestAnimationFrame(runModel);
-    };
+    }
 
     const handleViolations = (detections: any[]) => {
         const now = Date.now();

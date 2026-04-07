@@ -17,6 +17,14 @@ const EXAM_TYPES = [
     "Kiểm tra miệng", "Kiểm tra 15 phút", "Kiểm tra 1 tiết", "Kiểm giữa kỳ", "Kiểm học kỳ"
 ];
 
+const EXAM_TYPE_TO_API: Record<string, string> = {
+    "Kiểm tra miệng": "15-minute quiz",
+    "Kiểm tra 15 phút": "15-minute quiz",
+    "Kiểm tra 1 tiết": "45-minute exam",
+    "Kiểm giữa kỳ": "45-minute exam",
+    "Kiểm học kỳ": "final exam",
+};
+
 const CreateExamForm = () => {
     const searchParams = useSearchParams();
     const preselectedClassId = searchParams.get('class_id');
@@ -116,6 +124,7 @@ const CreateExamForm = () => {
                 start_time: finalStart,
                 end_time: finalEnd,
                 duration: parseInt(formData.duration) || 0,
+                exam_type: EXAM_TYPE_TO_API[formData.exam_type] ?? formData.exam_type,
                 secret_key: secretKeyMode === 'manual' && formData.secret_key ? formData.secret_key : undefined,
             };
 

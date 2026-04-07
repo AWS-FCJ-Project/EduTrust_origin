@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -24,11 +25,21 @@ def get_persistence(request: Request):
 
 def class_response_helper(cls: dict) -> dict:
     """Format class document for API response."""
-    student_count = cls.get("student_count", 0)
+    student_count_raw = cls.get("student_count", 0)
+    try:
+        student_count = int(student_count_raw)
+    except Exception:
+        student_count = 0
+
+    grade_raw = cls.get("grade")
+    try:
+        grade = int(grade_raw) if grade_raw is not None and grade_raw != "" else 0
+    except Exception:
+        grade = 0
     return {
         "id": str(cls["_id"]) if "_id" in cls else cls.get("id"),
         "name": cls["name"],
-        "grade": cls["grade"],
+        "grade": grade,
         "school_year": cls.get("school_year", ""),
         "homeroom_teacher_id": cls.get("homeroom_teacher_id"),
         "subject_teachers": cls.get("subject_teachers", []),
@@ -38,13 +49,20 @@ def class_response_helper(cls: dict) -> dict:
 
 
 def user_helper(user: dict) -> dict:
+    grade_raw = user.get("grade")
+    grade: int | None = None
+    if grade_raw not in (None, ""):
+        try:
+            grade = int(grade_raw)
+        except Exception:
+            grade = None
     return {
         "id": str(user["_id"]) if "_id" in user else user.get("id"),
         "name": user.get("name"),
         "email": user.get("email"),
         "role": user.get("role"),
         "class_name": user.get("class_name"),
-        "grade": user.get("grade"),
+        "grade": grade,
     }
 
 
@@ -82,11 +100,36 @@ async def get_classes(
     role = current_user.get("role")
     user_id = str(current_user["_id"])
 
+    async def count_students_for_class(cls: dict) -> int:
+        try:
+            name = cls.get("name")
+            grade = int(cls.get("grade")) if cls.get("grade") not in (None, "") else 0
+            if not name or not grade:
+                return 0
+            return await persistence.users.count_students_in_class(name, grade)
+        except Exception:
+            return 0
+
+    async def apply_student_counts(classes: list[dict]) -> list[dict]:
+        # Avoid unbounded parallel scans
+        sem = asyncio.Semaphore(10)
+
+        async def _bounded(cls: dict) -> int:
+            async with sem:
+                return await count_students_for_class(cls)
+
+        counts = await asyncio.gather(*[_bounded(c) for c in classes])
+        for c, count in zip(classes, counts):
+            c["student_count"] = count
+        return classes
+
     if role == "admin":
         classes = await persistence.classes.list_all()
+        classes = await apply_student_counts(classes)
         return [class_response_helper(c) for c in classes]
     elif role == "teacher":
         classes = await persistence.classes.list_by_teacher(user_id)
+        classes = await apply_student_counts(classes)
         return [class_response_helper(c) for c in classes]
     elif role == "student":
         user_class = current_user.get("class_name")
@@ -95,6 +138,7 @@ async def get_classes(
             return []
         cls = await persistence.classes.get_by_name_grade(user_class, user_grade)
         if cls:
+            cls["student_count"] = await count_students_for_class(cls)
             return [class_response_helper(cls)]
         return []
     else:
@@ -130,6 +174,12 @@ async def get_class(
     class_obj = await persistence.classes.get_by_id(class_id)
     if not class_obj:
         raise HTTPException(status_code=404, detail="Class not found")
+    try:
+        class_obj["student_count"] = await persistence.users.count_students_in_class(
+            class_obj.get("name"), int(class_obj.get("grade"))
+        )
+    except Exception:
+        pass
     return ClassResponse(**class_response_helper(class_obj))
 
 

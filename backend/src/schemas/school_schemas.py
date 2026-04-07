@@ -75,7 +75,7 @@ class StudentResponse(BaseModel):
     email: Optional[str] = None
     role: str
     class_name: Optional[str] = None
-    grade: Optional[str] = None
+    grade: Optional[int] = None
 
 
 class AddStudentResponse(BaseModel):

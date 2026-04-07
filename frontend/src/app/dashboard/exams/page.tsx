@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Edit, Trash2, Plus, Clock, FileText, CheckCircle2, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen, KeyRound, RefreshCw, Copy, Check, Search } from 'lucide-react';
+import { Edit, Trash2, Plus, Clock, FileText, Loader2, X, Save, AlertTriangle, PlusCircle, Calendar, GraduationCap, BookOpen, KeyRound, RefreshCw, Copy, Check, Search } from 'lucide-react';
 import TimePicker from '@/components/ui/TimePicker';
 import Link from 'next/link';
 import Cookies from 'js-cookie';
@@ -15,6 +15,14 @@ const SUBJECTS = [
 const EXAM_TYPES = [
     "Kiểm tra miệng", "Kiểm tra 15 phút", "Kiểm tra 1 tiết", "Kiểm giữa kỳ", "Kiểm học kỳ"
 ];
+
+const EXAM_TYPE_TO_API: Record<string, string> = {
+    "Kiểm tra miệng": "15-minute quiz",
+    "Kiểm tra 15 phút": "15-minute quiz",
+    "Kiểm tra 1 tiết": "45-minute exam",
+    "Kiểm giữa kỳ": "45-minute exam",
+    "Kiểm học kỳ": "final exam",
+};
 
 interface ExamItem {
     id: string;
@@ -238,7 +246,7 @@ const TeacherExams: React.FC = () => {
                 start_time: finalStart,
                 end_time: finalEnd,
                 duration: parseInt(editingExam.duration as string) || 0,
-                exam_type: editingExam.exam_type || 'Kiểm tra 15 phút',
+                exam_type: EXAM_TYPE_TO_API[editingExam.exam_type || 'Kiểm tra 15 phút'] ?? (editingExam.exam_type || 'Kiểm tra 15 phút'),
             };
 
             if (!SUBJECTS.includes(payload.subject)) {
