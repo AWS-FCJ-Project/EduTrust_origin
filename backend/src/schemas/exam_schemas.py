@@ -195,6 +195,8 @@ class ExamViolation(BaseModel):
     violation_type: str
     violation_time: datetime
     created_at: Optional[datetime] = None
+    evidence_images: List[str] = []
+    metadata: Dict[str, Any] = {}
 
 
 class ExamCreateResponse(BaseModel):

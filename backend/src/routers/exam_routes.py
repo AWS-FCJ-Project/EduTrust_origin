@@ -784,10 +784,15 @@ async def get_all_violations(
                 student_class=f"{student.get('grade', '')} {student.get('class_name', '')}".strip()
                 or "N/A",
                 exam_title=exam.get("title") if exam else "Unknown Exam",
+                exam_start=exam.get("start_time") if exam else None,
+                exam_end=exam.get("end_time") if exam else None,
                 class_id=v.get("class_id") or "unknown",
                 subject=v.get("subject", "N/A"),
                 violation_type=v.get("type", ""),
                 violation_time=v.get("violation_time") or datetime.now(timezone.utc),
+                created_at=v.get("created_at"),
+                evidence_images=v.get("evidence_images", []) or [],
+                metadata=v.get("metadata", {}) or {},
             )
         )
     return results
