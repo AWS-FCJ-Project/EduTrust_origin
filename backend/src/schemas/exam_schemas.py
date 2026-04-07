@@ -246,7 +246,7 @@ class ExamSubmitAlreadyResponse(BaseModel):
 def exam_helper(exam_document: dict, include_secret: bool = False) -> dict:
     """Format exam document for API response."""
     result = {
-        "id": str(exam_document["_id"]),
+        "id": str(exam_document["exam_id"]),
         "title": exam_document["title"],
         "description": exam_document.get("description"),
         "subject": exam_document["subject"],

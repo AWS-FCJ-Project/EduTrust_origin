@@ -1,6 +1,6 @@
+import uuid
 from datetime import datetime, timezone
 
-from bson import ObjectId
 from src.schemas.exam_schemas import ExamCreate, ExamType, ExamUpdate, exam_helper
 
 
@@ -24,7 +24,7 @@ def test_exam_update_accepts_exam_type():
 
 def test_exam_helper_returns_exam_type_from_exam_document():
     exam = {
-        "_id": ObjectId(),
+        "exam_id": str(uuid.uuid4()),
         "title": "Exam 1",
         "description": "Description",
         "subject": "Chemistry",
@@ -43,7 +43,7 @@ def test_exam_helper_returns_exam_type_from_exam_document():
 
 def test_exam_helper_falls_back_for_legacy_exams_without_exam_type():
     exam = {
-        "_id": ObjectId(),
+        "exam_id": str(uuid.uuid4()),
         "title": "Exam 2",
         "description": "Description",
         "subject": "Physics",
