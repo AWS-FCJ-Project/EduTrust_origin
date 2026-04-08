@@ -9,10 +9,13 @@ import { ThemeProvider } from '@/components/providers/ThemeProvider';
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import UserProfileModal from '@/components/ui/UserProfileModal';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [headerImgSrc, setHeaderImgSrc] = useState<any>(null); // State cho ảnh header
     const pathname = usePathname();
     const isChatPage = pathname?.startsWith('/dashboard/chat_ai');
 
@@ -47,6 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 if (response.ok) {
                     const data = await response.json();
+                    console.log("Current user data:", data); // Chẩn đoán dữ liệu
                     setUser(data);
                     // Cache user info in cookie
                     Cookies.set('user_info', JSON.stringify(data), {
@@ -69,6 +73,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         fetchUserInfo();
     }, []);
+
+    useEffect(() => {
+        if (user && user.avatar_url) {
+            setHeaderImgSrc(user.avatar_url);
+        } else if (user) {
+            setHeaderImgSrc(study);
+        }
+    }, [user?.avatar_url]);
 
     if (loading) return <div className="flex h-screen w-full items-center justify-center bg-[#F0F2F5] text-sm font-medium text-slate-500">Đang tải...</div>;
     if (!user) return null;
@@ -111,25 +123,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Sidebar role={role} />
 
             <main className="flex-1 flex flex-col min-w-0">
-                <header className="h-16 bg-white/92 backdrop-blur-md flex items-center justify-between px-8 shadow-sm z-10 shrink-0">
+                <header className="h-16 bg-white/92 backdrop-blur-md flex items-center justify-between px-8 shadow-sm z-30 shrink-0">
                     <h2 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-slate-900">
                         Chào {user.name || 'Người dùng'}! 👋
                     </h2>
                     <div className="flex items-center gap-6">
                         <button className="relative p-1"><Bell size={20} /></button>
-                        <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
+                        <div className="flex items-center gap-3 border-l border-slate-200 pl-6 cursor-pointer hover:bg-slate-50 transition-colors rounded-lg p-2" onClick={() => setIsProfileModalOpen(true)}>
                             <p className="text-sm font-medium tracking-[-0.02em] text-slate-700">{user.name || 'Người dùng'}</p>
-                            <div className="w-10 h-10 rounded-full relative overflow-hidden">
-                                <Image src={study} alt="Avatar" fill className="object-cover" />
+                            <div className="w-11 h-11 rounded-full relative overflow-hidden border-2 border-slate-200">
+                                <Image 
+                                    src={headerImgSrc || study} 
+                                    alt="Avatar" 
+                                    fill 
+                                    className="object-cover"
+                                    onError={() => setHeaderImgSrc(study)}
+                                />
                             </div>
-                            <button
-                                onClick={handleLogout}
-                                className="ml-4 flex items-center gap-2 px-5 py-2.5 bg-[#5B0019] text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all shadow-md active:scale-95"
-                            >
-                                <LogOut size={18} />
-                                Đăng xuất
-                            </button>
                         </div>
+                        <button
+                            onClick={handleLogout}
+                            className="ml-4 flex items-center gap-2 px-5 py-2.5 bg-[#5B0019] text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all shadow-md active:scale-95"
+                        >
+                            <LogOut size={18} />
+                            Đăng xuất
+                        </button>
                     </div>
                 </header>
 
@@ -144,6 +162,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
             </main>
         </div>
+
+        <UserProfileModal 
+            user={user} 
+            isOpen={isProfileModalOpen} 
+            onClose={() => setIsProfileModalOpen(false)}
+            onUpdate={(updatedUser) => {
+                setUser(updatedUser);
+                Cookies.set('user_info', JSON.stringify(updatedUser), {
+                    expires: 7, path: '/', sameSite: 'strict', secure: process.env.NODE_ENV === 'production'
+                });
+            }} 
+        />
         </>
     );
 }

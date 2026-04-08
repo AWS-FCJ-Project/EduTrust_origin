@@ -46,6 +46,7 @@ class AppConfig(BaseSettings):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     S3_BUCKET_NAME: Optional[str] = None
+    S3_AVATAR_BUCKET_NAME: Optional[str] = None
 
     # Redis Settings
     REDIS_CLIENT_HOST: Optional[str] = None

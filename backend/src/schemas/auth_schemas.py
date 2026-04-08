@@ -26,6 +26,7 @@ class UserRegister(BaseModel):
     role: UserRole = UserRole.student
     class_name: Optional[str] = None
     grade: Optional[int] = None
+    base_64_url: Optional[str] = None
 
     @field_validator("password")
     def validate_password_complexity(cls, v: str) -> str:
@@ -107,6 +108,7 @@ class UserInfoResponse(BaseModel):
     is_verified: bool = False
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
+    avatar_url: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -116,6 +118,7 @@ class UserUpdate(BaseModel):
     grade: Optional[int] = None
     subjects: Optional[List[str]] = None
     password: Optional[str] = None
+    base_64_url: Optional[str] = None
 
 
 def user_helper(user) -> dict:
@@ -130,4 +133,5 @@ def user_helper(user) -> dict:
         "is_verified": bool(user.get("is_verified", False)),
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),
+        "avatar_url": user.get("avatar_url"),
     }
