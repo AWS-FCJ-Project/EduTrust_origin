@@ -1,5 +1,4 @@
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from src.auth.dependencies import get_current_user
@@ -12,33 +11,13 @@ from src.state import get_conversation_handler
 router = APIRouter(prefix="/unified-agent", tags=["Conversations"])
 
 
-@router.post("/conversations", response_model=ConversationResponseSchema)
-async def create_conversation(
-    current_user: Annotated[dict, Depends(get_current_user)],
-    handler=Depends(get_conversation_handler),
-):
-    conversation_id = str(uuid4())
-    user_id = str(current_user["_id"])
-    conversation = handler.create_conversation(conversation_id, user_id=user_id)
-    return ConversationResponseSchema(
-        conversation_id=conversation_id,
-        title=conversation.get("title", "New Chat"),
-        created_at=conversation.get("created_at"),
-        updated_at=conversation.get("updated_at"),
-        messages=[],
-    )
-
-
 @router.get("/conversations", response_model=list[ConversationSummarySchema])
 async def list_conversations(
     current_user: Annotated[dict, Depends(get_current_user)],
     limit: int = 50,
-    query: str | None = None,
     handler=Depends(get_conversation_handler),
 ):
     user_id = str(current_user["_id"])
-    if query and query.strip():
-        return handler.search_conversations(user_id=user_id, query=query, limit=limit)
     return handler.list_conversations(user_id=user_id, limit=limit)
 
 

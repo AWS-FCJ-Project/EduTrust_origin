@@ -48,6 +48,48 @@ variable "redis_egress_cidr_blocks" {
   type        = list(string)
 }
 
+variable "redis_node_type" {
+  description = "ElastiCache Redis node type (cheapest default)"
+  type        = string
+  default     = "cache.t4g.micro"
+}
+
+variable "redis_engine_version" {
+  description = "Redis engine version"
+  type        = string
+  default     = "7.1"
+}
+
+variable "redis_parameter_group_name" {
+  description = "Redis parameter group name (family must match engine version)"
+  type        = string
+  default     = "default.redis7"
+}
+
+variable "redis_at_rest_encryption_enabled" {
+  description = "Enable encryption at rest for Redis"
+  type        = bool
+  default     = true
+}
+
+variable "redis_transit_encryption_enabled" {
+  description = "Enable TLS in transit for Redis. If enabled, backend must set REDIS_TLS=true."
+  type        = bool
+  default     = false
+}
+
+variable "redis_auth_token_enabled" {
+  description = "Enable Redis AUTH token (requires backend to set REDIS_CLIENT_PASSWORD)."
+  type        = bool
+  default     = false
+}
+
+variable "dynamodb_users_table_name" {
+  description = "DynamoDB table name for user/profile data (PAY_PER_REQUEST)"
+  type        = string
+  default     = "edutrust-users"
+}
+
 # --- VPC & Subnet Network Variables ---
 
 variable "vpc_cidr_block" {

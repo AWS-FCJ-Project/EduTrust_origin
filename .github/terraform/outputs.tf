@@ -77,3 +77,28 @@ output "secrets_kms_key_arn" {
   description = "The ARN of the KMS key used for encrypting secrets"
   value       = aws_kms_key.secrets.arn
 }
+
+output "dynamodb_users_table_name" {
+  description = "DynamoDB users table name (user/profile data)"
+  value       = aws_dynamodb_table.users.name
+}
+
+output "redis_primary_endpoint" {
+  description = "Redis primary endpoint address"
+  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
+}
+
+output "redis_port" {
+  description = "Redis port"
+  value       = aws_elasticache_replication_group.redis.port
+}
+
+output "redis_transit_encryption_enabled" {
+  description = "When true, backend must set REDIS_TLS=true"
+  value       = var.redis_transit_encryption_enabled
+}
+
+output "redis_auth_token_secret_arn" {
+  description = "Secrets Manager ARN for Redis auth token (null when disabled)"
+  value       = var.redis_auth_token_enabled ? aws_secretsmanager_secret.redis_auth_token[0].arn : null
+}
