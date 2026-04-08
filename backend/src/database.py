@@ -565,12 +565,6 @@ class DynamoDatabase:
         table_name = f"{prefix}{name}"
         table = self._get_resource().Table(table_name)
 
-        # Best-effort connectivity check to surface bad table names early.
-        try:
-            table.load()
-        except ClientError as exc:
-            logger.error("DynamoDB table unavailable: %s (%s)", table_name, exc)
-
         collection = DynamoMongoCollection(table, name=name)
         self._tables[name] = collection
         return collection

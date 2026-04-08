@@ -457,6 +457,15 @@ resource "aws_dynamodb_table" "users" {
     name = "_id"
     type = "S"
   }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 resource "aws_dynamodb_table" "classes" {
@@ -467,6 +476,15 @@ resource "aws_dynamodb_table" "classes" {
   attribute {
     name = "_id"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
   }
 }
 
@@ -479,6 +497,15 @@ resource "aws_dynamodb_table" "exams" {
     name = "_id"
     type = "S"
   }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 resource "aws_dynamodb_table" "submissions" {
@@ -490,6 +517,15 @@ resource "aws_dynamodb_table" "submissions" {
     name = "_id"
     type = "S"
   }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 resource "aws_dynamodb_table" "violations" {
@@ -500,6 +536,15 @@ resource "aws_dynamodb_table" "violations" {
   attribute {
     name = "_id"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
   }
 }
 
@@ -517,6 +562,15 @@ resource "aws_dynamodb_table" "otps" {
     attribute_name = "expire_at"
     enabled        = true
   }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 resource "aws_dynamodb_table" "conversations" {
@@ -527,6 +581,15 @@ resource "aws_dynamodb_table" "conversations" {
   attribute {
     name = "_id"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
   }
 }
 
