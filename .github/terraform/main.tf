@@ -24,6 +24,14 @@ provider "aws" {
   region = "us-east-1"
 }
 
+locals {
+  dynamodb_table_prefix = (
+    length(trimspace(var.dynamodb_table_prefix)) > 0
+    ? (endswith(trimspace(var.dynamodb_table_prefix), "-") ? trimspace(var.dynamodb_table_prefix) : "${trimspace(var.dynamodb_table_prefix)}-")
+    : ""
+  )
+}
+
 # --- VPC & Network Configuration ---
 
 resource "aws_vpc" "main" {
@@ -197,6 +205,16 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
 
   tags = { Name = "s3-endpoint" }
+}
+
+# DynamoDB Gateway Endpoint (Free; avoids NAT for DynamoDB access)
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "dynamodb-endpoint" }
 }
 
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
@@ -429,6 +447,152 @@ resource "aws_cognito_user_group" "student" {
   user_pool_id = aws_cognito_user_pool.backend.id
 }
 
+# --- DynamoDB Tables (Backend Storage) ---
+resource "aws_dynamodb_table" "users" {
+  name         = "${local.dynamodb_table_prefix}users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "classes" {
+  name         = "${local.dynamodb_table_prefix}classes"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "exams" {
+  name         = "${local.dynamodb_table_prefix}exams"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "submissions" {
+  name         = "${local.dynamodb_table_prefix}submissions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "violations" {
+  name         = "${local.dynamodb_table_prefix}violations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "otps" {
+  name         = "${local.dynamodb_table_prefix}otps"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expire_at"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+resource "aws_dynamodb_table" "conversations" {
+  name         = "${local.dynamodb_table_prefix}conversations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "_id"
+
+  attribute {
+    name = "_id"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.secrets.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
 data "aws_iam_policy_document" "kms_secrets_policy" {
   # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
   # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
@@ -546,6 +710,37 @@ data "aws_iam_policy_document" "backend_ssm_read" {
     ]
     resources = [
       "${aws_s3_bucket.camera_detect.arn}/*",
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:BatchGetItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:UpdateItem",
+    ]
+    resources = [
+      aws_dynamodb_table.users.arn,
+      "${aws_dynamodb_table.users.arn}/index/*",
+      aws_dynamodb_table.classes.arn,
+      "${aws_dynamodb_table.classes.arn}/index/*",
+      aws_dynamodb_table.exams.arn,
+      "${aws_dynamodb_table.exams.arn}/index/*",
+      aws_dynamodb_table.submissions.arn,
+      "${aws_dynamodb_table.submissions.arn}/index/*",
+      aws_dynamodb_table.violations.arn,
+      "${aws_dynamodb_table.violations.arn}/index/*",
+      aws_dynamodb_table.otps.arn,
+      "${aws_dynamodb_table.otps.arn}/index/*",
+      aws_dynamodb_table.conversations.arn,
+      "${aws_dynamodb_table.conversations.arn}/index/*",
     ]
   }
 

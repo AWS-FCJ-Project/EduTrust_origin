@@ -48,6 +48,12 @@ variable "redis_egress_cidr_blocks" {
   type        = list(string)
 }
 
+variable "dynamodb_table_prefix" {
+  description = "Prefix for DynamoDB tables (e.g. 'db' -> db-users, db-exams, ...)"
+  type        = string
+  default     = "db"
+}
+
 # --- VPC & Subnet Network Variables ---
 
 variable "vpc_cidr_block" {
