@@ -67,7 +67,9 @@ class ConversationHandler:
     def connect_to_database(self) -> None:
         """Connect to DynamoDB (table handle)."""
         try:
-            region = (app_config.AWS_REGION or "ap-southeast-1").strip() or "ap-southeast-1"
+            region = (
+                app_config.AWS_REGION or "ap-southeast-1"
+            ).strip() or "ap-southeast-1"
             prefix = _normalize_table_prefix(app_config.DYNAMODB_TABLE_PREFIX)
             table_name = f"{prefix}{self.collection_name}"
 
@@ -122,7 +124,9 @@ class ConversationHandler:
         except ValueError:
             return value
 
-    def _deserialize_conversation(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
+    def _deserialize_conversation(
+        self, item: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         if not item:
             return None
         item = dict(item)
@@ -157,7 +161,9 @@ class ConversationHandler:
         }
         message_serialized = dict(message)
         if isinstance(message_serialized.get("created_at"), datetime):
-            message_serialized["created_at"] = self._to_iso(message_serialized["created_at"])
+            message_serialized["created_at"] = self._to_iso(
+                message_serialized["created_at"]
+            )
 
         # DynamoDB doesn't support server-side slicing; do a read-modify-write with a cap.
         try:
@@ -340,10 +346,18 @@ class ConversationHandler:
             )
         except ClientError as exc:
             # If the item already exists, just return the current version.
-            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            if (
+                exc.response.get("Error", {}).get("Code")
+                != "ConditionalCheckFailedException"
+            ):
                 logger.error("DynamoDB put_item failed: %s", exc)
             existing = table.get_item(Key={"_id": conversation_id}).get("Item")
-            return self._deserialize_conversation(existing) or {"_id": conversation_id, "user_id": user_id, "title": "New Chat", "messages": []}
+            return self._deserialize_conversation(existing) or {
+                "_id": conversation_id,
+                "user_id": user_id,
+                "title": "New Chat",
+                "messages": [],
+            }
 
         return self._deserialize_conversation(conversation) or conversation
 

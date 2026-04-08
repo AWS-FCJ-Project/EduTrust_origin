@@ -307,7 +307,9 @@ class DynamoMongoCollection:
         raw_items = await anyio.to_thread.run_sync(_do_scan)
         return [_deserialize(i) for i in raw_items]
 
-    async def find_one(self, query: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    async def find_one(
+        self, query: dict[str, Any] | None = None
+    ) -> dict[str, Any] | None:
         if query and set(query.keys()) == {"_id"}:
             key = _normalize_scalar(query.get("_id"))
 
@@ -330,7 +332,9 @@ class DynamoMongoCollection:
 
         return _AsyncCursor(_load)
 
-    def aggregate(self, pipeline: list[dict[str, Any]] | None = None) -> _AsyncCursor:
+    def aggregate(
+        self, pipeline: list[dict[str, Any]] | None = None
+    ) -> _AsyncCursor:
         async def _load():
             items = await self._scan_all()
             current: list[dict[str, Any]] = list(items)
@@ -414,7 +418,9 @@ class DynamoMongoCollection:
 
         return _AsyncCursor(_load)
 
-    async def _find_all(self, query: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    async def _find_all(
+        self, query: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         items = await self._scan_all()
         return [i for i in items if _match_filter(i, query)]
 
@@ -432,7 +438,9 @@ class DynamoMongoCollection:
         await anyio.to_thread.run_sync(_do_put)
         return InsertOneResult(inserted_id=doc["_id"])
 
-    async def insert_many(self, documents: list[dict[str, Any]], ordered: bool = False) -> InsertManyResult:
+    async def insert_many(
+        self, documents: list[dict[str, Any]], ordered: bool = False
+    ) -> InsertManyResult:
         del ordered
         inserted_ids: list[Any] = []
 
@@ -459,7 +467,11 @@ class DynamoMongoCollection:
             return UpdateResult(matched_count=0, modified_count=0)
 
         if existing is None:
-            existing = {k: _normalize_scalar(v) for k, v in (query or {}).items() if not k.startswith("$")}
+            existing = {
+                k: _normalize_scalar(v)
+                for k, v in (query or {}).items()
+                if not k.startswith("$")
+            }
             existing["_id"] = str(ObjectId()) if ObjectId is not None else str(uuid4())  # type: ignore[call-arg]
             matched_count = 0
             upserted_id = existing["_id"]
@@ -472,7 +484,9 @@ class DynamoMongoCollection:
         new_doc = dict(existing)
 
         # Operators used in this codebase.
-        set_on_insert = (update.get("$setOnInsert") or {}) if isinstance(update, dict) else {}
+        set_on_insert = (
+            (update.get("$setOnInsert") or {}) if isinstance(update, dict) else {}
+        )
         set_ops = (update.get("$set") or {}) if isinstance(update, dict) else {}
         pull_ops = (update.get("$pull") or {}) if isinstance(update, dict) else {}
 
@@ -495,9 +509,13 @@ class DynamoMongoCollection:
             self._table.put_item(Item=_serialize(new_doc))
 
         await anyio.to_thread.run_sync(_do_put)
-        return UpdateResult(matched_count=matched_count, modified_count=1, upserted_id=upserted_id)
+        return UpdateResult(
+            matched_count=matched_count, modified_count=1, upserted_id=upserted_id
+        )
 
-    async def update_many(self, query: dict[str, Any], update: dict[str, Any]) -> UpdateResult:
+    async def update_many(
+        self, query: dict[str, Any], update: dict[str, Any]
+    ) -> UpdateResult:
         items = await self._find_all(query)
         modified = 0
         for item in items:
@@ -534,7 +552,9 @@ class DynamoDatabase:
         if self._resource is not None:
             return self._resource
 
-        region = (app_config.AWS_REGION or "ap-southeast-1").strip() or "ap-southeast-1"
+        region = (
+            app_config.AWS_REGION or "ap-southeast-1"
+        ).strip() or "ap-southeast-1"
         client_kwargs: dict[str, Any] = {
             "region_name": region,
             "config": Config(retries={"max_attempts": 10, "mode": "standard"}),
@@ -546,7 +566,9 @@ class DynamoDatabase:
                     "aws_secret_access_key": app_config.AWS_SECRET_ACCESS_KEY,
                 }
             )
-        endpoint_url = (getattr(app_config, "DYNAMODB_ENDPOINT_URL", None) or "").strip() or None
+        endpoint_url = (
+            getattr(app_config, "DYNAMODB_ENDPOINT_URL", None) or ""
+        ).strip() or None
         if endpoint_url:
             client_kwargs["endpoint_url"] = endpoint_url
 
