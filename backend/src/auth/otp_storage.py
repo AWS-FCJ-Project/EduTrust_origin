@@ -6,7 +6,8 @@ otp_collection = db["otps"]
 
 
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
-    expire_at = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
+    expire_at_dt = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
+    expire_at = int(expire_at_dt.timestamp())
 
     await otp_collection.update_one(
         {"email": email, "purpose": purpose},
@@ -29,14 +30,10 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
     if not doc:
         return False
 
-    expire_at = doc["expire_at"]
+    expire_at = int(doc["expire_at"])
+    now_ts = int(datetime.now(timezone.utc).timestamp())
 
-    if expire_at.tzinfo is None:
-        expire_at = expire_at.replace(tzinfo=timezone.utc)
-
-    now = datetime.now(timezone.utc)
-
-    if expire_at < now:
+    if expire_at < now_ts:
         await otp_collection.delete_one({"_id": doc["_id"]})
         return False
 
@@ -46,4 +43,6 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
 
 async def cleanup_expired_otps():
 
-    await otp_collection.delete_many({"expire_at": {"$lt": datetime.now(timezone.utc)}})
+    await otp_collection.delete_many(
+        {"expire_at": {"$lt": int(datetime.now(timezone.utc).timestamp())}}
+    )

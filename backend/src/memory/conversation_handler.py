@@ -3,14 +3,24 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import pymongo
+import boto3
+from boto3.dynamodb.conditions import Attr
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from src.app_config import app_config
 from src.logger import logger
 from src.memory.conversation_cache import ConversationCache
 
 
+def _normalize_table_prefix(prefix: str | None) -> str:
+    value = (prefix or "").strip()
+    if not value:
+        return "edutrust-backend-"
+    return value if value.endswith("-") else f"{value}-"
+
+
 class ConversationHandler:
-    """Handler for storing conversations in MongoDB with optional caching."""
+    """Handler for storing conversations in DynamoDB with optional caching."""
 
     def __init__(
         self,
@@ -21,16 +31,14 @@ class ConversationHandler:
         collection_name: Optional[str] = "conversations",
         conversation_cache: Optional[ConversationCache] = None,
     ):
-        """Initialize with MongoDB config and optional cache."""
-        self.client: Optional[pymongo.MongoClient] = None
-        self.db: Optional[pymongo.database.Database] = None
-        self.collection: Optional[pymongo.collection.Collection] = None
+        """Initialize with DynamoDB config and optional cache."""
+        self._dynamodb = None
+        self._table = None
 
-        self.connection_string = connection_string or app_config.MONGO_URI
-        self.username = username or app_config.MONGO_USERNAME
-        self.password = password or app_config.MONGO_PASSWORD
-        self.db_name = db_name or app_config.MONGO_DB_NAME
-        self.collection_name = collection_name
+        # Keep parameter names for backward compatibility with existing wiring.
+        del connection_string, username, password, db_name
+
+        self.collection_name = collection_name or "conversations"
         self._conversation_cache = conversation_cache
 
     def _log_cache(
@@ -49,48 +57,83 @@ class ConversationHandler:
             cached_messages,
         )
 
-    def _log_mongo_read(self, *, conversation_id: str, message_limit: int) -> None:
+    def _log_db_read(self, *, conversation_id: str, message_limit: int) -> None:
         logger.info(
-            "conversation_mongo read conversation_id=%s message_limit=%s",
+            "conversation_db read conversation_id=%s message_limit=%s",
             conversation_id,
             message_limit,
         )
 
     def connect_to_database(self) -> None:
-        """Connect to MongoDB server."""
+        """Connect to DynamoDB (table handle)."""
         try:
-            if self.connection_string.startswith("mongodb://"):
-                self.client = pymongo.MongoClient(
-                    self.connection_string + "/?directConnection=true",
-                    username=self.username,
-                    password=self.password,
-                    retryWrites=False,
-                    tlsAllowInvalidHostnames=True,
-                )
-            else:
-                self.client = pymongo.MongoClient(
-                    self.connection_string,
-                    retryWrites=True,
-                    w="majority",
-                )
-            ping_result = self.client.admin.command("ping")
-            print(f"Ping result: {ping_result}")
-            self.db = self.client[self.db_name]
-            self.collection = self.db[self.collection_name]
-            self.collection.create_index(
-                [("user_id", pymongo.ASCENDING), ("updated_at", pymongo.DESCENDING)]
-            )
-            print(f"Connected to database: {self.db_name}")
-        except Exception as e:
-            print(f"Error connecting to database: {e}")
+            region = (app_config.AWS_REGION or "ap-southeast-1").strip() or "ap-southeast-1"
+            prefix = _normalize_table_prefix(app_config.DYNAMODB_TABLE_PREFIX)
+            table_name = f"{prefix}{self.collection_name}"
 
-    def _require_collection(self) -> pymongo.collection.Collection:
-        """Get MongoDB collection, connecting if needed."""
-        if self.collection is None:
+            client_kwargs: dict[str, Any] = {
+                "region_name": region,
+                "config": Config(retries={"max_attempts": 10, "mode": "standard"}),
+            }
+            if app_config.AWS_ACCESS_KEY_ID and app_config.AWS_SECRET_ACCESS_KEY:
+                client_kwargs.update(
+                    {
+                        "aws_access_key_id": app_config.AWS_ACCESS_KEY_ID,
+                        "aws_secret_access_key": app_config.AWS_SECRET_ACCESS_KEY,
+                    }
+                )
+            endpoint_url = (app_config.DYNAMODB_ENDPOINT_URL or "").strip() or None
+            if endpoint_url:
+                client_kwargs["endpoint_url"] = endpoint_url
+
+            self._dynamodb = boto3.resource("dynamodb", **client_kwargs)
+            self._table = self._dynamodb.Table(table_name)
+        except Exception as exc:
+            logger.error("Error connecting to DynamoDB: %s", exc)
+            self._dynamodb = None
+            self._table = None
+
+    def _require_table(self):
+        """Get DynamoDB table handle, connecting if needed."""
+        if self._table is None:
             self.connect_to_database()
-        if self.collection is None:
-            raise RuntimeError("Mongo collection not initialized.")
-        return self.collection
+        if self._table is None:
+            raise RuntimeError("DynamoDB table not initialized.")
+        return self._table
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _to_iso(dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+    @staticmethod
+    def _from_iso(value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return value
+
+    def _deserialize_conversation(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not item:
+            return None
+        item = dict(item)
+        item["created_at"] = self._from_iso(item.get("created_at"))
+        item["updated_at"] = self._from_iso(item.get("updated_at"))
+        messages = item.get("messages")
+        if isinstance(messages, list):
+            for msg in messages:
+                if isinstance(msg, dict) and "created_at" in msg:
+                    msg["created_at"] = self._from_iso(msg.get("created_at"))
+        return item
 
     def add_message(
         self,
@@ -103,38 +146,71 @@ class ConversationHandler:
         **extra: Any,
     ) -> None:
         """Append message to conversation, creating it if needed."""
-        collection = self._require_collection()
-        now = datetime.now(timezone.utc)
+        table = self._require_table()
+        now = self._now()
 
-        # MongoDB is the source of truth: always write there first.
         message: dict[str, Any] = {
             "role": role,
             "content": content,
             "created_at": extra.pop("created_at", now),
             **extra,
         }
-        push_value: dict[str, Any] = {"$each": [message]}
-        if max_messages is not None:
-            push_value["$slice"] = -max_messages
+        message_serialized = dict(message)
+        if isinstance(message_serialized.get("created_at"), datetime):
+            message_serialized["created_at"] = self._to_iso(message_serialized["created_at"])
 
-        set_on_insert: dict[str, Any] = {
-            "_id": conversation_id,
-            "title": "New Chat",
-            "created_at": now,
+        # DynamoDB doesn't support server-side slicing; do a read-modify-write with a cap.
+        try:
+            existing = table.get_item(Key={"_id": conversation_id}).get("Item")
+        except ClientError as exc:
+            logger.error("DynamoDB get_item failed: %s", exc)
+            existing = None
+
+        if existing is None:
+            created = {
+                "_id": conversation_id,
+                "title": "New Chat",
+                "messages": [],
+                "message_count": 0,
+                "created_at": self._to_iso(now),
+                "updated_at": self._to_iso(now),
+            }
+            if user_id is not None:
+                created["user_id"] = user_id
+            existing = created
+
+        messages = list(existing.get("messages", []) or [])
+        messages.append(message_serialized)
+        if max_messages is not None and max_messages > 0:
+            messages = messages[-max_messages:]
+
+        message_count = int(existing.get("message_count", 0)) + 1
+        update_expr = "SET #messages = :messages, #updated_at = :updated_at, #message_count = :message_count"
+        expr_names = {
+            "#messages": "messages",
+            "#updated_at": "updated_at",
+            "#message_count": "message_count",
         }
-        if user_id is not None:
-            set_on_insert["user_id"] = user_id
+        expr_values = {
+            ":messages": messages,
+            ":updated_at": self._to_iso(now),
+            ":message_count": message_count,
+        }
+        if user_id is not None and not existing.get("user_id"):
+            update_expr += ", #user_id = :user_id"
+            expr_names["#user_id"] = "user_id"
+            expr_values[":user_id"] = user_id
 
-        collection.update_one(
-            {"_id": conversation_id},
-            {
-                "$setOnInsert": set_on_insert,
-                "$set": {"updated_at": now},
-                "$inc": {"message_count": 1},
-                "$push": {"messages": push_value},
-            },
-            upsert=True,
-        )
+        try:
+            table.update_item(
+                Key={"_id": conversation_id},
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames=expr_names,
+                ExpressionAttributeValues=expr_values,
+            )
+        except ClientError as exc:
+            logger.error("DynamoDB update_item failed: %s", exc)
+            return
 
         if role == "user":
             self._update_title_from_first_message(conversation_id, content)
@@ -220,21 +296,21 @@ class ConversationHandler:
                 ),
             )
 
-        collection = self._require_collection()
-        projection: dict[str, Any]
-        projection = {"messages": 1}
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
+        table = self._require_table()
+        self._log_db_read(conversation_id=conversation_id, message_limit=message_limit)
+        try:
+            item = table.get_item(Key={"_id": conversation_id}).get("Item")
+        except ClientError as exc:
+            logger.error("DynamoDB get_item failed: %s", exc)
+            item = None
 
-        self._log_mongo_read(
-            conversation_id=conversation_id, message_limit=message_limit
-        )
-        doc = collection.find_one(query, projection)
+        doc = self._deserialize_conversation(item)
         if not doc:
             return []
+        if user_id is not None and str(doc.get("user_id") or "") != str(user_id):
+            return []
 
-        messages = list(doc.get("messages", []))
+        messages = list(doc.get("messages", []) or [])
         if user_id is None and self._conversation_cache and message_limit > 0:
             self._conversation_cache.cache_conversation(
                 {"_id": conversation_id, "messages": messages, "is_complete": True}
@@ -245,85 +321,110 @@ class ConversationHandler:
         self, conversation_id: str, *, user_id: str
     ) -> dict[str, Any]:
         """Create a new empty conversation for a user."""
-        collection = self._require_collection()
-        now = datetime.now(timezone.utc)
+        table = self._require_table()
+        now = self._now()
         conversation = {
             "_id": conversation_id,
             "user_id": user_id,
             "title": "New Chat",
             "messages": [],
             "message_count": 0,
-            "created_at": now,
-            "updated_at": now,
+            "created_at": self._to_iso(now),
+            "updated_at": self._to_iso(now),
         }
-        collection.insert_one(conversation)
-        return conversation
+        try:
+            table.put_item(
+                Item=conversation,
+                ConditionExpression="attribute_not_exists(#id)",
+                ExpressionAttributeNames={"#id": "_id"},
+            )
+        except ClientError as exc:
+            # If the item already exists, just return the current version.
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                logger.error("DynamoDB put_item failed: %s", exc)
+            existing = table.get_item(Key={"_id": conversation_id}).get("Item")
+            return self._deserialize_conversation(existing) or {"_id": conversation_id, "user_id": user_id, "title": "New Chat", "messages": []}
+
+        return self._deserialize_conversation(conversation) or conversation
 
     def list_conversations(
         self, *, user_id: str, limit: int = 50
     ) -> list[dict[str, Any]]:
         """List conversation summaries for a user, newest first."""
-        collection = self._require_collection()
-        cursor = (
-            collection.find(
-                {"user_id": user_id},
-                {
-                    "title": 1,
-                    "created_at": 1,
-                    "updated_at": 1,
-                    "message_count": 1,
-                    "messages": {"$slice": -1},
-                },
-            )
-            .sort("updated_at", pymongo.DESCENDING)
-            .limit(limit)
-        )
+        table = self._require_table()
+        # Without a user_id GSI, fall back to a filtered scan and local sort.
+        items: list[dict[str, Any]] = []
+        start_key = None
+        while True:
+            scan_kwargs: dict[str, Any] = {
+                "FilterExpression": Attr("user_id").eq(user_id),
+                "ProjectionExpression": "#id, title, created_at, updated_at, message_count, messages",
+                "ExpressionAttributeNames": {"#id": "_id"},
+                "Limit": max(limit * 4, 50),
+            }
+            if start_key:
+                scan_kwargs["ExclusiveStartKey"] = start_key
+            resp = table.scan(**scan_kwargs)
+            batch = resp.get("Items", []) or []
+            items.extend(batch)
+            start_key = resp.get("LastEvaluatedKey")
+            if not start_key or len(items) >= limit * 4:
+                break
 
         conversations: list[dict[str, Any]] = []
-        for doc in cursor:
-            messages = list(doc.get("messages", []))
-            preview = messages[-1].get("content", "") if messages else ""
+        for raw in items:
+            doc = self._deserialize_conversation(raw) or raw
+            messages = list(doc.get("messages", []) or [])
+            preview = ""
+            if messages and isinstance(messages[-1], dict):
+                preview = str(messages[-1].get("content") or "")
             conversations.append(
                 {
-                    "conversation_id": doc["_id"],
+                    "conversation_id": doc.get("_id"),
                     "title": doc.get("title", "New Chat"),
                     "preview": preview[:140],
                     "created_at": doc.get("created_at"),
                     "updated_at": doc.get("updated_at"),
-                    "message_count": int(doc.get("message_count", 0)),
+                    "message_count": int(doc.get("message_count", 0) or 0),
                 }
             )
+
+        conversations.sort(
+            key=lambda x: x.get("updated_at") or datetime.min,
+            reverse=True,
+        )
+        conversations = conversations[:limit]
         return conversations
 
     def get_conversation(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
         """Return a conversation document by id, optionally scoped to a user."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
-        return collection.find_one(query)
+        table = self._require_table()
+        try:
+            item = table.get_item(Key={"_id": conversation_id}).get("Item")
+        except ClientError as exc:
+            logger.error("DynamoDB get_item failed: %s", exc)
+            return None
+        doc = self._deserialize_conversation(item)
+        if not doc:
+            return None
+        if user_id is not None and str(doc.get("user_id") or "") != str(user_id):
+            return None
+        return doc
 
     def conversation_exists(
         self, conversation_id: str, *, user_id: Optional[str] = None
     ) -> bool:
         """Return True when the conversation exists."""
-        collection = self._require_collection()
-        query: dict[str, Any] = {"_id": conversation_id}
-        if user_id is not None:
-            query["user_id"] = user_id
-        return collection.count_documents(query, limit=1) > 0
+        return self.get_conversation(conversation_id, user_id=user_id) is not None
 
     def get_latest_conversation_id(self, user_id: str) -> Optional[str]:
         """Return the most recently updated conversation id for a user."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"user_id": user_id},
-            {"_id": 1},
-            sort=[("updated_at", pymongo.DESCENDING)],
-        )
-        return str(doc["_id"]) if doc else None
+        conversations = self.list_conversations(user_id=user_id, limit=1)
+        if not conversations:
+            return None
+        return str(conversations[0].get("conversation_id") or "")
 
     def search_conversations(
         self,
@@ -364,23 +465,28 @@ class ConversationHandler:
 
     def delete_conversation(self, conversation_id: str, *, user_id: str) -> bool:
         """Delete a conversation document for a user (hard delete)."""
-        collection = self._require_collection()
-        result = collection.delete_one({"_id": conversation_id, "user_id": user_id})
+        table = self._require_table()
+        existing = self.get_conversation(conversation_id, user_id=user_id)
+        if not existing:
+            return False
+
+        try:
+            table.delete_item(Key={"_id": conversation_id})
+        except ClientError as exc:
+            logger.error("DynamoDB delete_item failed: %s", exc)
+            return False
 
         if self._conversation_cache:
             self._conversation_cache.invalidate_conversation(conversation_id)
 
-        return bool(result.deleted_count)
+        return True
 
     def _update_title_from_first_message(
         self, conversation_id: str, content: str
     ) -> None:
         """Use the first user message as the conversation title."""
-        collection = self._require_collection()
-        doc = collection.find_one(
-            {"_id": conversation_id},
-            {"title": 1, "messages": {"$slice": 2}},
-        )
+        table = self._require_table()
+        doc = self.get_conversation(conversation_id)
         if not doc:
             return
 
@@ -400,18 +506,20 @@ class ConversationHandler:
         if not normalized:
             return
 
-        collection.update_one(
-            {"_id": conversation_id},
-            {"$set": {"title": normalized[:60]}},
-        )
+        try:
+            table.update_item(
+                Key={"_id": conversation_id},
+                UpdateExpression="SET #title = :title",
+                ExpressionAttributeNames={"#title": "title"},
+                ExpressionAttributeValues={":title": normalized[:60]},
+            )
+        except ClientError as exc:
+            logger.error("DynamoDB update_item failed: %s", exc)
 
     def close(self) -> None:
         """Close database and cache connections."""
-        if self.client is not None:
-            self.client.close()
-        self.client = None
-        self.db = None
-        self.collection = None
+        self._dynamodb = None
+        self._table = None
         if self._conversation_cache:
             self._conversation_cache.close()
             self._conversation_cache = None

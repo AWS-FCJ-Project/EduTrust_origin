@@ -61,21 +61,21 @@ const ExamListPage = () => {
         (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
     );
 
-    const getStatusBadge = (status: string, ended: boolean) => {
-        if (ended && status === 'pending') {
-            return <span className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black uppercase tracking-wider border border-gray-200">Đã kết thúc</span>;
-        }
-        switch (status) {
-            case 'pending':
-                return <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-wider">Chưa làm</span>;
-            case 'completed':
-                return <span className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-600 rounded-lg text-[10px] font-black uppercase tracking-wider">Đã hoàn thành</span>;
-            case 'failed':
-                return <span className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-red-100">Bị hủy</span>;
-            default:
+        const getStatusBadge = (status: string, ended: boolean) => {
+            if (ended && status === 'pending') {
+            return <span className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black uppercase tracking-wider border border-gray-200">{"\u0110\u00E3 k\u1EBFt th\u00FAc"}</span>;
+            }
+            switch (status) {
+                case 'pending':
+                return <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-wider">{"Ch\u01B0a l\u00E0m"}</span>;
+                case 'completed':
+                return <span className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-600 rounded-lg text-[10px] font-black uppercase tracking-wider">{"\u0110\u00E3 ho\u00E0n th\u00E0nh"}</span>;
+                case 'failed':
+                return <span className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-red-100">{"B\u1ECB h\u1EE7y"}</span>;
+                default:
                 return null;
-        }
-    };
+            }
+        };
 
     const formatShortTime = (dateStr: string) => {
         if (!dateStr) return "---";
@@ -95,8 +95,12 @@ const ExamListPage = () => {
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 py-4">
                     <div className="space-y-1">
-                        <h1 className="text-4xl font-black text-gray-950 tracking-tighter">Bài thi của tôi</h1>
-                        <p className="text-gray-400 font-medium text-sm">Quản lý và theo dõi trình độ chuyên môn của bạn.</p>
+                        <h1 className="text-4xl font-black text-gray-950 tracking-tighter">
+                            {"B\u00E0i thi c\u1EE7a t\u00F4i"}
+                        </h1>
+                        <p className="text-gray-400 font-medium text-sm">
+                            {"Qu\u1EA3n l\u00FD v\u00E0 theo d\u00F5i tr\u00ECnh \u0111\u1ED9 chuy\u00EAn m\u00F4n c\u1EE7a b\u1EA1n."}
+                        </p>
                     </div>
 
                     <div className="relative group">
@@ -105,7 +109,7 @@ const ExamListPage = () => {
                         </div>
                         <input
                             type="text"
-                            placeholder="Tìm nhanh bài thi..."
+                            placeholder={"T\u00ECm nhanh b\u00E0i thi..."}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="block w-full md:w-80 pl-12 pr-6 py-4 bg-white border-none rounded-[2rem] text-sm font-bold placeholder-gray-300 focus:ring-4 focus:ring-[#5B0019]/5 transition-all shadow-xl shadow-gray-200/40"
@@ -116,11 +120,11 @@ const ExamListPage = () => {
                 {/* Tab Filter Section */}
                 <div className="flex items-center gap-2 p-1.5 bg-gray-100/80 rounded-[2rem] w-fit shadow-inner">
                     {[
-                        { id: 'all', label: 'Tất cả' },
-                        { id: 'pending', label: 'Chưa làm' },
-                        { id: 'completed', label: 'Đã hoàn thành' },
-                        { id: 'failed', label: 'Bị hủy' }
-                    ].concat([{ id: 'ended', label: 'Đã kết thúc' }]).map(tab => (
+                        { id: 'all', label: 'T\u1EA5t c\u1EA3' },
+                        { id: 'pending', label: 'Ch\u01B0a l\u00E0m' },
+                        { id: 'completed', label: '\u0110\u00E3 ho\u00E0n th\u00E0nh' },
+                        { id: 'failed', label: 'B\u1ECB h\u1EE7y' }
+                    ].concat([{ id: 'ended', label: '\u0110\u00E3 k\u1EBFt th\u00FAc' }]).map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}

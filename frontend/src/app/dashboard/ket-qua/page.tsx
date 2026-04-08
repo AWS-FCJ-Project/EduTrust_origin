@@ -55,16 +55,18 @@ export default function ResultsPage() {
                 <div>
                     <h1 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-4">
                         <Trophy className="text-amber-500" size={40} />
-                        Kết Quả Học Tập
+                        {"K\u1EBFt Qu\u1EA3 H\u1ECDc T\u1EADp"}
                     </h1>
-                    <p className="text-gray-500 font-medium mt-2">Theo dõi tiến độ và thành tích của bạn qua từng kỳ thi.</p>
+                    <p className="text-gray-500 font-medium mt-2">
+                        {"Theo d\u00F5i ti\u1EBFn \u0111\u1ED9 v\u00E0 th\u00E0nh t\u00EDch c\u1EE7a b\u1EA1n qua t\u1EEBng k\u1EF3 thi."}
+                    </p>
                 </div>
 
                 <div className="flex bg-white p-2 rounded-2xl shadow-sm border border-gray-100 items-center gap-3 w-full md:w-80 transition-all focus-within:ring-2 focus-within:ring-[#5B0019]/20">
                     <Search className="text-gray-400 ml-2" size={20} />
                     <input
                         type="text"
-                        placeholder="Tìm kiếm môn học, đề thi..."
+                        placeholder={"T\u00ECm ki\u1EBFm m\u00F4n h\u1ECDc, \u0111\u1EC1 thi..."}
                         className="bg-transparent border-none outline-none text-sm font-medium w-full"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -78,7 +80,9 @@ export default function ResultsPage() {
                         <BookOpen size={30} />
                     </div>
                     <div>
-                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Tổng bài thi</p>
+                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest">
+                            {"T\u1ED5ng b\u00E0i thi"}
+                        </p>
                         <p className="text-3xl font-black text-gray-900">{results.length}</p>
                     </div>
                 </div>
@@ -88,7 +92,9 @@ export default function ResultsPage() {
                         <Award size={30} />
                     </div>
                     <div>
-                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Điểm trung bình</p>
+                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest">
+                            {"\u0110i\u1EC3m trung b\u00ECnh"}
+                        </p>
                         <p className="text-3xl font-black text-gray-900">{averageScore.toFixed(1)}</p>
                     </div>
                 </div>
@@ -98,7 +104,9 @@ export default function ResultsPage() {
                         <Trophy size={30} />
                     </div>
                     <div className="text-white">
-                        <p className="text-sm font-black opacity-60 uppercase tracking-widest">Xếp hạng</p>
+                        <p className="text-sm font-black opacity-60 uppercase tracking-widest">
+                            {"X\u1EBFp h\u1EA1ng"}
+                        </p>
                         <p className="text-3xl font-black italic">Excellent</p>
                     </div>
                 </div>
@@ -106,25 +114,41 @@ export default function ResultsPage() {
 
             <div className="bg-white rounded-[3rem] shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-8 border-b border-gray-50 flex items-center justify-between">
-                    <h2 className="text-xl font-black text-gray-900 tracking-tight">Lịch sử làm bài</h2>
-                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Sắp xếp theo: Mới nhất</div>
+                    <h2 className="text-xl font-black text-gray-900 tracking-tight">
+                        {"L\u1ECBch s\u1EED l\u00E0m b\u00E0i"}
+                    </h2>
+                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                        {"S\u1EAFp x\u1EBFp theo: M\u1EDBi nh\u1EA5t"}
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
                     {loading ? (
                         <div className="p-20 text-center space-y-4">
                             <div className="w-12 h-12 border-4 border-[#5B0019] border-t-transparent rounded-full animate-spin mx-auto"></div>
-                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Đang tải kết quả...</p>
+                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">
+                                {"\u0110ang t\u1EA3i k\u1EBFt qu\u1EA3..."}
+                            </p>
                         </div>
                     ) : filteredResults.length > 0 ? (
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-gray-50/50">
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Môn học & Đề thi</th>
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Câu đúng</th>
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Điểm số</th>
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Trạng thái</th>
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Thời gian nộp</th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                                        {"M\u00F4n h\u1ECDc & \u0110\u1EC1 thi"}
+                                    </th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">
+                                        {"C\u00E2u \u0111\u00FAng"}
+                                    </th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">
+                                        {"\u0110i\u1EC3m s\u1ED1"}
+                                    </th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">
+                                        {"Tr\u1EA1ng th\u00E1i"}
+                                    </th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                                        {"Th\u1EDDi gian n\u1ED9p"}
+                                    </th>
                                     <th className="px-8 py-5 text-right"></th>
                                 </tr>
                             </thead>
@@ -163,11 +187,11 @@ export default function ResultsPage() {
                                         <td className="px-8 py-6 text-center">
                                             {result.status === 'completed' ? (
                                                 <div className="flex items-center justify-center gap-2 text-green-600 font-bold text-xs uppercase tracking-widest">
-                                                    <CheckCircle2 size={14} /> Hoàn thành
+                                                    <CheckCircle2 size={14} /> {"Ho\u00E0n th\u00E0nh"}
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center justify-center gap-2 text-red-500 font-bold text-xs uppercase tracking-widest">
-                                                    <XCircle size={14} /> Vi phạm
+                                                    <XCircle size={14} /> {"Vi ph\u1EA1m"}
                                                 </div>
                                             )}
                                         </td>
@@ -198,8 +222,12 @@ export default function ResultsPage() {
                                 <Search size={40} />
                             </div>
                             <div className="space-y-2">
-                                <p className="text-xl font-black text-gray-900 tracking-tight">Không tìm thấy kết quả</p>
-                                <p className="text-gray-400 font-medium">Bạn chưa hoàn thành bài thi nào hoặc không tìm thấy bài thi phù hợp.</p>
+                                <p className="text-xl font-black text-gray-900 tracking-tight">
+                                    {"Kh\u00F4ng t\u00ECm th\u1EA5y k\u1EBFt qu\u1EA3"}
+                                </p>
+                                <p className="text-gray-400 font-medium">
+                                    {"B\u1EA1n ch\u01B0a ho\u00E0n th\u00E0nh b\u00E0i thi n\u00E0o ho\u1EB7c kh\u00F4ng t\u00ECm th\u1EA5y b\u00E0i thi ph\u00F9 h\u1EE3p."}
+                                </p>
                             </div>
                         </div>
                     )}
