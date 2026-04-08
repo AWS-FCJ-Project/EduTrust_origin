@@ -332,9 +332,7 @@ class DynamoMongoCollection:
 
         return _AsyncCursor(_load)
 
-    def aggregate(
-        self, pipeline: list[dict[str, Any]] | None = None
-    ) -> _AsyncCursor:
+    def aggregate(self, pipeline: list[dict[str, Any]] | None = None) -> _AsyncCursor:
         async def _load():
             items = await self._scan_all()
             current: list[dict[str, Any]] = list(items)
@@ -552,9 +550,7 @@ class DynamoDatabase:
         if self._resource is not None:
             return self._resource
 
-        region = (
-            app_config.AWS_REGION or "ap-southeast-1"
-        ).strip() or "ap-southeast-1"
+        region = (app_config.AWS_REGION or "ap-southeast-1").strip() or "ap-southeast-1"
         client_kwargs: dict[str, Any] = {
             "region_name": region,
             "config": Config(retries={"max_attempts": 10, "mode": "standard"}),

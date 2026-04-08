@@ -5,6 +5,14 @@ from src.database import db
 otp_collection = db["otps"]
 
 
+def _to_epoch_seconds(value) -> int:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return int(value.timestamp())
+    return int(value)
+
+
 async def save_otp(email: str, otp: str, purpose: str, expire_seconds: int = 300):
     expire_at_dt = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
     expire_at = int(expire_at_dt.timestamp())
@@ -30,7 +38,7 @@ async def verify_otp(email: str, otp: str, purpose: str) -> bool:
     if not doc:
         return False
 
-    expire_at = int(doc["expire_at"])
+    expire_at = _to_epoch_seconds(doc["expire_at"])
     now_ts = int(datetime.now(timezone.utc).timestamp())
 
     if expire_at < now_ts:
