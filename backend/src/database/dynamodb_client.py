@@ -80,6 +80,11 @@ class DynamoDBClient:
         if condition:
             params["ConditionExpression"] = condition
         if extra:
+            # Merge ExpressionAttributeValues instead of overwriting
+            if "ExpressionAttributeValues" in extra:
+                params["ExpressionAttributeValues"].update(
+                    extra.pop("ExpressionAttributeValues")
+                )
             params.update(extra)
         return await asyncio.to_thread(self.client.update_item, **params)
 
