@@ -168,15 +168,16 @@ class DynamoDBClient:
         return [self._deserialize(item) for item in raw_items]
 
     async def batch_write(self, table: str, items: list[dict]) -> list[dict]:
-        resource = boto3.resource("dynamodb", **self.client_kwargs())
-        table_resource = resource.Table(self.table_name(table))
-
-        def _write_batch() -> None:
-            with table_resource.batch_writer() as batch:
-                for item in items:
-                    batch.put_item(Item=item)
-
-        await asyncio.to_thread(_write_batch)
+        table_name = self.table_name(table)
+        chunks = [items[i : i + 25] for i in range(0, len(items), 25)]
+        for chunk in chunks:
+            put_requests = [
+                {"PutRequest": {"Item": self._serialize(item)}} for item in chunk
+            ]
+            await asyncio.to_thread(
+                self.client.batch_write_item,
+                RequestItems={table_name: put_requests},
+            )
         return []
 
     def _serialize(self, item: dict) -> dict:
