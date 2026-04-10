@@ -121,16 +121,16 @@ class ExamRepository:
             new_highest_score = max(current_highest_score, score)
 
             # Build condition expression for optimistic locking.
-            # Use fixed-precision strings to ensure "0" and "0.0" don't mismatch.
-            fmt = lambda v: f"{float(v):.1f}"
+            # Use str() so condition values match stored values exactly.
+            # Stored values are plain "0", "100", etc. — fmt with ".1f" would produce "0.0" and break the condition.
             condition = "submission_count = :old_sc AND score_total = :old_st AND highest_score = :old_hs"
             expr_values = {
                 ":old_sc": {"S": str(current_submission_count)},
-                ":old_st": {"S": fmt(current_score_total)},
-                ":old_hs": {"S": fmt(current_highest_score)},
+                ":old_st": {"S": str(current_score_total)},
+                ":old_hs": {"S": str(current_highest_score)},
                 ":new_sc": {"S": str(new_submission_count)},
-                ":new_st": {"S": fmt(new_score_total)},
-                ":new_hs": {"S": fmt(new_highest_score)},
+                ":new_st": {"S": str(new_score_total)},
+                ":new_hs": {"S": str(new_highest_score)},
             }
 
             try:
