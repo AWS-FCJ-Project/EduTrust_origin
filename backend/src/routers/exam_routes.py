@@ -488,7 +488,25 @@ async def get_all_results_summary(
     user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
     if role == "teacher":
-        exams = await persistence.exams.list_by_teacher(user_id)
+        # Include exams created by the teacher + exams for classes they teach (homeroom + subject)
+        teacher_exams = await persistence.exams.list_by_teacher(user_id)
+
+        # Get all classes the teacher teaches (homeroom or subject)
+        teacher_classes = await persistence.classes.list_by_teacher_any_role(user_id)
+        class_ids = [c.get("class_id") for c in teacher_classes if c.get("class_id")]
+
+        class_exam_lists = await asyncio.gather(
+            *[persistence.exams.list_by_class(cid) for cid in sorted(set(class_ids))]
+        )
+        class_exams = [e for sublist in class_exam_lists for e in sublist]
+
+        # Merge and deduplicate
+        merged: dict[str, dict] = {}
+        for e in teacher_exams + class_exams:
+            eid = e.get("exam_id") or e.get("id")
+            if eid:
+                merged[eid] = e
+        exams = list(merged.values())
     else:
         exams = await persistence.exams.list_all()
 
@@ -507,12 +525,12 @@ async def get_all_results_summary(
 
         summary.append(
             ExamResultSummaryList(
-                id=exam_id,
+                id=exam_id or "",
                 title=exam.get("title", ""),
                 subject=exam.get("subject", ""),
                 class_id=class_id,
                 class_name=cls.get("name") if cls else "N/A",
-                grade=cls.get("grade") if cls else "N/A",
+                grade=str(cls.get("grade")) if cls else "N/A",
                 total_submissions=submission_count,
                 average_score=avg_score,
                 highest_score=highest_score,
@@ -635,11 +653,14 @@ async def get_exam(
                 "end_time": end_time,
             }
 
-        # Student can access exam content
+        # Student can access exam content — add server-authoritative time fields
+        seconds_left = max(0, int((end_dt - now).total_seconds()))
         return {
             **exam_response_helper(exam, include_secret=False),
             "is_locked": False,
             "lock_reason": None,
+            "server_time": now.isoformat(),
+            "seconds_left": seconds_left,
         }
 
     include_secret = role in ["teacher", "admin"]

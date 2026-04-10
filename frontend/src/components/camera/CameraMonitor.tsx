@@ -73,7 +73,6 @@ export default function CameraMonitor({
                 });
                 sessionRef.current = session;
                 setStatus("Ready");
-                console.log("YOLOv8 Loaded in CameraMonitor");
             } catch (err) {
                 console.error(err);
                 setStatus("Model Error");

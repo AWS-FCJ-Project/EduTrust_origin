@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 interface UseProctoringLockdownOptions {
   isActive: boolean;
   onFullscreenExit?: () => void;
+  /** Called when requestFullscreen() rejects (e.g. permission denied). */
+  onFullscreenReenterFailed?: () => void;
   /** CSS selector — right-click is blocked only on matching elements.
    *  If omitted, right-click is blocked on the entire document. */
   contentSelector?: string;
@@ -18,15 +20,17 @@ const BLOCKED_CTRL_SHIFT = ["i", "j", "c"] as const;
 export function useProctoringLockdown({
   isActive,
   onFullscreenExit,
+  onFullscreenReenterFailed,
   contentSelector,
 }: UseProctoringLockdownOptions) {
-  // Keep the latest callback in a ref so the fullscreenchange listener
-  // always calls the current version without needing to rebuild the listener.
+  // Keep the latest callbacks in refs so the fullscreenchange listener
+  // always calls the current versions without needing to rebuild the listener.
   const onFullscreenExitRef = useRef(onFullscreenExit);
+  const onFullscreenReenterFailedRef = useRef(onFullscreenReenterFailed);
 
   useEffect(() => {
-    // Update the ref inside the effect — avoids the "cannot update ref during render" ESLint error.
     onFullscreenExitRef.current = onFullscreenExit;
+    onFullscreenReenterFailedRef.current = onFullscreenReenterFailed;
   });
 
   useEffect(() => {
@@ -77,7 +81,15 @@ export function useProctoringLockdown({
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
         onFullscreenExitRef.current?.();
-        document.documentElement.requestFullscreen?.();
+        const req = document.documentElement.requestFullscreen?.();
+        if (req) {
+          req.then(() => {
+            // re-entered fullscreen automatically
+          }).catch(() => {
+            // Permission denied or not allowed — degrade gracefully
+            onFullscreenReenterFailedRef.current?.();
+          });
+        }
       }
     };
 

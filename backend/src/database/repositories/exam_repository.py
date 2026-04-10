@@ -36,8 +36,8 @@ class ExamRepository:
             "secret_key": doc.get("secret_key") or "",
             "questions": doc.get("questions", []),
             "submission_count": str(doc.get("submission_count", 0)),
-            "score_total": str(doc.get("score_total", 0)),
-            "highest_score": str(doc.get("highest_score", 0)),
+            "score_total": str(doc.get("score_total", 0.0)),
+            "highest_score": str(doc.get("highest_score", 0.0)),
             "violation_total": str(doc.get("violation_total", 0)),
         }
         item = {k: v for k, v in item.items() if v != "" and v is not None}
@@ -120,15 +120,17 @@ class ExamRepository:
             new_score_total = current_score_total + score
             new_highest_score = max(current_highest_score, score)
 
-            # Build condition expression for optimistic locking
+            # Build condition expression for optimistic locking.
+            # Use fixed-precision strings to ensure "0" and "0.0" don't mismatch.
+            fmt = lambda v: f"{float(v):.1f}"
             condition = "submission_count = :old_sc AND score_total = :old_st AND highest_score = :old_hs"
             expr_values = {
                 ":old_sc": {"S": str(current_submission_count)},
-                ":old_st": {"S": str(current_score_total)},
-                ":old_hs": {"S": str(current_highest_score)},
+                ":old_st": {"S": fmt(current_score_total)},
+                ":old_hs": {"S": fmt(current_highest_score)},
                 ":new_sc": {"S": str(new_submission_count)},
-                ":new_st": {"S": str(new_score_total)},
-                ":new_hs": {"S": str(new_highest_score)},
+                ":new_st": {"S": fmt(new_score_total)},
+                ":new_hs": {"S": fmt(new_highest_score)},
             }
 
             try:
