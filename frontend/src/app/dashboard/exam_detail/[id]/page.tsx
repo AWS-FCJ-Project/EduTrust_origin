@@ -250,7 +250,21 @@ const ExamPage = () => {
         }
     };
 
-    const handleViolation = useCallback(() => {
+    // For CameraMonitor - camera already reports to backend, just update UI count
+    const handleCameraViolation = useCallback((violations: string[]) => {
+        if (examStep !== 'exam' || isGracePeriod || isSubmitted) return;
+        setViolationCount(prev => {
+            const n = prev + violations.length;
+            if (n >= 4) {
+                setShowCheatModal(true);
+                submitExam("failed");
+            }
+            return n;
+        });
+    }, [examStep, isGracePeriod, isSubmitted, submitExam]);
+
+    // For ProctoringLockdown - TAB_SWITCH, fullscreen exit etc. need to report to backend
+    const handleProctoringViolation = useCallback(async (violationType: string = "FULLSCREEN_EXIT") => {
         if (examStep !== 'exam' || isGracePeriod || isSubmitted) return;
         setViolationCount(prev => {
             const n = prev + 1;
@@ -260,7 +274,27 @@ const ExamPage = () => {
             }
             return n;
         });
-    }, [examStep, isGracePeriod, isSubmitted, submitExam]);
+
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+            await fetch(`${apiUrl}/camera/log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "DETECTION_LOG",
+                    violations: [],
+                    violation_codes: [violationType],
+                    person_count: 0,
+                    timestamp: new Date().toISOString(),
+                    image: null,
+                    exam_id: examId,
+                    student_id: user.id
+                })
+            });
+        } catch (e) {
+            console.warn("Failed to log violation:", e);
+        }
+    }, [examStep, isGracePeriod, isSubmitted, submitExam, examId, user.id]);
 
     // Deactivate lockdown when exam is submitted
     useEffect(() => {
@@ -791,7 +825,7 @@ const ExamPage = () => {
                 {user?.id && (
                     <div ref={cameraSourceRef} className="w-full h-full">
                         <CameraMonitor
-                            onViolation={handleViolation}
+                            onViolation={handleCameraViolation}
                             onStatusChange={setCameraStatus}
                             isCheck={examStep !== 'exam'}
                             isActive={!isSubmitted && !showCheatModal}
@@ -801,11 +835,12 @@ const ExamPage = () => {
                         <ProctoringLockdown
                             isActive={isLockdownActive && examStep === 'exam'}
                             onFullscreenExit={() => {
-                                handleViolation();
+                                handleProctoringViolation("FULLSCREEN_EXIT");
                                 setShowFullscreenWarning(true);
                                 setTimeout(() => setShowFullscreenWarning(false), 3000);
                             }}
                             onFullscreenReenterFailed={() => setFullscreenBlocked(true)}
+                            onViolation={handleProctoringViolation}
                             contentSelector="main"
                         />
                     </div>

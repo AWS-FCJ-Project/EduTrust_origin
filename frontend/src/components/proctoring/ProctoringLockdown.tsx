@@ -10,6 +10,8 @@ interface UseProctoringLockdownOptions {
   /** CSS selector — right-click is blocked only on matching elements.
    *  If omitted, right-click is blocked on the entire document. */
   contentSelector?: string;
+  /** Called when a proctoring violation is detected (e.g. TAB_SWITCH). */
+  onViolation?: (type: string) => void;
 }
 
 const BLOCKED_KEYS = ["F12", "F11", "Escape", "PrintScreen"] as const;
@@ -22,15 +24,18 @@ export function useProctoringLockdown({
   onFullscreenExit,
   onFullscreenReenterFailed,
   contentSelector,
+  onViolation,
 }: UseProctoringLockdownOptions) {
   // Keep the latest callbacks in refs so the fullscreenchange listener
   // always calls the current versions without needing to rebuild the listener.
   const onFullscreenExitRef = useRef(onFullscreenExit);
   const onFullscreenReenterFailedRef = useRef(onFullscreenReenterFailed);
+  const onViolationRef = useRef(onViolation);
 
   useEffect(() => {
     onFullscreenExitRef.current = onFullscreenExit;
     onFullscreenReenterFailedRef.current = onFullscreenReenterFailed;
+    onViolationRef.current = onViolation;
   });
 
   useEffect(() => {
@@ -93,14 +98,23 @@ export function useProctoringLockdown({
       }
     };
 
+    // Detect tab/window switch (visibilitychange fires when user switches tabs or minimizes)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        onViolationRef.current?.("TAB_SWITCH");
+      }
+    };
+
     document.addEventListener("keydown", handler, true);
     document.addEventListener("contextmenu", contextHandler, true);
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       document.removeEventListener("keydown", handler, true);
       document.removeEventListener("contextmenu", contextHandler, true);
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isActive, contentSelector]);
 }
