@@ -265,7 +265,7 @@ const ExamPage = () => {
 
     // For ProctoringLockdown - TAB_SWITCH, fullscreen exit etc. need to report to backend
     const handleProctoringViolation = useCallback(async (violationType: string = "FULLSCREEN_EXIT") => {
-        if (examStep !== 'exam' || isGracePeriod || isSubmitted) return;
+        if (examStep !== 'exam' || isGracePeriod || isSubmitted || !user?.id) return;
         setViolationCount(prev => {
             const n = prev + 1;
             if (n >= 4) {
@@ -294,7 +294,7 @@ const ExamPage = () => {
         } catch (e) {
             console.warn("Failed to log violation:", e);
         }
-    }, [examStep, isGracePeriod, isSubmitted, submitExam, examId, user.id]);
+    }, [examStep, isGracePeriod, isSubmitted, submitExam, examId, user?.id]);
 
     // Deactivate lockdown when exam is submitted
     useEffect(() => {
