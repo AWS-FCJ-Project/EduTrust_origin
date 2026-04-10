@@ -99,7 +99,7 @@ class ExamRepository:
     ) -> list[dict]:
         return await self.list_by_teacher(teacher_id)
 
-    async def update_counters_safe(self, exam_id: str, score: float) -> bool:
+    async def update_counters_safe(self, exam_id: str, score: float, violation_count: int = 0) -> bool:
         """
         Atomically update exam counters with optimistic locking.
         Retries up to 5 times on conditional check failure.
@@ -112,25 +112,33 @@ class ExamRepository:
             if not exam:
                 return False
 
-            current_submission_count = int(exam.get("submission_count", 0) or 0)
-            current_score_total = float(exam.get("score_total", 0) or 0)
-            current_highest_score = float(exam.get("highest_score", 0) or 0)
+            old_sc_str = str(exam.get("submission_count", "0") or "0")
+            old_st_str = str(exam.get("score_total", "0") or "0")
+            old_hs_str = str(exam.get("highest_score", "0") or "0")
+            old_vt_str = str(exam.get("violation_total", "0") or "0")
+
+            current_submission_count = int(old_sc_str)
+            current_score_total = float(old_st_str)
+            current_highest_score = float(old_hs_str)
+            current_violation_total = int(old_vt_str)
 
             new_submission_count = current_submission_count + 1
             new_score_total = current_score_total + score
             new_highest_score = max(current_highest_score, score)
+            new_violation_total = current_violation_total + violation_count
 
             # Build condition expression for optimistic locking.
-            # Use str() so condition values match stored values exactly.
-            # Stored values are plain "0", "100", etc. — fmt with ".1f" would produce "0.0" and break the condition.
-            condition = "submission_count = :old_sc AND score_total = :old_st AND highest_score = :old_hs"
+            # Use original string representations so condition values match stored values exactly.
+            condition = "submission_count = :old_sc AND score_total = :old_st AND highest_score = :old_hs AND violation_total = :old_vt"
             expr_values = {
-                ":old_sc": {"S": str(current_submission_count)},
-                ":old_st": {"S": str(current_score_total)},
-                ":old_hs": {"S": str(current_highest_score)},
+                ":old_sc": {"S": old_sc_str},
+                ":old_st": {"S": old_st_str},
+                ":old_hs": {"S": old_hs_str},
+                ":old_vt": {"S": old_vt_str},
                 ":new_sc": {"S": str(new_submission_count)},
                 ":new_st": {"S": str(new_score_total)},
                 ":new_hs": {"S": str(new_highest_score)},
+                ":new_vt": {"S": str(new_violation_total)},
             }
 
             try:
@@ -141,6 +149,7 @@ class ExamRepository:
                         "submission_count": str(new_submission_count),
                         "score_total": str(new_score_total),
                         "highest_score": str(new_highest_score),
+                        "violation_total": str(new_violation_total),
                     },
                     condition=condition,
                     extra={"ExpressionAttributeValues": expr_values},
@@ -150,6 +159,10 @@ class ExamRepository:
                 # ConditionalCheckFailed - retry
                 if "ConditionalCheckFailed" in str(e) and attempt < MAX_RETRIES - 1:
                     continue
+                import logging
+                logging.getLogger(__name__).warning("update_counters_safe failed: %s", e)
                 return False
 
+        import logging
+        logging.getLogger(__name__).error("update_counters_safe exhausted max retries for exam %s", exam_id)
         return False

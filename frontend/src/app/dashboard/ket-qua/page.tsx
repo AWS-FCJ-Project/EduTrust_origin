@@ -89,7 +89,7 @@ export default function ResultsPage() {
                     </div>
                     <div>
                         <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Điểm trung bình</p>
-                        <p className="text-3xl font-black text-gray-900">{averageScore.toFixed(1)}</p>
+                        <p className="text-3xl font-black text-gray-900">{(Math.round(averageScore * 100) / 100).toFixed(2)}</p>
                     </div>
                 </div>
 
@@ -150,7 +150,7 @@ export default function ResultsPage() {
                                         <td className="px-8 py-6 text-center">
                                             <div className="flex flex-col items-center">
                                                 <span className={`text-2xl font-black ${result.score >= 8 ? 'text-green-600' : result.score >= 5 ? 'text-[#5B0019]' : 'text-red-500'}`}>
-                                                    {result.score.toFixed(1)}
+                                                    {(Math.round(result.score * 100) / 100).toFixed(2)}
                                                 </span>
                                                 <div className="w-8 h-1 bg-gray-100 rounded-full mt-1 overflow-hidden">
                                                     <div
