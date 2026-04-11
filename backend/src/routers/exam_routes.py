@@ -405,7 +405,9 @@ async def submit_exam(
         if selected is not None and selected == question.get("correct"):
             correct_count += 1
 
-    score = round((correct_count / total_questions) * 10, 2) if total_questions > 0 else 0.0
+    score = (
+        round((correct_count / total_questions) * 10, 2) if total_questions > 0 else 0.0
+    )
 
     now = datetime.now(timezone.utc)
     submission_doc = {
@@ -425,7 +427,9 @@ async def submit_exam(
         await persistence.violations.delete_by_exam_student(exam_id, user_id)
 
     # Update exam counters atomically with optimistic locking
-    await persistence.exams.update_counters_safe(exam_id, score, submission_data.violation_count)
+    await persistence.exams.update_counters_safe(
+        exam_id, score, submission_data.violation_count
+    )
 
     return ExamSubmissionResponse(
         exam_id=exam_id,
