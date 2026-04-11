@@ -99,7 +99,9 @@ class ExamRepository:
     ) -> list[dict]:
         return await self.list_by_teacher(teacher_id)
 
-    async def update_counters_safe(self, exam_id: str, score: float, violation_count: int = 0) -> bool:
+    async def update_counters_safe(
+        self, exam_id: str, score: float, violation_count: int = 0
+    ) -> bool:
         """
         Atomically update exam counters with optimistic locking.
         Retries up to 5 times on conditional check failure.
@@ -160,9 +162,15 @@ class ExamRepository:
                 if "ConditionalCheckFailed" in str(e) and attempt < MAX_RETRIES - 1:
                     continue
                 import logging
-                logging.getLogger(__name__).warning("update_counters_safe failed: %s", e)
+
+                logging.getLogger(__name__).warning(
+                    "update_counters_safe failed: %s", e
+                )
                 return False
 
         import logging
-        logging.getLogger(__name__).error("update_counters_safe exhausted max retries for exam %s", exam_id)
+
+        logging.getLogger(__name__).error(
+            "update_counters_safe exhausted max retries for exam %s", exam_id
+        )
         return False
