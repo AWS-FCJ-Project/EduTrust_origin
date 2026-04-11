@@ -3,25 +3,39 @@ import logging
 from typing import Any, Dict, Optional
 
 import redis
-from src.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
 
 class RedisClient:
-    """Client for Redis cache operations."""
+    """Redis connection management."""
 
-    def __init__(self):
-        self.key_prefix = app_config.REDIS_KEY_PREFIX
-        self.host = app_config.REDIS_CLIENT_HOST
-        self.port = app_config.REDIS_PORT
-        self.db = app_config.REDIS_DB
-        self.password = app_config.REDIS_CLIENT_PASSWORD
-        self.use_tls = app_config.REDIS_TLS
-        self.chat_ttl = app_config.REDIS_CHAT_TTL
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        password: Optional[str] = None,
+        port: Optional[int] = None,
+        db: Optional[int] = None,
+        tls: bool = False,
+        key_prefix: Optional[str] = None,
+        chat_ttl: Optional[int] = None,
+    ):
+        from src.app_config import app_config
+
+        self.host = host or app_config.REDIS_CLIENT_HOST
+        self.port = port or app_config.REDIS_PORT
+        self.db = db if db is not None else app_config.REDIS_DB
+        self.password = password or app_config.REDIS_CLIENT_PASSWORD
+        self.use_tls = tls if tls is not None else app_config.REDIS_TLS
+        self.key_prefix = key_prefix or app_config.REDIS_KEY_PREFIX
+        self.chat_ttl = chat_ttl if chat_ttl is not None else app_config.REDIS_CHAT_TTL
 
         self._is_connected = False
-        self.client = redis.Redis(
+        self._client: Optional[redis.Redis] = None
+
+    def _create_client(self) -> redis.Redis:
+        """Create Redis client instance."""
+        return redis.Redis(
             host=self.host,
             port=self.port,
             db=self.db,
@@ -33,16 +47,11 @@ class RedisClient:
             socket_connect_timeout=5,
         )
 
-    def _ttl_seconds(self) -> Optional[int]:
-        """Get TTL in seconds for cache expiration."""
-        if not isinstance(self.chat_ttl, int):
-            return None
-        return self.chat_ttl if self.chat_ttl > 0 else None
-
     def connect_to_database(self) -> bool:
         """Connect to Redis server."""
         try:
-            ping_result = self.client.ping()
+            self._client = self._create_client()
+            ping_result = self._client.ping()
             self._is_connected = True
             logger.info(f"Redis ping result: {ping_result}")
             logger.info("Connected to Redis")
@@ -56,13 +65,20 @@ class RedisClient:
         """Check if Redis is connected."""
         return self._is_connected
 
-    def close_connection(self) -> None:
+    def close(self) -> None:
         """Close Redis connection."""
-        try:
-            self.client.close()
-            self._is_connected = False
-        except Exception as e:
-            logger.error(f"Error closing Redis: {e}")
+        if self._client is not None:
+            try:
+                self._client.close()
+                self._is_connected = False
+            except Exception as e:
+                logger.error(f"Error closing Redis: {e}")
+
+    def _ttl_seconds(self) -> Optional[int]:
+        """Get TTL in seconds for cache expiration."""
+        if not isinstance(self.chat_ttl, int):
+            return None
+        return self.chat_ttl if self.chat_ttl > 0 else None
 
     def _serialize(self, obj: Any) -> Any:
         """Recursively serialize objects for JSON storage (handles datetime)."""
@@ -76,10 +92,10 @@ class RedisClient:
 
     def set_json(self, key: str, value: Dict, expiration: Optional[int] = None) -> bool:
         """Store dictionary as JSON in Redis."""
-        if not self._is_connected:
+        if not self._is_connected or self._client is None:
             return False
         try:
-            self.client.set(key, json.dumps(value, ensure_ascii=False), ex=expiration)
+            self._client.set(key, json.dumps(value, ensure_ascii=False), ex=expiration)
             return True
         except Exception as e:
             logger.error(f"Set error: {e}")
@@ -87,10 +103,10 @@ class RedisClient:
 
     def get_json(self, key: str) -> Optional[Dict]:
         """Retrieve JSON dictionary from Redis."""
-        if not self._is_connected:
+        if not self._is_connected or self._client is None:
             return None
         try:
-            val = self.client.get(key)
+            val = self._client.get(key)
             return json.loads(val) if val else None
         except Exception as e:
             logger.error(f"Get error: {e}")
@@ -98,10 +114,10 @@ class RedisClient:
 
     def delete(self, key: str) -> bool:
         """Delete a key from Redis."""
-        if not self._is_connected:
+        if not self._is_connected or self._client is None:
             return False
         try:
-            return self.client.delete(key) > 0
+            return self._client.delete(key) > 0
         except Exception as e:
             logger.error(f"Delete error: {e}")
             return False

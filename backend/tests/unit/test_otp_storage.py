@@ -2,93 +2,99 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from src.auth.otp_storage import cleanup_expired_otps, save_otp, verify_otp
+from src.auth import otp_storage as otp_module
 
 
 @pytest.fixture
-def mock_otp_collection():
-    with patch("src.auth.otp_storage.otp_collection") as mock_col:
-        yield mock_col
+def mock_otp_repo():
+    return AsyncMock()
+
+
+@pytest.fixture
+def otp_repo_getter(mock_otp_repo):
+    otp_module._set_otp_repo_getter(lambda: mock_otp_repo)
+    yield mock_otp_repo
+    # Reset to default after test
+    otp_module._otp_repo_getter = None
 
 
 @pytest.mark.asyncio
-async def test_verify_otp_not_found(mock_otp_collection):
-    mock_otp_collection.find_one = AsyncMock(return_value=None)
+async def test_verify_otp_not_found(otp_repo_getter):
+    otp_repo_getter.get_otp = AsyncMock(return_value=None)
 
-    result = await verify_otp("test@example.com", "123456", "login")
+    result = await otp_module.verify_otp("test@example.com", "123456", "login")
     assert result is False
-    mock_otp_collection.find_one.assert_awaited_once_with(
-        {"email": "test@example.com", "purpose": "login", "otp": "123456"}
+    otp_repo_getter.get_otp.assert_awaited_once_with(
+        "test@example.com", "login", "123456"
     )
 
 
 @pytest.mark.asyncio
-async def test_verify_otp_expired(mock_otp_collection):
+async def test_verify_otp_expired(otp_repo_getter):
     expired_time = datetime.now(timezone.utc) - timedelta(minutes=5)
     mock_doc = {
-        "_id": "doc_id",
-        "expire_at": expired_time,
         "email": "test@example.com",
         "purpose": "login",
         "otp": "123456",
+        "expire_at": expired_time,
     }
-    mock_otp_collection.find_one = AsyncMock(return_value=mock_doc)
-    mock_otp_collection.delete_one = AsyncMock()
+    otp_repo_getter.get_otp = AsyncMock(return_value=mock_doc)
+    otp_repo_getter.delete_otp = AsyncMock()
 
-    result = await verify_otp("test@example.com", "123456", "login")
+    result = await otp_module.verify_otp("test@example.com", "123456", "login")
     assert result is False
-    mock_otp_collection.delete_one.assert_awaited_once_with({"_id": "doc_id"})
+    otp_repo_getter.delete_otp.assert_awaited_once_with("test@example.com", "login")
 
 
 @pytest.mark.asyncio
-async def test_verify_otp_valid_no_tz(mock_otp_collection):
+async def test_verify_otp_valid_no_tz(otp_repo_getter):
     future_time = datetime.now() + timedelta(minutes=5)  # naive datetime
     mock_doc = {
-        "_id": "doc_id",
-        "expire_at": future_time,
         "email": "test@example.com",
         "purpose": "login",
         "otp": "123456",
+        "expire_at": future_time,
     }
-    mock_otp_collection.find_one = AsyncMock(return_value=mock_doc)
-    mock_otp_collection.delete_one = AsyncMock()
+    otp_repo_getter.get_otp = AsyncMock(return_value=mock_doc)
+    otp_repo_getter.delete_otp = AsyncMock()
 
-    result = await verify_otp("test@example.com", "123456", "login")
+    result = await otp_module.verify_otp("test@example.com", "123456", "login")
     assert result is True
-    mock_otp_collection.delete_one.assert_awaited_once_with({"_id": "doc_id"})
+    otp_repo_getter.delete_otp.assert_awaited_once_with("test@example.com", "login")
 
 
 @pytest.mark.asyncio
-async def test_verify_otp_valid_with_tz(mock_otp_collection):
+async def test_verify_otp_valid_with_tz(otp_repo_getter):
     future_time = datetime.now(timezone.utc) + timedelta(minutes=5)
     mock_doc = {
-        "_id": "doc_id",
-        "expire_at": future_time,
         "email": "test@example.com",
         "purpose": "login",
         "otp": "123456",
+        "expire_at": future_time,
     }
-    mock_otp_collection.find_one = AsyncMock(return_value=mock_doc)
-    mock_otp_collection.delete_one = AsyncMock()
+    otp_repo_getter.get_otp = AsyncMock(return_value=mock_doc)
+    otp_repo_getter.delete_otp = AsyncMock()
 
-    result = await verify_otp("test@example.com", "123456", "login")
+    result = await otp_module.verify_otp("test@example.com", "123456", "login")
     assert result is True
-    mock_otp_collection.delete_one.assert_awaited_once_with({"_id": "doc_id"})
+    otp_repo_getter.delete_otp.assert_awaited_once_with("test@example.com", "login")
 
 
 @pytest.mark.asyncio
-async def test_save_otp(mock_otp_collection):
-    mock_otp_collection.update_one = AsyncMock()
+async def test_save_otp(otp_repo_getter):
+    otp_repo_getter.save_otp = AsyncMock()
 
-    await save_otp("test@example.com", "123456", "login", expire_seconds=300)
+    await otp_module.save_otp("test@example.com", "123456", "login", expire_seconds=300)
 
-    mock_otp_collection.update_one.assert_awaited_once()
+    otp_repo_getter.save_otp.assert_awaited_once_with(
+        "test@example.com", "login", "123456", 300
+    )
 
 
 @pytest.mark.asyncio
-async def test_cleanup_expired_otps(mock_otp_collection):
-    mock_otp_collection.delete_many = AsyncMock()
+async def test_cleanup_expired_otps(otp_repo_getter):
+    otp_repo_getter.delete_expired_otps = AsyncMock()
 
-    await cleanup_expired_otps()
+    await otp_module.cleanup_expired_otps()
 
-    mock_otp_collection.delete_many.assert_awaited_once()
+    otp_repo_getter.delete_expired_otps.assert_awaited_once()

@@ -1,7 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
-from src.database import users_collection
 
 security = HTTPBearer()
 
@@ -24,7 +23,7 @@ async def get_current_user_email(
     claims: dict = Depends(get_current_auth_claims),
 ):
     email = claims.get("email")
-    if email is None:
+    if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -33,31 +32,31 @@ async def get_current_user_email(
     return email
 
 
-async def get_current_user(claims: dict = Depends(get_current_auth_claims)):
-    cognito_sub = claims.get("sub")
+async def get_current_user(
+    request: Request,
+    claims: dict = Depends(get_current_auth_claims),
+):
+    persistence = request.app.state.persistence
     email = claims.get("email")
-    cognito_groups = claims.get("cognito:groups") or []
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    user = None
-    if cognito_sub:
-        user = await users_collection.find_one({"cognito_sub": cognito_sub})
-
-    if user is None and email:
-        user = await users_collection.find_one({"email": email})
-        if user is not None and cognito_sub and user.get("cognito_sub") != cognito_sub:
-            await users_collection.update_one(
-                {"_id": user["_id"]},
-                {"$set": {"cognito_sub": cognito_sub}},
-            )
-            user["cognito_sub"] = cognito_sub
-
+    user = await persistence.users.get_by_email(email)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
 
+    cognito_groups = claims.get("cognito:groups") or []
     if not user.get("role") and cognito_groups:
         user["role"] = cognito_groups[0]
+
+    if "_id" not in user and user.get("user_id"):
+        user["_id"] = user.get("user_id")
 
     return user

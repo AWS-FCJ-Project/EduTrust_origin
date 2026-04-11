@@ -1,15 +1,18 @@
-from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 
 class SubjectTeacher(BaseModel):
+    """Schema for subject teacher."""
+
     teacher_id: str
     subject: str
 
 
 class ClassCreate(BaseModel):
+    """Schema for creating a new class."""
+
     name: str
     grade: int
     school_year: str
@@ -19,6 +22,8 @@ class ClassCreate(BaseModel):
 
 
 class ClassUpdate(BaseModel):
+    """Schema for updating a class."""
+
     name: Optional[str] = None
     grade: Optional[int] = None
     school_year: Optional[str] = None
@@ -28,64 +33,58 @@ class ClassUpdate(BaseModel):
 
 
 class ClassResponse(BaseModel):
+    """Schema for class response."""
+
     id: str = Field(..., alias="_id")
     name: str
     grade: int
     school_year: str
     homeroom_teacher_id: Optional[str] = None
     subject_teachers: List[SubjectTeacher] = []
+    student_count: int = 0
     status: str = "inactive"
 
     class Config:
         populate_by_name = True
 
 
-class ExamCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    subject: str
-    class_id: str
-    start_time: datetime
-    end_time: datetime
-    duration: int = 60  # Default to 60 minutes
-    exam_type: str = "15-minute quiz"
-    secret_key: Optional[str] = None
-    questions: List[dict] = []  # Keeping it flexible for now
+class ClassCreateResponse(BaseModel):
+    """Response schema for class creation."""
+
+    id: str
+    message: str = "Class created successfully"
 
 
-class ExamResponse(ExamCreate):
-    id: str = Field(..., alias="_id")
-    teacher_id: str
+class ClassUpdateResponse(BaseModel):
+    """Response schema for class update."""
 
-    class Config:
-        populate_by_name = True
+    message: str = "Class updated successfully"
 
 
-class ExamUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    subject: Optional[str] = None
-    class_id: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    duration: Optional[int] = None
-    exam_type: Optional[str] = None
-    secret_key: Optional[str] = None
-    questions: Optional[List[dict]] = None
+class ClassDeleteResponse(BaseModel):
+    """Response schema for class deletion."""
+
+    message: str = "Class deleted successfully"
 
 
-class ExamSubmission(BaseModel):
-    answers: dict  # {question_index: selected_option_index}
-    violation_count: int = 0
-    status: str = "completed"  # "completed" or "failed"
+class StudentResponse(BaseModel):
+    """Schema for student response."""
+
+    id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: str
+    class_name: Optional[str] = None
+    grade: Optional[int] = None
 
 
-class ExamStatusResponse(BaseModel):
-    is_submitted: bool
-    status: Optional[str] = None  # "completed", "failed", or None
-    submitted_at: Optional[datetime] = None
-    violation_count: int = 0
+class AddStudentResponse(BaseModel):
+    """Response schema for adding student to class."""
+
+    message: str = "Student added to class"
 
 
-class ExamKeyVerify(BaseModel):
-    key: str
+class RemoveStudentResponse(BaseModel):
+    """Response schema for removing student from class."""
+
+    message: str = "Student removed from class"

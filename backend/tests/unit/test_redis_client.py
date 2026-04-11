@@ -1,4 +1,4 @@
-from src.memory.redis_client import RedisClient
+from src.database.redis_client import RedisClient
 
 
 def test_build_key_without_prefix_does_not_crash():

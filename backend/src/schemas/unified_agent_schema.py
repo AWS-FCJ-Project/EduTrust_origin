@@ -1,7 +1,7 @@
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from src.memory.conversation_handler import ConversationHandler
+from src.conversation.conversation_handler import ConversationHandler
 
 
 class UnifiedAgentRequestSchema(BaseModel):

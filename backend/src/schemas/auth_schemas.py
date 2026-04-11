@@ -14,12 +14,16 @@ from pydantic import (
 
 
 class UserRole(str, Enum):
+    """Enum for user roles."""
+
     student = "student"
     teacher = "teacher"
     admin = "admin"
 
 
 class UserRegister(BaseModel):
+    """Schema for user registration."""
+
     email: EmailStr
     password: str = Field(..., min_length=8)
     name: Optional[str] = None
@@ -49,15 +53,21 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
+    """Schema for user login."""
+
     email: EmailStr
     password: str
 
 
 class ForgotPassword(BaseModel):
+    """Schema for forgot password request."""
+
     email: EmailStr
 
 
 class ResetPassword(BaseModel):
+    """Schema for password reset."""
+
     email: EmailStr
     otp: str
     new_password: str = Field(..., min_length=8)
@@ -77,6 +87,8 @@ class ResetPassword(BaseModel):
 
 
 class UserInDB(BaseModel):
+    """Schema for user stored in database."""
+
     id: Optional[str] = Field(None, alias="_id")
     email: EmailStr
     hashed_password: str
@@ -97,6 +109,8 @@ class UserInDB(BaseModel):
 
 
 class UserInfoResponse(BaseModel):
+    """Schema for user info response."""
+
     id: str
     email: EmailStr
     name: Optional[str] = None
@@ -110,6 +124,8 @@ class UserInfoResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """Schema for updating user info."""
+
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     class_name: Optional[str] = None
@@ -118,7 +134,66 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class StudentResponse(BaseModel):
+    """Schema for student list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+    role: str
+    class_name: Optional[str] = None
+    grade: Optional[int] = None
+
+
+class TeacherClassAssignment(BaseModel):
+    """Schema for teacher class assignment."""
+
+    id: str
+    name: str
+    role: str
+
+
+class TeacherResponse(BaseModel):
+    """Schema for teacher list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+    subjects: List[str] = []
+    assigned_classes: List[TeacherClassAssignment] = []
+    is_assigned: bool = False
+
+
+class AdminResponse(BaseModel):
+    """Schema for admin list response."""
+
+    id: str
+    name: Optional[str] = None
+    email: str
+
+
+class LoginResponse(BaseModel):
+    """Schema for login response."""
+
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+
+    message: str
+
+
+class UpdateUserResponse(BaseModel):
+    """Response for user update."""
+
+    message: str = "User updated successfully"
+
+
 def user_helper(user) -> dict:
+    """Convert user document to user info dict."""
     return {
         "id": str(user["_id"]),
         "email": user["email"],

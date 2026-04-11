@@ -1,38 +1,52 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture(autouse=True)
-def mock_dependencies():
-    with patch("src.main.ConversationHandler"):
-        yield
-
-
 from src.main import app
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    with TestClient(app) as client:
+        yield client
 
 
-def test_root():
+@pytest.fixture
+def mock_persistence():
+    users = SimpleNamespace(get_by_email=AsyncMock())
+    persistence = SimpleNamespace(users=users)
+    app.state.persistence = persistence
+    return persistence
+
+
+def test_root(client):
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"message": "Welcome to the AWS-FCJ-Backend API"}
 
 
-def test_health_check():
+def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy"}
 
 
-def test_me_requires_bearer_token():
+def test_me_requires_bearer_token(client):
     response = client.get("/user-info")
     assert response.status_code in (401, 403)
 
 
-def test_me_returns_user_profile():
+def test_me_returns_user_profile(client, mock_persistence):
+    mock_persistence.users.get_by_email.return_value = {
+        "_id": "user-id-1",
+        "user_id": "user-id-1",
+        "email": "me@example.com",
+        "is_verified": True,
+        "name": "Me",
+        "role": "admin",
+    }
+
     with patch(
         "src.auth.dependencies.cognito_auth_service.verify_token",
         return_value={
@@ -40,20 +54,9 @@ def test_me_returns_user_profile():
             "sub": "cognito-sub-1",
             "token_use": "id",
         },
-    ), patch(
-        "src.auth.dependencies.users_collection.find_one", new_callable=AsyncMock
-    ) as mock_find_one:
-        mock_find_one.return_value = {
-            "_id": "user-id-1",
-            "cognito_sub": "cognito-sub-1",
-            "email": "me@example.com",
-            "is_verified": True,
-            "name": "Me",
-            "role": "admin",
-        }
-
+    ):
         response = client.get(
-            "/user-info", headers={"Authorization": "Bearer cognito-id-token"}
+            "/user-info", headers={"Authorization": "Bearer id-token"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -63,7 +66,9 @@ def test_me_returns_user_profile():
         assert data["role"] == "admin"
 
 
-def test_me_404_when_user_missing():
+def test_me_401_when_user_missing(client, mock_persistence):
+    mock_persistence.users.get_by_email.return_value = None
+
     with patch(
         "src.auth.dependencies.cognito_auth_service.verify_token",
         return_value={
@@ -71,11 +76,7 @@ def test_me_404_when_user_missing():
             "sub": "cognito-sub-2",
             "token_use": "id",
         },
-    ), patch(
-        "src.auth.dependencies.users_collection.find_one", new_callable=AsyncMock
-    ) as mock_find_one:
-        mock_find_one.return_value = None
-
+    ):
         response = client.get(
             "/user-info", headers={"Authorization": "Bearer missing-id-token"}
         )

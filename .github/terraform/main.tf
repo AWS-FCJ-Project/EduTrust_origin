@@ -199,6 +199,16 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "s3-endpoint" }
 }
 
+# DynamoDB Gateway Endpoint (Free, improves DynamoDB access from private subnets)
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
+
+  tags = { Name = "dynamodb-endpoint" }
+}
+
 # ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
@@ -483,6 +493,87 @@ data "aws_iam_policy_document" "kms_secrets_policy" {
   }
 }
 
+data "aws_iam_policy_document" "kms_dynamodb_policy" {
+  # checkov:skip=CKV_AWS_109:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_111:KMS key policy requires resources=["*"] which means "this key" in context. Actions are explicitly scoped.
+  # checkov:skip=CKV_AWS_356:KMS key policy requires resources=["*"] which means "this key" in context. Cannot use specific ARN (circular reference).
+
+  statement {
+    sid    = "AllowRootAdminAccess"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AllowDynamoDBServiceUsage"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["dynamodb.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["dynamodb.${var.aws_region}.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid    = "AllowBackendRoleUsage"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.backend.arn]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = ["*"]
+  }
+}
+
 resource "aws_kms_key" "secrets" {
   description             = "KMS key for encrypting SSM parameters and other secrets"
   deletion_window_in_days = 7
@@ -497,6 +588,22 @@ resource "aws_kms_key" "secrets" {
 resource "aws_kms_alias" "secrets" {
   name          = "alias/${var.ec2_instance_name}-secrets"
   target_key_id = aws_kms_key.secrets.key_id
+}
+
+resource "aws_kms_key" "dynamodb" {
+  description             = "KMS key for encrypting DynamoDB tables"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.kms_dynamodb_policy.json
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-key"
+  }
+}
+
+resource "aws_kms_alias" "dynamodb" {
+  name          = "alias/${var.ec2_instance_name}-dynamodb"
+  target_key_id = aws_kms_key.dynamodb.key_id
 }
 
 # --- Backend Secrets (SSM Parameter) ---
@@ -571,6 +678,382 @@ resource "aws_iam_role_policy" "backend_ssm_read" {
   name   = "${var.ec2_instance_name}-ssm-read-policy"
   role   = aws_iam_role.backend.id
   policy = data.aws_iam_policy_document.backend_ssm_read.json
+}
+
+# --- DynamoDB Tables (Phase 02 Migration) ---
+resource "aws_dynamodb_table" "users" {
+  name         = "${var.dynamodb_table_prefix}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "email"
+    type = "S"
+  }
+  attribute {
+    name = "role"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "email-index"
+    hash_key        = "email"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "role-index"
+    hash_key        = "role"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "class-id-index"
+    hash_key        = "class_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-users"
+  }
+}
+
+resource "aws_dynamodb_table" "classes" {
+  name         = "${var.dynamodb_table_prefix}-classes"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "class_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "lookup_key"
+    type = "S"
+  }
+  attribute {
+    name = "homeroom_teacher_id"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "class-lookup-index"
+    hash_key        = "lookup_key"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "homeroom-teacher-index"
+    hash_key        = "homeroom_teacher_id"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-classes"
+  }
+}
+
+resource "aws_dynamodb_table" "class_teacher_assignments" {
+  name         = "${var.dynamodb_table_prefix}-class_teacher_assignments"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "teacher_id"
+  range_key    = "assignment_key"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "teacher_id"
+    type = "S"
+  }
+  attribute {
+    name = "assignment_key"
+    type = "S"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-class-teacher-assignments"
+  }
+}
+
+resource "aws_dynamodb_table" "exams" {
+  name         = "${var.dynamodb_table_prefix}-exams"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "teacher_id"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "start_time"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "teacher-index"
+    hash_key        = "teacher_id"
+    range_key       = "start_time"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "class-index"
+    hash_key        = "class_id"
+    range_key       = "start_time"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-exams"
+  }
+}
+
+resource "aws_dynamodb_table" "submissions" {
+  name         = "${var.dynamodb_table_prefix}-submissions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+  range_key    = "student_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "student_id"
+    type = "S"
+  }
+  attribute {
+    name = "submitted_at"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "student-index"
+    hash_key        = "student_id"
+    range_key       = "submitted_at"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-submissions"
+  }
+}
+
+resource "aws_dynamodb_table" "violations" {
+  name         = "${var.dynamodb_table_prefix}-violations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "exam_id"
+  range_key    = "student_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "exam_id"
+    type = "S"
+  }
+  attribute {
+    name = "student_id"
+    type = "S"
+  }
+  attribute {
+    name = "class_id"
+    type = "S"
+  }
+  attribute {
+    name = "violation_time"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "class-time-index"
+    hash_key        = "class_id"
+    range_key       = "violation_time"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-violations"
+  }
+}
+
+resource "aws_dynamodb_table" "conversations" {
+  name         = "${var.dynamodb_table_prefix}-conversations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "conversation_id"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "conversation_id"
+    type = "S"
+  }
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "updated_at"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "user-updated-index"
+    hash_key        = "user_id"
+    range_key       = "updated_at"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-conversations"
+  }
+}
+
+resource "aws_dynamodb_table" "otps" {
+  name         = "${var.dynamodb_table_prefix}-otps"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "otp_key"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  attribute {
+    name = "otp_key"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expire_at_epoch"
+    enabled        = true
+  }
+
+  tags = {
+    Name = "${var.ec2_instance_name}-dynamodb-otps"
+  }
+}
+
+# --- DynamoDB Permissions (Phase 02 Migration) ---
+data "aws_iam_policy_document" "backend_dynamodb" {
+  # Allow all DynamoDB operations on the app tables
+  # checkov:skip=CKV_AWS_109: Table-level ARNs are used, action set is intentionally broad for migration phase flexibility.
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:TransactWriteItems",
+      "dynamodb:DescribeTable",
+      "dynamodb:ListTables",
+    ]
+    resources = [
+      aws_dynamodb_table.users.arn,
+      "${aws_dynamodb_table.users.arn}/index/*",
+      aws_dynamodb_table.classes.arn,
+      "${aws_dynamodb_table.classes.arn}/index/*",
+      aws_dynamodb_table.class_teacher_assignments.arn,
+      "${aws_dynamodb_table.class_teacher_assignments.arn}/index/*",
+      aws_dynamodb_table.exams.arn,
+      "${aws_dynamodb_table.exams.arn}/index/*",
+      aws_dynamodb_table.submissions.arn,
+      "${aws_dynamodb_table.submissions.arn}/index/*",
+      aws_dynamodb_table.violations.arn,
+      "${aws_dynamodb_table.violations.arn}/index/*",
+      aws_dynamodb_table.conversations.arn,
+      "${aws_dynamodb_table.conversations.arn}/index/*",
+      aws_dynamodb_table.otps.arn,
+      "${aws_dynamodb_table.otps.arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "backend_dynamodb" {
+  name   = "${var.ec2_instance_name}-dynamodb-policy"
+  role   = aws_iam_role.backend.id
+  policy = data.aws_iam_policy_document.backend_dynamodb.json
 }
 
 data "aws_iam_policy_document" "backend_cognito_access" {

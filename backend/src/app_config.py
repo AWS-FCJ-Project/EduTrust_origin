@@ -21,12 +21,10 @@ class AppConfig(BaseSettings):
     LOGFIRE_TOKEN: Optional[str] = None
     EMBEDDING_MODEL: Optional[str] = None
 
-    # Database Settings
-    MONGO_URI: Optional[str] = None
-    MONGO_USERNAME: Optional[str] = None
-    MONGO_PASSWORD: Optional[str] = None
-    MONGO_PORT: Optional[str] = None
-    MONGO_DB_NAME: Optional[str] = None
+    # DynamoDB Settings (Phase 02 - Migration from MongoDB)
+    DYNAMODB_TABLE_PREFIX: Optional[str] = "edutrust-backend"
+    DYNAMODB_REGION: Optional[str] = "ap-southeast-1"
+    DYNAMODB_ENDPOINT: Optional[str] = None  # For local testing: http://localhost:8000
 
     # Auth Settings
     SECRET_KEY: Optional[str] = None
@@ -45,6 +43,7 @@ class AppConfig(BaseSettings):
     AWS_REGION: Optional[str] = "ap-southeast-1"
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
     S3_BUCKET_NAME: Optional[str] = None
 
     # Redis Settings
@@ -55,6 +54,11 @@ class AppConfig(BaseSettings):
     REDIS_TLS: Optional[bool] = False
     REDIS_KEY_PREFIX: Optional[str] = None
     REDIS_CHAT_TTL: Optional[int] = None
+
+    # Langfuse Settings
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_BASE_URL: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

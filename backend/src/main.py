@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 
 import logfire
@@ -7,12 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from src import state
 from src.app_config import app_config
+from src.conversation.conversation_cache import ConversationCache
+from src.conversation.conversation_handler import ConversationHandler
+from src.database.dynamodb_client import DynamoDBClient
+from src.database.redis_client import RedisClient
+from src.database.repositories.conversation_repository import ConversationRepository
 from src.extensions import limiter
-from src.memory.conversation_cache import ConversationCache
-from src.memory.conversation_handler import ConversationHandler
-from src.memory.redis_client import RedisClient
 from src.routers import (
     camera_routes,
     class_routes,
@@ -32,29 +32,39 @@ logfire.instrument_pydantic(record="failure")
 logfire.instrument_pydantic_ai()
 
 
-class _UvicornHealthCheckAccessLogFilter(logging.Filter):
-    """Reduce noise from ALB target group health checks in container logs."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return "GET /health " not in record.getMessage()
-
-
-logging.getLogger("uvicorn.access").addFilter(_UvicornHealthCheckAccessLogFilter())
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    redis_client = RedisClient()
+    redis_client = RedisClient(
+        host=app_config.REDIS_CLIENT_HOST,
+        password=app_config.REDIS_CLIENT_PASSWORD,
+        port=app_config.REDIS_PORT,
+        db=app_config.REDIS_DB,
+        tls=app_config.REDIS_TLS,
+        key_prefix=app_config.REDIS_KEY_PREFIX,
+        chat_ttl=app_config.REDIS_CHAT_TTL,
+    )
     redis_client.connect_to_database()
+
+    from src.database import PersistenceFacade
+
+    dynamo_client = DynamoDBClient()
+    app.state.persistence = PersistenceFacade(dynamo_client)
+
+    from src.detection.violation_logger import set_violation_logger_persistence
+
+    set_violation_logger_persistence(app.state.persistence)
+
     conversation_cache = ConversationCache(redis_client=redis_client)
 
-    state.conversation_handler = ConversationHandler(
-        conversation_cache=conversation_cache
+    conversation_repo = ConversationRepository(dynamo_client)
+    app.state.conversation_handler = ConversationHandler(
+        conversation_repo=conversation_repo,
+        conversation_cache=conversation_cache,
     )
-    state.conversation_handler.connect_to_database()
     yield
-    if state.conversation_handler:
-        state.conversation_handler.close()
+    if app.state.conversation_handler:
+        app.state.conversation_handler.close()
+    redis_client.close()
 
 
 app = FastAPI(
@@ -71,12 +81,20 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 logfire.instrument_fastapi(app)
 
+# Langfuse tracing (optional)
+langfuse_client = None
+try:
+    langfuse_sensitive = getattr(langfuse, "langfuse_sensitive", None)
+    if callable(langfuse_sensitive):
+        langfuse_client = langfuse_sensitive()  # Uses env vars LANGFUSE_*
+        langfuse_client.configure()
+except Exception:
+    langfuse_client = None
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    # Wildcard origins are not compatible with credentials in browsers.
-    # Frontend uses Bearer tokens, so we keep credentials off to allow "*".
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

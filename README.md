@@ -3,7 +3,6 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
 ![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)
 ![Pydantic AI](https://img.shields.io/badge/Pydantic%20AI-E92063?style=flat&logo=pydantic&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat&logo=mongodb&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)
 
@@ -25,7 +24,7 @@ aws-fcj-project/
 │   │   └── llms.yaml
 │   ├── src/
 │   │   ├── crew/                   # Orchestrator + tool wiring
-│   │   ├── memory/                 # MongoDB conversation storage
+│   │   ├── database/               # DynamoDB persistence facade + repos
 │   │   ├── routers/                # API routes
 │   │   ├── schemas/                # Endpoint schemas
 │   │   ├── search_services/        # Web search services

@@ -1,24 +1,46 @@
-from typing import List, Optional
+import asyncio
+from typing import Annotated, List
 
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from src.auth.dependencies import get_current_user
-from src.database import classes_collection, users_collection, violations_collection
-from src.schemas.school_schemas import ClassCreate, ClassResponse, ClassUpdate
+from src.schemas.school_schemas import (
+    AddStudentResponse,
+    ClassCreate,
+    ClassCreateResponse,
+    ClassDeleteResponse,
+    ClassResponse,
+    ClassUpdate,
+    ClassUpdateResponse,
+    RemoveStudentResponse,
+    StudentResponse,
+)
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 
 
-async def class_helper(cls) -> dict:
-    student_count = await users_collection.count_documents(
-        {"role": "student", "class_name": cls["name"], "grade": cls["grade"]}
-    )
+def get_persistence(request: Request):
+    """Get persistence facade from app state."""
+    return request.app.state.persistence
 
+
+def class_response_helper(cls: dict) -> dict:
+    """Format class document for API response."""
+    student_count_raw = cls.get("student_count", 0)
+    try:
+        student_count = int(student_count_raw)
+    except Exception:
+        student_count = 0
+
+    grade_raw = cls.get("grade")
+    try:
+        grade = int(grade_raw) if grade_raw is not None and grade_raw != "" else 0
+    except Exception:
+        grade = 0
     return {
-        "id": str(cls["_id"]),
+        "id": str(cls["_id"]) if "_id" in cls else cls.get("id"),
         "name": cls["name"],
-        "grade": cls["grade"],
-        "school_year": cls["school_year"],
+        "grade": grade,
+        "school_year": cls.get("school_year", ""),
         "homeroom_teacher_id": cls.get("homeroom_teacher_id"),
         "subject_teachers": cls.get("subject_teachers", []),
         "student_count": student_count,
@@ -26,96 +48,157 @@ async def class_helper(cls) -> dict:
     }
 
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+def user_helper(user: dict) -> dict:
+    grade_raw = user.get("grade")
+    grade: int | None = None
+    if grade_raw not in (None, ""):
+        try:
+            grade = int(grade_raw)
+        except Exception:
+            grade = None
+    return {
+        "id": str(user["_id"]) if "_id" in user else user.get("id"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "role": user.get("role"),
+        "class_name": user.get("class_name"),
+        "grade": grade,
+    }
+
+
+@router.post(
+    "", response_model=ClassCreateResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_class(
-    class_data: ClassCreate, current_user: dict = Depends(get_current_user)
-):
+    class_data: ClassCreate,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> ClassCreateResponse:
+    """Create a new class (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can create classes")
 
-    new_class = class_data.model_dump()
-    if new_class.get("homeroom_teacher_id") and new_class.get("subject_teachers"):
-        new_class["status"] = "active"
+    persistence = get_persistence(request)
+    class_doc = class_data.model_dump()
+    if class_doc.get("homeroom_teacher_id") and class_doc.get("subject_teachers"):
+        class_doc["status"] = "active"
     else:
-        new_class["status"] = "inactive"
+        class_doc["status"] = "inactive"
 
-    result = await classes_collection.insert_one(new_class)
-    return {"id": str(result.inserted_id), "message": "Class created successfully"}
+    class_id = await persistence.classes.insert_one(class_doc)
+    id_str = str(class_id) if hasattr(class_id, "__str__") else class_id
+    return ClassCreateResponse(id=id_str, message="Class created successfully")
 
 
 @router.get("", response_model=List[dict])
-async def get_classes(current_user: dict = Depends(get_current_user)):
+async def get_classes(
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
+    """Get classes filtered by user role (admin: all, teacher: assigned, student: enrolled)."""
+    persistence = get_persistence(request)
     role = current_user.get("role")
     user_id = str(current_user["_id"])
 
-    query = {}
+    async def count_students_for_class(cls: dict) -> int:
+        try:
+            name = cls.get("name")
+            grade = int(cls.get("grade")) if cls.get("grade") not in (None, "") else 0
+            if not name or not grade:
+                return 0
+            return await persistence.users.count_students_in_class(name, grade)
+        except Exception:
+            return 0
+
+    async def apply_student_counts(classes: list[dict]) -> list[dict]:
+        # Avoid unbounded parallel scans
+        sem = asyncio.Semaphore(10)
+
+        async def _bounded(cls: dict) -> int:
+            async with sem:
+                return await count_students_for_class(cls)
+
+        counts = await asyncio.gather(*[_bounded(c) for c in classes])
+        for c, count in zip(classes, counts):
+            c["student_count"] = count
+        return classes
+
     if role == "admin":
-        query = {}
+        classes = await persistence.classes.list_all()
+        classes = await apply_student_counts(classes)
+        return [class_response_helper(c) for c in classes]
     elif role == "teacher":
-        query = {
-            "$or": [
-                {"homeroom_teacher_id": user_id},
-                {"subject_teachers.teacher_id": user_id},
-            ]
-        }
+        classes = await persistence.classes.list_by_teacher(user_id)
+        classes = await apply_student_counts(classes)
+        return [class_response_helper(c) for c in classes]
     elif role == "student":
-        u_class = current_user.get("class_name")
-        u_grade = current_user.get("grade")
-        if not u_class or not u_grade:
+        user_class = current_user.get("class_name")
+        user_grade = current_user.get("grade")
+        if not user_class or not user_grade:
             return []
-        query = {"name": u_class, "grade": u_grade}
+        cls = await persistence.classes.get_by_name_grade(user_class, user_grade)
+        if cls:
+            cls["student_count"] = await count_students_for_class(cls)
+            return [class_response_helper(cls)]
+        return []
     else:
         raise HTTPException(status_code=403, detail="Invalid role")
 
-    classes = []
-    async for cls in classes_collection.find(query):
-        classes.append(await class_helper(cls))
-    return classes
-
 
 @router.get("/homeroom/violations", response_model=List[dict])
-async def get_homeroom_violations(current_user: dict = Depends(get_current_user)):
+async def get_homeroom_violations(
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
+    """Get violations for homeroom teacher's class."""
+    persistence = get_persistence(request)
     user_id = str(current_user["_id"])
-    cls = await classes_collection.find_one({"homeroom_teacher_id": user_id})
-    if not cls:
+    class_obj = await persistence.classes.find_one({"homeroom_teacher_id": user_id})
+    if not class_obj:
         return []
-    class_id = str(cls["_id"])
-
-    violations = []
-    async for v in violations_collection.find({"class_id": class_id}):
-        v["id"] = str(v["_id"])
-        student = await users_collection.find_one(
-            {"_id": ObjectId(str(v["student_id"]))}
-        )
-        v["student_name"] = student["name"] if student else "Unknown"
-        violations.append(v)
+    class_id = str(class_obj["_id"])
+    violations = await persistence.violations.list_by_class(class_id)
     return violations
 
 
-@router.get("/{class_id}", response_model=dict)
-async def get_class(class_id: str, current_user: dict = Depends(get_current_user)):
-    if not ObjectId.is_valid(class_id):
+@router.get("/{class_id}", response_model=ClassResponse)
+async def get_class(
+    class_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> ClassResponse:
+    """Get class details by ID."""
+    if not class_id or not class_id.strip():
         raise HTTPException(status_code=400, detail="Invalid class ID")
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
-    if not cls:
+    persistence = get_persistence(request)
+    class_obj = await persistence.classes.get_by_id(class_id)
+    if not class_obj:
         raise HTTPException(status_code=404, detail="Class not found")
+    try:
+        class_obj["student_count"] = await persistence.users.count_students_in_class(
+            class_obj.get("name"), int(class_obj.get("grade"))
+        )
+    except Exception:
+        pass
+    return ClassResponse(**class_response_helper(class_obj))
 
-    return await class_helper(cls)
 
-
-@router.patch("/{class_id}")
+@router.patch("/{class_id}", response_model=ClassUpdateResponse)
 async def update_class(
     class_id: str,
     class_data: ClassUpdate,
-    current_user: dict = Depends(get_current_user),
-):
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> ClassUpdateResponse:
+    """Update class info (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can update classes")
 
-    if not ObjectId.is_valid(class_id):
+    if not class_id or not class_id.strip():
         raise HTTPException(status_code=400, detail="Invalid class ID")
 
-    update_data_filtered = {
+    persistence = get_persistence(request)
+    update_data = {
         k: v
         for k, v in class_data.model_dump().items()
         if v is not None
@@ -123,139 +206,140 @@ async def update_class(
         and str(v).lower() != "string"
         and not (k == "grade" and v == 0)
     }
+    if not update_data:
+        return ClassUpdateResponse(message="No changes provided")
 
-    if not update_data_filtered:
-        return {"message": "No changes provided"}
-
-    current_class = await classes_collection.find_one({"_id": ObjectId(class_id)})
-    if not current_class:
+    current = await persistence.classes.get_by_id(class_id)
+    if not current:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    merged_class = {**current_class, **update_data_filtered}
-    if merged_class.get("homeroom_teacher_id") and merged_class.get("subject_teachers"):
-        update_data_filtered["status"] = "active"
+    merged = {**current, **update_data}
+    if merged.get("homeroom_teacher_id") and merged.get("subject_teachers"):
+        update_data["status"] = "active"
     else:
-        update_data_filtered["status"] = "inactive"
+        update_data["status"] = "inactive"
 
-    result = await classes_collection.update_one(
-        {"_id": ObjectId(class_id)}, {"$set": update_data_filtered}
-    )
-    return {"message": "Class updated successfully"}
+    success = await persistence.classes.update(class_id, update_data)
+    if not success:
+        raise HTTPException(status_code=404, detail="Class not found")
+    return ClassUpdateResponse(message="Class updated successfully")
 
 
-@router.get("/{class_id}/students", response_model=List[dict])
+@router.get("/{class_id}/students", response_model=List[StudentResponse])
 async def get_class_students(
-    class_id: str, current_user: dict = Depends(get_current_user)
-):
-    if not ObjectId.is_valid(class_id):
+    class_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> List[StudentResponse]:
+    """Get students in a class."""
+    if not class_id or not class_id.strip():
         raise HTTPException(status_code=400, detail="Invalid class ID")
-
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
+    persistence = get_persistence(request)
+    cls = await persistence.classes.get_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    students = []
-    async for s in users_collection.find(
-        {"role": "student", "class_name": cls["name"], "grade": cls["grade"]}
-    ):
-        from src.routers.auth.login import user_helper
-
-        students.append(user_helper(s))
-    return students
+    students = await persistence.users.list_students_by_class(cls["name"], cls["grade"])
+    return [StudentResponse(**user_helper(s)) for s in students]
 
 
-@router.get("/students/available", response_model=List[dict])
+@router.get("/students/available", response_model=List[StudentResponse])
 async def get_available_students(
-    class_id: str, current_user: dict = Depends(get_current_user)
-):
-    if not ObjectId.is_valid(class_id):
+    class_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> List[StudentResponse]:
+    """Get students not yet assigned to this class."""
+    if not class_id or not class_id.strip():
         raise HTTPException(status_code=400, detail="Invalid class ID")
-
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
+    persistence = get_persistence(request)
+    cls = await persistence.classes.get_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    students = []
-    async for s in users_collection.find(
-        {
-            "role": "student",
-            "$or": [
-                {"class_name": {"$ne": cls["name"]}},
-                {"grade": {"$ne": cls["grade"]}},
-            ],
-        }
-    ):
-        from src.routers.auth.login import user_helper
-
-        students.append(user_helper(s))
-    return students
+    students = await persistence.users.list_available_students(
+        cls["name"], cls["grade"]
+    )
+    return [StudentResponse(**user_helper(s)) for s in students]
 
 
-@router.post("/{class_id}/students/{student_id}")
+@router.post("/{class_id}/students/{student_id}", response_model=AddStudentResponse)
 async def add_student_to_class(
-    class_id: str, student_id: str, current_user: dict = Depends(get_current_user)
-):
+    class_id: str,
+    student_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> AddStudentResponse:
+    """Add a student to a class (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can assign students")
 
-    if not ObjectId.is_valid(class_id) or not ObjectId.is_valid(student_id):
+    if not class_id or not class_id.strip() or not student_id or not student_id.strip():
         raise HTTPException(status_code=400, detail="Invalid IDs")
 
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
+    persistence = get_persistence(request)
+    cls = await persistence.classes.get_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    result = await users_collection.update_one(
-        {"_id": ObjectId(student_id), "role": "student"},
-        {"$set": {"class_name": cls["name"], "grade": cls["grade"]}},
+    success = await persistence.users.update(
+        student_id,
+        {"class_name": cls["name"], "grade": cls["grade"]},
     )
-
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    return {"message": f"Student added to class {cls['name']}"}
+    if not success:
+        raise HTTPException(status_code=404, detail="Student or class not found")
+    return AddStudentResponse(message="Student added to class")
 
 
-@router.delete("/{class_id}/students/{student_id}")
+@router.delete(
+    "/{class_id}/students/{student_id}", response_model=RemoveStudentResponse
+)
 async def remove_student_from_class(
-    class_id: str, student_id: str, current_user: dict = Depends(get_current_user)
-):
+    class_id: str,
+    student_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> RemoveStudentResponse:
+    """Remove a student from a class (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can remove students")
 
-    if not ObjectId.is_valid(class_id) or not ObjectId.is_valid(student_id):
+    if not class_id or not class_id.strip() or not student_id or not student_id.strip():
         raise HTTPException(status_code=400, detail="Invalid IDs")
 
-    result = await users_collection.update_one(
-        {"_id": ObjectId(student_id), "role": "student"},
-        {"$set": {"class_name": None, "grade": None}},
+    persistence = get_persistence(request)
+    success = await persistence.users.update(
+        student_id,
+        {"class_name": None, "grade": None},
     )
-
-    if result.matched_count == 0:
+    if not success:
         raise HTTPException(status_code=404, detail="Student not found")
+    return RemoveStudentResponse(message="Student removed from class")
 
-    return {"message": "Student removed from class"}
 
-
-@router.delete("/{class_id}")
-async def delete_class(class_id: str, current_user: dict = Depends(get_current_user)):
+@router.delete("/{class_id}", response_model=ClassDeleteResponse)
+async def delete_class(
+    class_id: str,
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> ClassDeleteResponse:
+    """Delete a class (admin only)."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete classes")
 
-    if not ObjectId.is_valid(class_id):
+    if not class_id or not class_id.strip():
         raise HTTPException(status_code=400, detail="Invalid class ID")
 
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
+    persistence = get_persistence(request)
+    cls = await persistence.classes.get_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    await users_collection.update_many(
+    # Clear student associations
+    await persistence.users.update_many(
         {"role": "student", "class_name": cls["name"], "grade": cls["grade"]},
-        {"$set": {"class_name": None, "grade": None}},
+        {"class_name": None, "grade": None},
     )
 
-    await classes_collection.delete_one({"_id": ObjectId(class_id)})
-
-    return {
-        "message": f"Class {cls['name']} and student associations cleared successfully"
-    }
+    await persistence.classes.delete(class_id)
+    return ClassDeleteResponse(message="Class deleted successfully")

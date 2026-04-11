@@ -146,7 +146,7 @@ export default function StaffResultsPage() {
                 {[
                     { label: "Tổng Đề Thi", value: exams.length, icon: <FileText />, color: "bg-blue-600" },
                     { label: "Tổng Lượt Thi", value: exams.reduce((a, b) => a + (b.total_submissions || 0), 0), icon: <Users />, color: "bg-green-600" },
-                    { label: "Điểm Trung Bình", value: exams.length > 0 ? (exams.reduce((a, b) => a + (b.average_score || 0), 0) / exams.length).toFixed(1) : "0", icon: <Award />, color: "bg-amber-500" },
+                    { label: "Điểm Trung Bình", value: exams.length > 0 ? (() => { const avg = exams.reduce((a, b) => a + (Number(b.average_score) || 0), 0) / exams.length; return (isNaN(avg) || !isFinite(avg)) ? "0" : (Math.round(avg * 100) / 100).toFixed(2); })() : "0", icon: <Award />, color: "bg-amber-500" },
                     { label: "Vi Phạm AI", value: exams.reduce((a, b) => a + (b.violations_count || 0), 0), icon: <Eye />, color: "bg-red-500" }
                 ].map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-5">
@@ -237,12 +237,12 @@ export default function StaffResultsPage() {
                                                         </td>
                                                         <td className="px-8 py-8 text-center">
                                                             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-blue-50 border-4 border-white shadow-inner">
-                                                                <span className="text-lg font-black text-blue-600">{exam.average_score.toFixed(1)}</span>
+                                                                <span className="text-lg font-black text-blue-600">{(() => { const v = Number(exam.average_score); return (isNaN(v) || !isFinite(v)) ? "0.00" : (Math.round(v * 100) / 100).toFixed(2); })()}</span>
                                                             </div>
                                                         </td>
                                                         <td className="px-8 py-8 text-center">
                                                             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-50 border-4 border-white shadow-inner">
-                                                                <span className="text-lg font-black text-amber-600">{exam.highest_score}</span>
+                                                                <span className="text-lg font-black text-amber-600">{(() => { const v = Number(exam.highest_score); return (isNaN(v) || !isFinite(v)) ? "0.00" : (Math.round(v * 100) / 100).toFixed(2); })()}</span>
                                                             </div>
                                                         </td>
                                                         <td className="px-8 py-8 text-center">
@@ -339,7 +339,7 @@ export default function StaffResultsPage() {
                                                 </td>
                                                 <td className="px-6 py-5 text-center">
                                                     <span className={`text-xl font-black ${sub.score >= 8 ? 'text-green-600' : sub.score >= 5 ? 'text-blue-600' : 'text-red-500'}`}>
-                                                        {sub.score.toFixed(1)}
+                                                        {(() => { const v = Number(sub.score); return (isNaN(v) || !isFinite(v)) ? "0.00" : (Math.round(v * 100) / 100).toFixed(2); })()}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-5 text-center">
@@ -364,6 +364,7 @@ export default function StaffResultsPage() {
                                                 </td>
                                                 <td className="px-6 py-5 text-right font-medium text-gray-400 text-xs">
                                                     {sub.submitted_at ? new Date(sub.submitted_at).toLocaleString('vi-VN', {
+                                                        timeZone: 'Asia/Ho_Chi_Minh',
                                                         day: '2-digit', month: '2-digit', year: 'numeric',
                                                         hour: '2-digit', minute: '2-digit'
                                                     }) : 'N/A'}

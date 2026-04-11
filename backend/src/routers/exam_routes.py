@@ -1,40 +1,49 @@
+import asyncio
 import secrets
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Annotated, List
 
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from src.auth.dependencies import get_current_user
-from src.database import (
-    classes_collection,
-    exams_collection,
-    submissions_collection,
-    users_collection,
-    violations_collection,
-)
-from src.schemas.school_schemas import (
+from src.schemas.exam_schemas import (
     ExamCreate,
+    ExamCreateResponse,
+    ExamDeleteResponse,
     ExamKeyVerify,
-    ExamResponse,
+    ExamRegenerateKeyResponse,
+    ExamResultSummary,
+    ExamResultSummaryList,
+    ExamSecretKeyResponse,
     ExamStatusResponse,
     ExamSubmission,
+    ExamSubmissionResponse,
+    ExamSubmissionSummary,
     ExamUpdate,
+    ExamUpdateResponse,
+    ExamVerifyKeyResponse,
+    ExamViolation,
 )
 
 router = APIRouter(prefix="/exams", tags=["Exams"])
 
 
-def exam_helper(exam, include_secret: bool = False) -> dict:
+def get_persistence(request: Request):
+    """Get persistence facade from app state."""
+    return request.app.state.persistence
+
+
+def exam_response_helper(exam: dict, include_secret: bool = False) -> dict:
+    """Format exam document for API response."""
     result = {
-        "id": str(exam["_id"]),
-        "title": exam["title"],
+        "id": exam.get("exam_id") or exam.get("id"),
+        "title": exam.get("title", ""),
         "description": exam.get("description"),
-        "subject": exam["subject"],
+        "subject": exam.get("subject", ""),
         "exam_type": exam.get("exam_type", "15-minute quiz"),
-        "teacher_id": exam["teacher_id"],
-        "class_id": exam["class_id"],
-        "start_time": exam["start_time"],
-        "end_time": exam["end_time"],
+        "teacher_id": exam.get("teacher_id", ""),
+        "class_id": exam.get("class_id", ""),
+        "start_time": exam.get("start_time", ""),
+        "end_time": exam.get("end_time", ""),
         "duration": exam.get("duration", 60),
         "has_secret_key": bool(exam.get("secret_key")),
         "questions": exam.get("questions", []),
@@ -44,121 +53,285 @@ def exam_helper(exam, include_secret: bool = False) -> dict:
     return result
 
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def can_create_exam(
+    persistence, role: str, user_id: str, class_id: str
+) -> tuple[bool, dict | None]:
+    """Check if user can create exam in class."""
+    if role == "admin":
+        cls = await persistence.classes.get_by_id(class_id)
+        return bool(cls), cls
+
+    if role != "teacher":
+        return False, None
+
+    cls = await persistence.classes.get_by_id(class_id)
+    if not cls:
+        return False, None
+
+    is_homeroom = cls.get("homeroom_teacher_id") == user_id
+    is_subject = any(
+        t.get("teacher_id") == user_id
+        for t in cls.get("subject_teachers", [])
+        if isinstance(t, dict)
+    )
+    return bool(is_homeroom or is_subject), cls
+
+
+async def can_access_exam(
+    persistence, role: str, user_id: str, exam_id: str
+) -> tuple[bool, dict | None]:
+    """Check if user can access exam."""
+    exam = await persistence.exams.get_by_id(exam_id)
+    if not exam:
+        return False, None
+
+    if role == "admin":
+        return True, exam
+
+    if role == "teacher":
+        if exam.get("teacher_id") == user_id:
+            return True, exam
+        cls = await persistence.classes.get_by_id(exam.get("class_id", ""))
+        if cls:
+            is_homeroom = cls.get("homeroom_teacher_id") == user_id
+            is_subject = any(
+                t.get("teacher_id") == user_id
+                for t in cls.get("subject_teachers", [])
+                if isinstance(t, dict)
+            )
+            if is_homeroom or is_subject:
+                return True, exam
+
+    if role == "student":
+        # Student accesses via class - they need to match the class
+        user = await persistence.users.get_by_id(user_id)
+        if user:
+            student_class_name = user.get("class_name", "")
+            student_grade = user.get("grade")
+
+            # Prefer class_id match (works even if exam lacks denormalized class_name/grade)
+            try:
+                cls = await persistence.classes.get_by_name_grade(
+                    student_class_name, int(student_grade)
+                )
+            except Exception:
+                cls = None
+            if (
+                cls
+                and cls.get("class_id")
+                and exam.get("class_id") == cls.get("class_id")
+            ):
+                return True, exam
+
+            # Legacy fallback: compare denormalized class_name/grade
+            exam_class_name = exam.get("class_name", "")
+            exam_grade = exam.get("grade")
+            if student_class_name == exam_class_name and str(student_grade) == str(
+                exam_grade
+            ):
+                return True, exam
+
+    return False, exam
+
+
+async def can_modify_exam(
+    persistence, role: str, user_id: str, exam_id: str
+) -> tuple[bool, dict | None]:
+    """Check if user can modify/delete exam."""
+    if role == "admin":
+        exam = await persistence.exams.get_by_id(exam_id)
+        return True, exam
+
+    exam = await persistence.exams.get_by_id(exam_id)
+    if not exam:
+        return False, None
+
+    if role != "teacher":
+        return False, exam
+
+    if exam.get("teacher_id") == user_id:
+        return True, exam
+
+    cls = await persistence.classes.get_by_id(exam.get("class_id", ""))
+    if cls:
+        is_homeroom = cls.get("homeroom_teacher_id") == user_id
+        is_subject = any(
+            t.get("teacher_id") == user_id
+            for t in cls.get("subject_teachers", [])
+            if isinstance(t, dict)
+        )
+        if is_homeroom or is_subject:
+            return True, exam
+
+    return False, exam
+
+
+@router.post("", response_model=ExamCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_exam(
-    exam_data: ExamCreate, current_user: dict = Depends(get_current_user)
-):
-    role = current_user.get("role")
+    exam_data: ExamCreate,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamCreateResponse:
+    """Create a new exam (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
+
     if role not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403, detail="Only teachers or admins can create exams"
         )
 
-    user_id = str(current_user["_id"])
+    allowed, class_info = await can_create_exam(
+        persistence, role, user_id, exam_data.class_id
+    )
+    if not allowed:
+        if not class_info:
+            raise HTTPException(status_code=404, detail="Class not found")
+        raise HTTPException(status_code=403, detail="You do not teach this class")
 
-    class_id = exam_data.class_id
-    if not ObjectId.is_valid(class_id):
-        raise HTTPException(status_code=400, detail="Invalid class ID")
-
-    cls = await classes_collection.find_one({"_id": ObjectId(class_id)})
-    if not cls:
-        raise HTTPException(status_code=404, detail="Class not found")
-
-    if role == "teacher":
-        is_homeroom = cls.get("homeroom_teacher_id") == user_id
-        is_subject = any(
-            t.get("teacher_id") == user_id for t in cls.get("subject_teachers", [])
-        )
-        if not (is_homeroom or is_subject):
-            raise HTTPException(status_code=403, detail="You do not teach this class")
-
-    new_exam = exam_data.model_dump()
-    new_exam["teacher_id"] = user_id
-    if new_exam.get("secret_key"):
-        new_exam["secret_key"] = str(new_exam["secret_key"]).strip().upper()
+    secret_key = exam_data.secret_key
+    if not secret_key:
+        secret_key = secrets.token_hex(3).upper()
     else:
-        new_exam["secret_key"] = secrets.token_hex(3).upper()
-    result = await exams_collection.insert_one(new_exam)
-    return {
-        "id": str(result.inserted_id),
-        "secret_key": new_exam["secret_key"],
-        "message": "Exam created successfully",
+        secret_key = str(secret_key).strip().upper()
+
+    def _to_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    teacher_id = user_id
+    # If admin creates an exam, assign teacher_id to homeroom teacher (if present) so it shows in teacher views.
+    if role == "admin" and class_info and class_info.get("homeroom_teacher_id"):
+        teacher_id = class_info.get("homeroom_teacher_id")
+
+    exam_doc = {
+        **exam_data.model_dump(),
+        "teacher_id": teacher_id,
+        # denormalize for student access + UI
+        "class_name": class_info.get("name") if class_info else "",
+        "grade": class_info.get("grade") if class_info else "",
+        # ensure timezone-aware datetimes are persisted consistently
+        "start_time": _to_utc(exam_data.start_time),
+        "end_time": _to_utc(exam_data.end_time),
+        "secret_key": secret_key,
+        "submission_count": "0",
+        "score_total": "0",
+        "highest_score": "0",
+        "violation_total": "0",
     }
+
+    exam_id = await persistence.exams.insert_one(exam_doc)
+    return ExamCreateResponse(
+        id=exam_id, secret_key=secret_key, message="Exam created successfully"
+    )
 
 
 @router.get("", response_model=List[dict])
-async def get_exams(current_user: dict = Depends(get_current_user)):
-    role = current_user.get("role")
-    user_id = str(current_user["_id"])
-    raw_user_id = current_user.get("_id")
-    student_id_values = (
-        [user_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [user_id]
-    )
+async def get_exams(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> List[dict]:
+    """Get exams filtered by role (admin: all, teacher: created, student: class exams)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    query = {}
     if role == "admin":
-        query = {}
-    elif role == "student":
-        u_class = current_user.get("class_name")
-        u_grade = current_user.get("grade")
-        if not u_class or not u_grade:
+        exams = await persistence.exams.list_all()
+        return [exam_response_helper(e) for e in exams]
+
+    if role == "student":
+        user = await persistence.users.get_by_id(user_id)
+        if not user:
+            return []
+        user_class_name = user.get("class_name")
+        user_grade = user.get("grade")
+        if not user_class_name or not user_grade:
             return []
 
-        cls = await classes_collection.find_one({"name": u_class, "grade": u_grade})
+        # Get class_id via lookup
+        cls = await persistence.classes.get_by_name_grade(
+            user_class_name, int(user_grade)
+        )
         if not cls:
             return []
 
-        query = {"class_id": str(cls["_id"])}
-    elif role == "teacher":
-        teacher_classes = []
-        async for cls in classes_collection.find(
-            {
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ]
-            }
-        ):
-            teacher_classes.append(str(cls["_id"]))
+        # Fetch exams for class + all student submissions in parallel
+        class_id = cls.get("class_id")
+        exams_task = persistence.exams.list_by_class(class_id)
+        submissions_task = persistence.submissions.list_by_student(user_id)
 
-        query = {
-            "$or": [{"teacher_id": user_id}, {"class_id": {"$in": teacher_classes}}]
-        }
-    else:
-        raise HTTPException(status_code=403, detail="Invalid role")
+        class_exams, student_submissions = await asyncio.gather(
+            exams_task, submissions_task
+        )
 
-    exams = []
-    async for exam in exams_collection.find(query):
-        e_dict = exam_helper(exam)
-        if role == "student":
-            submission = await submissions_collection.find_one(
-                {"exam_id": e_dict["id"], "student_id": {"$in": student_id_values}}
-            )
+        # Build submission lookup by exam_id
+        submission_by_exam = {sub.get("exam_id"): sub for sub in student_submissions}
+
+        filtered = []
+        for exam in class_exams:
+            exam_id = exam.get("exam_id")
+            exam_dict = exam_response_helper(exam)
+            submission = submission_by_exam.get(exam_id)
             if submission:
-                e_dict["status"] = submission.get("status")
-                e_dict["submitted_at"] = submission.get("submitted_at")
-                e_dict["violation_count"] = submission.get("violation_count", 0)
+                exam_dict["status"] = submission.get("status", "completed")
+                exam_dict["submitted_at"] = submission.get("submitted_at")
+                exam_dict["violation_count"] = int(submission.get("violation_count", 0))
             else:
-                e_dict["status"] = "pending"
-        exams.append(e_dict)
-    return exams
+                exam_dict["status"] = "pending"
+            filtered.append(exam_dict)
+        return filtered
+
+    if role == "teacher":
+        # Include exams created by the teacher + exams for classes they teach (incl. subject teacher)
+        teacher_exams = await persistence.exams.list_by_teacher(user_id)
+
+        # Scan classes once to find subject-teacher assignments (ClassRepo only indexes homeroom).
+        all_classes = await persistence.classes.list_all()
+        class_ids = []
+        for c in all_classes:
+            if c.get("homeroom_teacher_id") == user_id:
+                class_ids.append(c.get("class_id"))
+                continue
+            for st in c.get("subject_teachers", []):
+                if isinstance(st, dict) and st.get("teacher_id") == user_id:
+                    class_ids.append(c.get("class_id"))
+                    break
+
+        class_ids = [cid for cid in class_ids if cid]
+        class_exam_lists = await asyncio.gather(
+            *[persistence.exams.list_by_class(cid) for cid in sorted(set(class_ids))]
+        )
+        class_exams = [e for sublist in class_exam_lists for e in sublist]
+
+        merged: dict[str, dict] = {}
+        for e in teacher_exams + class_exams:
+            eid = e.get("exam_id") or e.get("id")
+            if eid:
+                merged[eid] = e
+
+        return [exam_response_helper(e) for e in merged.values()]
+
+    raise HTTPException(status_code=403, detail="Invalid role")
 
 
-@router.post("/{exam_id}/verify-key", response_model=dict)
+@router.post("/{exam_id}/verify-key", response_model=ExamVerifyKeyResponse)
 async def verify_exam_key(
     exam_id: str,
     body: ExamKeyVerify,
-    current_user: dict = Depends(get_current_user),
-):
-    if current_user.get("role") != "student":
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamVerifyKeyResponse:
+    """Verify exam secret key (student only)."""
+    if str(current_user.get("role", "")) != "student":
         raise HTTPException(
             status_code=403, detail="Only students can verify exam keys"
         )
 
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
-
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    persistence = get_persistence(request)
+    exam = await persistence.exams.get_by_id(exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
@@ -166,325 +339,271 @@ async def verify_exam_key(
     provided_key = (body.key or "").strip().upper()
 
     if not stored_key:
-        return {"valid": True}
+        return ExamVerifyKeyResponse(valid=True)
 
-    if provided_key != stored_key:
+    if stored_key != provided_key:
         raise HTTPException(
             status_code=400, detail="Invalid exam key. Please check and try again."
         )
 
-    return {"valid": True}
+    return ExamVerifyKeyResponse(valid=True)
 
 
 @router.get("/{exam_id}/status", response_model=ExamStatusResponse)
-async def get_exam_status(exam_id: str, current_user: dict = Depends(get_current_user)):
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
+async def get_exam_status(
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+):
+    """Get exam submission status for current student."""
+    persistence = get_persistence(request)
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    raw_user_id = current_user.get("_id")
-    student_id = str(raw_user_id)
-    student_id_values = (
-        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
-    )
-    submission = await submissions_collection.find_one(
-        {"exam_id": exam_id, "student_id": {"$in": student_id_values}}
-    )
+    submission = await persistence.submissions.get_by_exam_student(exam_id, user_id)
 
     if not submission:
-        return {"is_submitted": False}
+        return ExamStatusResponse(is_submitted=False)
 
-    return {
-        "is_submitted": True,
-        "status": submission.get("status"),
-        "submitted_at": submission.get("submitted_at"),
-        "violation_count": submission.get("violation_count", 0),
-    }
+    return ExamStatusResponse(
+        is_submitted=True,
+        status=submission.get("status"),
+        submitted_at=submission.get("submitted_at"),
+        violation_count=int(submission.get("violation_count", 0)),
+    )
 
 
-@router.post("/{exam_id}/submit", response_model=dict)
+@router.post("/{exam_id}/submit", response_model=ExamSubmissionResponse)
 async def submit_exam(
     exam_id: str,
     submission_data: ExamSubmission,
-    current_user: dict = Depends(get_current_user),
-):
-    if current_user.get("role") != "student":
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamSubmissionResponse:
+    """Submit exam answers (student only)."""
+    if str(current_user.get("role", "")) != "student":
         raise HTTPException(status_code=403, detail="Only students can submit exams")
 
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
+    persistence = get_persistence(request)
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    raw_user_id = current_user.get("_id")
-    student_id = str(raw_user_id)
-    student_id_values = (
-        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
-    )
-    existing = await submissions_collection.find_one(
-        {"exam_id": exam_id, "student_id": {"$in": student_id_values}}
-    )
+    existing = await persistence.submissions.get_by_exam_student(exam_id, user_id)
     if existing:
-        return {"message": "Exam already submitted", "already_submitted": True}
+        raise HTTPException(status_code=400, detail="Exam already submitted")
 
-    new_submission = submission_data.model_dump()
-    new_submission["exam_id"] = exam_id
-    new_submission["student_id"] = student_id
-    new_submission["submitted_at"] = datetime.now(timezone.utc)
-
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
+    exam = await persistence.exams.get_by_id(exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
+    # Calculate score
     questions = exam.get("questions", [])
     total_questions = len(questions)
     correct_count = 0
-    student_answers = submission_data.answers or {}
-    for i, q in enumerate(questions):
-        selected = student_answers.get(str(i))
+    for i, question in enumerate(questions):
+        selected = submission_data.answers.get(str(i))
         if selected is None:
-            selected = student_answers.get(i)
-        if selected is not None and selected == q.get("correct"):
+            selected = submission_data.answers.get(i)
+        if selected is not None and selected == question.get("correct"):
             correct_count += 1
 
-    score = (correct_count / total_questions) * 10 if total_questions > 0 else 0
-    new_submission["score"] = score
-    new_submission["correct_count"] = correct_count
-    new_submission["total_questions"] = total_questions
+    score = round((correct_count / total_questions) * 10, 2) if total_questions > 0 else 0.0
 
-    await submissions_collection.insert_one(new_submission)
+    now = datetime.now(timezone.utc)
+    submission_doc = {
+        "exam_id": exam_id,
+        "student_id": user_id,
+        "submitted_at": now.isoformat(),
+        "score": str(score),
+        "correct_count": str(correct_count),
+        "total_questions": str(total_questions),
+        "status": submission_data.status.value,
+        "violation_count": str(submission_data.violation_count),
+    }
+    await persistence.submissions.insert_one(submission_doc)
 
-    if new_submission["status"] == "completed":
-        await violations_collection.delete_many(
-            {"student_id": str(current_user["_id"]), "exam_id": exam_id}
-        )
+    # Delete violations on completed status
+    if submission_data.status.value == "completed":
+        await persistence.violations.delete_by_exam_student(exam_id, user_id)
 
-    return {"message": "Exam submitted successfully"}
+    # Update exam counters atomically with optimistic locking
+    await persistence.exams.update_counters_safe(exam_id, score, submission_data.violation_count)
+
+    return ExamSubmissionResponse(
+        exam_id=exam_id,
+        student_id=user_id,
+        submitted_at=now,
+        score=score,
+        correct_count=correct_count,
+        total_questions=total_questions,
+        status=submission_data.status,
+        violation_count=submission_data.violation_count,
+    )
 
 
-@router.get("/results/my", response_model=List[dict])
-async def get_my_results(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "student":
+@router.get("/results/my", response_model=List[ExamResultSummary])
+async def get_my_results(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> List[ExamResultSummary]:
+    """Get current student's exam results."""
+    if str(current_user.get("role", "")) != "student":
         raise HTTPException(
             status_code=403, detail="Only students can view their results"
         )
 
-    raw_user_id = current_user.get("_id")
-    student_id = str(raw_user_id)
-    student_id_values = (
-        [student_id, raw_user_id] if isinstance(raw_user_id, ObjectId) else [student_id]
-    )
-    submissions = await submissions_collection.find(
-        {"student_id": {"$in": student_id_values}}
-    ).to_list(None)
+    persistence = get_persistence(request)
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
+    submissions = await persistence.submissions.list_by_student(user_id)
     results = []
     for sub in submissions:
-        raw_exam_id = str(sub.get("exam_id", "")).strip()
-        if not ObjectId.is_valid(raw_exam_id):
-            continue
-        exam = await exams_collection.find_one({"_id": ObjectId(raw_exam_id)})
+        exam = await persistence.exams.get_by_id(sub.get("exam_id"))
         if not exam:
             continue
         results.append(
-            {
-                "exam_id": raw_exam_id,
-                "exam_title": exam["title"],
-                "subject": exam["subject"],
-                "score": sub.get("score", 0),
-                "correct_count": sub.get("correct_count", 0),
-                "total_questions": sub.get("total_questions", 0),
-                "status": sub.get("status"),
-                "submitted_at": sub.get("submitted_at"),
-            }
+            ExamResultSummary(
+                exam_id=sub.get("exam_id"),
+                exam_title=exam.get("title", ""),
+                subject=exam.get("subject", ""),
+                score=float(sub.get("score", 0)),
+                correct_count=int(sub.get("correct_count", 0)),
+                total_questions=int(sub.get("total_questions", 0)),
+                status=sub.get("status"),
+                submitted_at=sub.get("submitted_at"),
+            )
         )
-
-    results.sort(
-        key=lambda x: x["submitted_at"] if x["submitted_at"] else datetime.min,
-        reverse=True,
-    )
     return results
 
 
-@router.get("/all-results/summary", response_model=List[dict])
-async def get_all_results_summary(current_user: dict = Depends(get_current_user)):
-    role = current_user.get("role")
+@router.get("/all-results/summary", response_model=List[ExamResultSummaryList])
+async def get_all_results_summary(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> List[ExamResultSummaryList]:
+    """Get summary of all exam results (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
     if role not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    user_id = str(current_user["_id"])
-    query = {}
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
+
     if role == "teacher":
-        teacher_classes = []
-        async for cls in classes_collection.find(
-            {
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ]
-            }
-        ):
-            teacher_classes.append(str(cls["_id"]))
+        # Include exams created by the teacher + exams for classes they teach (homeroom + subject)
+        teacher_exams = await persistence.exams.list_by_teacher(user_id)
 
-        query = {
-            "$or": [
-                {"class_id": {"$in": teacher_classes}},
-                {"teacher_id": user_id},
-            ]
-        }
+        # Get all classes the teacher teaches (homeroom or subject)
+        teacher_classes = await persistence.classes.list_by_teacher_any_role(user_id)
+        class_ids = [c.get("class_id") for c in teacher_classes if c.get("class_id")]
 
-    exams = await exams_collection.find(query).to_list(None)
+        class_exam_lists = await asyncio.gather(
+            *[persistence.exams.list_by_class(cid) for cid in sorted(set(class_ids))]
+        )
+        class_exams = [e for sublist in class_exam_lists for e in sublist]
 
-    # Batch load class info to avoid N+1 queries
-    class_object_ids = set()
-    for exam in exams:
-        cid = exam.get("class_id")
-        if cid and ObjectId.is_valid(cid):
-            class_object_ids.add(ObjectId(cid))
+        # Merge and deduplicate
+        merged: dict[str, dict] = {}
+        for e in teacher_exams + class_exams:
+            eid = e.get("exam_id") or e.get("id")
+            if eid:
+                merged[eid] = e
+        exams = list(merged.values())
+    else:
+        exams = await persistence.exams.list_all()
 
-    classes_by_id = {}
-    if class_object_ids:
-        classes_list = await classes_collection.find(
-            {"_id": {"$in": list(class_object_ids)}}
-        ).to_list(None)
-        classes_by_id = {str(c["_id"]): c for c in classes_list}
     summary = []
     for exam in exams:
-        exam_id = str(exam["_id"])
-        class_id = exam.get("class_id")
-        class_info = classes_by_id.get(str(class_id))
+        exam_id = exam.get("exam_id")
+        class_id = exam.get("class_id", "")
+        cls = await persistence.classes.get_by_id(class_id)
 
-        pipeline = [
-            {"$match": {"exam_id": exam_id}},
-            {
-                "$group": {
-                    "_id": "$exam_id",
-                    "total_submissions": {"$sum": 1},
-                    "average_score": {"$avg": "$score"},
-                    "highest_score": {"$max": "$score"},
-                    "violations_sum": {"$sum": "$violation_count"},
-                }
-            },
-        ]
-        stats_list = await submissions_collection.aggregate(pipeline).to_list(length=1)
-        stats = (
-            stats_list[0]
-            if stats_list
-            else {
-                "total_submissions": 0,
-                "average_score": 0,
-                "highest_score": 0,
-                "violations_sum": 0,
-            }
-        )
+        # Read counters from denormalized fields
+        submission_count = int(exam.get("submission_count", 0))
+        score_total = float(exam.get("score_total", 0))
+        highest_score = float(exam.get("highest_score", 0))
+        violation_total = int(exam.get("violation_total", 0))
+        avg_score = score_total / submission_count if submission_count > 0 else 0
+
         summary.append(
-            {
-                "id": exam_id,
-                "title": exam["title"],
-                "subject": exam["subject"],
-                "class_id": class_id,
-                "class_name": class_info.get("name") if class_info else "N/A",
-                "grade": class_info.get("grade") if class_info else "N/A",
-                "total_submissions": stats["total_submissions"],
-                "average_score": stats["average_score"] or 0,
-                "highest_score": stats["highest_score"] or 0,
-                "violations_count": stats["violations_sum"] or 0,
-                "start_time": exam.get("start_time"),
-                "end_time": exam.get("end_time"),
-            }
+            ExamResultSummaryList(
+                id=exam_id or "",
+                title=exam.get("title", ""),
+                subject=exam.get("subject", ""),
+                class_id=class_id,
+                class_name=cls.get("name") if cls else "N/A",
+                grade=str(cls.get("grade")) if cls else "N/A",
+                total_submissions=submission_count,
+                average_score=avg_score,
+                highest_score=highest_score,
+                violations_count=violation_total,
+                start_time=exam.get("start_time"),
+                end_time=exam.get("end_time"),
+            )
         )
     return summary
 
 
-@router.get("/{exam_id}/submissions", response_model=List[dict])
+@router.get("/{exam_id}/submissions", response_model=List[ExamSubmissionSummary])
 async def get_exam_submissions(
-    exam_id: str, current_user: dict = Depends(get_current_user)
-):
-    role = current_user.get("role")
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> List[ExamSubmissionSummary]:
+    """Get all submissions for an exam (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
     if role not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    user_id = str(current_user["_id"])
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
+    allowed, exam = await can_modify_exam(persistence, role, user_id, exam_id)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Permission denied")
 
-    if role == "teacher":
-        class_id = exam.get("class_id")
-        # Check if teacher is assigned to this class or created the exam
-        cls = None
-        if class_id and ObjectId.is_valid(class_id):
-            cls = await classes_collection.find_one(
-                {
-                    "_id": ObjectId(class_id),
-                    "$or": [
-                        {"homeroom_teacher_id": user_id},
-                        {"subject_teachers.teacher_id": user_id},
-                    ],
-                }
-            )
-        if not cls and exam.get("teacher_id") != user_id:
-            raise HTTPException(status_code=403, detail="Permission denied")
-
-    submissions = await submissions_collection.find({"exam_id": exam_id}).to_list(None)
-
-    # Collect all valid student_ids to query users once, avoiding N+1 queries
-    student_object_ids = set()
-    for sub in submissions:
-        sid = sub.get("student_id")
-        if sid and ObjectId.is_valid(sid):
-            student_object_ids.add(ObjectId(sid))
-
-    students_by_id = {}
-    if student_object_ids:
-        students = await users_collection.find(
-            {"_id": {"$in": list(student_object_ids)}}
-        ).to_list(None)
-        students_by_id = {str(s["_id"]): s for s in students}
-
+    submissions = await persistence.submissions.list_by_exam(exam_id)
     results = []
     for sub in submissions:
-        student_id = sub.get("student_id")
-        student = students_by_id.get(str(student_id))
-
+        student = await persistence.users.get_by_id(sub.get("student_id"))
         results.append(
-            {
-                "student_id": student_id,
-                "student_name": student.get("name") if student else "Unknown student",
-                "score": sub.get("score", 0),
-                "violation_count": sub.get("violation_count", 0),
-                "status": sub.get("status"),
-                "submitted_at": sub.get("submitted_at"),
-            }
+            ExamSubmissionSummary(
+                student_id=sub.get("student_id"),
+                student_name=student.get("name") if student else "Unknown student",
+                score=float(sub.get("score", 0)),
+                violation_count=int(sub.get("violation_count", 0)),
+                status=sub.get("status"),
+                submitted_at=sub.get("submitted_at"),
+            )
         )
-
     return results
 
 
 @router.get("/{exam_id}", response_model=dict)
-async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user)):
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
+async def get_exam(
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+):
+    """Get exam details, with lock status for students."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    role = current_user.get("role")
-    user_id = str(current_user["_id"])
+    allowed, exam = await can_access_exam(persistence, role, user_id, exam_id)
+    if not allowed or not exam:
+        raise HTTPException(status_code=403, detail="Permission denied")
 
-    now = datetime.now(timezone.utc)
     if role == "student":
-        submission = await submissions_collection.find_one(
-            {"exam_id": exam_id, "student_id": user_id}
-        )
+        submission = await persistence.submissions.get_by_exam_student(exam_id, user_id)
         if submission:
             return {
-                "id": str(exam["_id"]),
-                "title": exam["title"],
-                "subject": exam["subject"],
+                "id": exam.get("exam_id"),
+                "title": exam.get("title"),
+                "subject": exam.get("subject"),
                 "is_locked": True,
                 "submission_status": submission.get("status"),
                 "violation_count": submission.get("violation_count", 0),
+                "start_time": exam.get("start_time", ""),
+                "end_time": exam.get("end_time", ""),
                 "lock_reason": (
                     "disqualified"
                     if submission.get("status") == "failed"
@@ -492,283 +611,227 @@ async def get_exam(exam_id: str, current_user: dict = Depends(get_current_user))
                 ),
             }
 
-        if now < exam["start_time"]:
+        now = datetime.now(timezone.utc)
+        start_time = exam.get("start_time", "")
+        end_time = exam.get("end_time", "")
+
+        # Parse start/end times
+        if isinstance(start_time, str):
+            try:
+                start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            except Exception:
+                start_dt = now
+        else:
+            start_dt = start_time
+
+        if isinstance(end_time, str):
+            try:
+                end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+            except Exception:
+                end_dt = now
+        else:
+            end_dt = end_time
+
+        if now < start_dt:
             return {
-                "id": str(exam["_id"]),
-                "title": exam["title"],
-                "subject": exam["subject"],
+                "id": exam.get("exam_id"),
+                "title": exam.get("title"),
+                "subject": exam.get("subject"),
                 "is_locked": True,
                 "lock_reason": "not_started",
-                "start_time": exam["start_time"],
+                "start_time": start_time,
+                "end_time": end_time,
             }
-        if now > exam["end_time"]:
+        if now > end_dt:
             return {
-                "id": str(exam["_id"]),
-                "title": exam["title"],
-                "subject": exam["subject"],
+                "id": exam.get("exam_id"),
+                "title": exam.get("title"),
+                "subject": exam.get("subject"),
                 "is_locked": True,
                 "lock_reason": "expired",
-                "end_time": exam["end_time"],
+                "start_time": start_time,
+                "end_time": end_time,
             }
 
-    has_permission = False
-    if role == "admin":
-        has_permission = True
-    elif role == "student":
-        u_class = current_user.get("class_name")
-        u_grade = current_user.get("grade")
-        if u_class and u_grade:
-            cls = await classes_collection.find_one(
-                {"_id": ObjectId(exam["class_id"]), "name": u_class, "grade": u_grade}
-            )
-            if cls:
-                has_permission = True
-    elif role == "teacher":
-        if exam["teacher_id"] == user_id:
-            has_permission = True
-        else:
-            cls = await classes_collection.find_one(
-                {
-                    "_id": ObjectId(exam["class_id"]),
-                    "$or": [
-                        {"homeroom_teacher_id": user_id},
-                        {"subject_teachers.teacher_id": user_id},
-                    ],
-                }
-            )
-            if cls:
-                has_permission = True
-
-    if not has_permission:
-        raise HTTPException(status_code=403, detail="Permission denied")
+        # Student can access exam content — add server-authoritative time fields
+        seconds_left = max(0, int((end_dt - now).total_seconds()))
+        return {
+            **exam_response_helper(exam, include_secret=False),
+            "is_locked": False,
+            "lock_reason": None,
+            "server_time": now.isoformat(),
+            "seconds_left": seconds_left,
+        }
 
     include_secret = role in ["teacher", "admin"]
-    return exam_helper(exam, include_secret=include_secret)
+    return exam_response_helper(exam, include_secret=include_secret)
 
 
-@router.patch("/{exam_id}", response_model=dict)
+@router.patch("/{exam_id}", response_model=ExamUpdateResponse)
 async def update_exam(
-    exam_id: str, exam_data: ExamUpdate, current_user: dict = Depends(get_current_user)
-):
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
+    exam_id: str,
+    exam_data: ExamUpdate,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamUpdateResponse:
+    """Update exam details (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    role = current_user.get("role")
-    user_id = str(current_user["_id"])
-
-    has_permission = False
-    if role == "admin":
-        has_permission = True
-    elif role == "teacher":
-        if exam["teacher_id"] == user_id:
-            has_permission = True
-        else:
-            cls = await classes_collection.find_one(
-                {
-                    "_id": ObjectId(exam["class_id"]),
-                    "$or": [
-                        {"homeroom_teacher_id": user_id},
-                        {"subject_teachers.teacher_id": user_id},
-                    ],
-                }
-            )
-            if cls:
-                has_permission = True
-
-    if not has_permission:
+    allowed, exam = await can_modify_exam(persistence, role, user_id, exam_id)
+    if not allowed:
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
         raise HTTPException(
             status_code=403, detail="Permission denied to edit this exam"
         )
 
     update_dict = {k: v for k, v in exam_data.model_dump().items() if v is not None}
     if not update_dict:
-        return {"message": "No changes provided"}
+        return ExamUpdateResponse(message="No changes provided")
 
-    await exams_collection.update_one({"_id": ObjectId(exam_id)}, {"$set": update_dict})
-    return {"message": "Exam updated successfully"}
+    def _to_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    if "start_time" in update_dict and isinstance(update_dict["start_time"], datetime):
+        update_dict["start_time"] = _to_utc(update_dict["start_time"])
+    if "end_time" in update_dict and isinstance(update_dict["end_time"], datetime):
+        update_dict["end_time"] = _to_utc(update_dict["end_time"])
+
+    await persistence.exams.update(exam_id, update_dict)
+    return ExamUpdateResponse(message="Exam updated successfully")
 
 
-@router.delete("/{exam_id}", response_model=dict)
-async def delete_exam(exam_id: str, current_user: dict = Depends(get_current_user)):
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
+@router.delete("/{exam_id}", response_model=ExamDeleteResponse)
+async def delete_exam(
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamDeleteResponse:
+    """Delete an exam (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    role = current_user.get("role")
-    user_id = str(current_user["_id"])
-
-    has_permission = False
-    if role == "admin":
-        has_permission = True
-    elif role == "teacher":
-        if exam["teacher_id"] == user_id:
-            has_permission = True
-        else:
-            cls = await classes_collection.find_one(
-                {
-                    "_id": ObjectId(exam["class_id"]),
-                    "$or": [
-                        {"homeroom_teacher_id": user_id},
-                        {"subject_teachers.teacher_id": user_id},
-                    ],
-                }
-            )
-            if cls:
-                has_permission = True
-
-    if not has_permission:
+    allowed, exam = await can_modify_exam(persistence, role, user_id, exam_id)
+    if not allowed:
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
         raise HTTPException(
             status_code=403, detail="Permission denied to delete this exam"
         )
 
-    await exams_collection.delete_one({"_id": ObjectId(exam_id)})
-    return {"message": "Exam deleted successfully"}
+    await persistence.exams.delete(exam_id)
+    return ExamDeleteResponse(message="Exam deleted successfully")
 
 
-@router.get("/{exam_id}/secret-key", response_model=dict)
+@router.get("/{exam_id}/secret-key", response_model=ExamSecretKeyResponse)
 async def get_exam_secret_key(
-    exam_id: str, current_user: dict = Depends(get_current_user)
-):
-    role = current_user.get("role")
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamSecretKeyResponse:
+    """Get exam secret key (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
     if role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    user_id = str(current_user["_id"])
-    if role == "teacher" and exam["teacher_id"] != user_id:
-        cls = await classes_collection.find_one(
-            {
-                "_id": ObjectId(exam["class_id"]),
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ],
-            }
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
+    allowed, exam = await can_modify_exam(persistence, role, user_id, exam_id)
+    if not allowed or not exam:
+        raise HTTPException(
+            status_code=404 if not exam else 403,
+            detail="Exam not found" if not exam else "Permission denied",
         )
-        if not cls:
-            raise HTTPException(status_code=403, detail="Permission denied")
 
-    return {"secret_key": exam.get("secret_key")}
+    return ExamSecretKeyResponse(secret_key=exam.get("secret_key") or "")
 
 
-@router.post("/{exam_id}/regenerate-key", response_model=dict)
+@router.post("/{exam_id}/regenerate-key", response_model=ExamRegenerateKeyResponse)
 async def regenerate_exam_secret_key(
-    exam_id: str, current_user: dict = Depends(get_current_user)
-):
-    role = current_user.get("role")
+    exam_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> ExamRegenerateKeyResponse:
+    """Regenerate exam secret key (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
     if role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    if not ObjectId.is_valid(exam_id):
-        raise HTTPException(status_code=400, detail="Invalid exam ID")
-    exam = await exams_collection.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    user_id = str(current_user["_id"])
-    if role == "teacher" and exam["teacher_id"] != user_id:
-        cls = await classes_collection.find_one(
-            {
-                "_id": ObjectId(exam["class_id"]),
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ],
-            }
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
+    allowed, exam = await can_modify_exam(persistence, role, user_id, exam_id)
+    if not allowed or not exam:
+        raise HTTPException(
+            status_code=404 if not exam else 403,
+            detail="Exam not found" if not exam else "Permission denied",
         )
-        if not cls:
-            raise HTTPException(status_code=403, detail="Permission denied")
 
     new_key = secrets.token_hex(3).upper()
-    await exams_collection.update_one(
-        {"_id": ObjectId(exam_id)}, {"$set": {"secret_key": new_key}}
+    await persistence.exams.update(exam_id, {"secret_key": new_key})
+    return ExamRegenerateKeyResponse(
+        secret_key=new_key, message="Secret key regenerated successfully"
     )
-    return {"secret_key": new_key, "message": "Secret key regenerated successfully"}
 
 
-@router.get("/violations/all", response_model=List[dict])
-async def get_all_violations(current_user: dict = Depends(get_current_user)):
-    role = current_user.get("role")
+@router.get("/violations/all", response_model=List[ExamViolation])
+async def get_all_violations(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    request: Request,
+) -> List[ExamViolation]:
+    """Get all exam violations (teacher/admin only)."""
+    persistence = get_persistence(request)
+    role = str(current_user.get("role", ""))
     if role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    user_id = str(current_user["_id"])
+    user_id = str(current_user.get("user_id") or current_user.get("_id") or "")
 
-    query = {}
+    # If teacher, filter by their classes
     if role == "teacher":
-        teacher_classes = []
-        async for cls in classes_collection.find(
-            {
-                "$or": [
-                    {"homeroom_teacher_id": user_id},
-                    {"subject_teachers.teacher_id": user_id},
-                ]
-            }
-        ):
-            teacher_classes.append(str(cls["_id"]))
-        query = {"class_id": {"$in": teacher_classes}}
+        teacher_classes = await persistence.classes.list_by_teacher_any_role(user_id)
+        class_ids = [c.get("class_id") for c in teacher_classes if c.get("class_id")]
 
-    violations = []
-    async for v in violations_collection.find(query).sort("violation_time", -1):
-        student = await users_collection.find_one({"_id": ObjectId(v["student_id"])})
+        all_violations = []
+        for cid in set(class_ids):
+            violations = await persistence.violations.list_by_class(cid)
+            all_violations.extend(violations)
+    else:
+        # Admin sees all - scan violations
+        # For now, get from exams
+        exams = await persistence.exams.list_all()
+        all_violations = []
+        for exam in exams:
+            violations = await persistence.violations.list_by_exam(exam.get("exam_id"))
+            all_violations.extend(violations)
 
-        if v.get("class_id") == "unknown" and student:
-            current_class_id = student.get("class_id")
-            if not current_class_id:
-                class_info = await classes_collection.find_one(
-                    {"name": student.get("class_name"), "grade": student.get("grade")}
-                )
-                if class_info:
-                    current_class_id = str(class_info["_id"])
+    results = []
+    for v in all_violations:
+        student = await persistence.users.get_by_id(v.get("student_id"))
+        exam = await persistence.exams.get_by_id(v.get("exam_id"))
 
-            if current_class_id:
-                await violations_collection.update_one(
-                    {"_id": v["_id"]}, {"$set": {"class_id": str(current_class_id)}}
-                )
-                v["class_id"] = str(current_class_id)
-
-        if student:
-            v["student_name"] = student.get("name", "Unknown student")
-            grade = str(student.get("grade", ""))
-            class_name = student.get("class_name", "")
-            v["student_class"] = f"{grade} {class_name}".strip()
-        else:
-            v["student_name"] = "Unknown student"
-            v["student_class"] = "N/A"
-
-        exam = None
-        raw_exam_id = str(v.get("exam_id", "")).strip()
-        try:
-            exam = await exams_collection.find_one({"_id": ObjectId(raw_exam_id)})
-        except:
-            exam = await exams_collection.find_one({"_id": raw_exam_id})
-
-        if exam:
-            v["exam_title"] = exam.get("title", "Unknown Exam")
-            v["exam_start"] = exam.get("start_time")
-            v["exam_end"] = exam.get("end_time")
-            if v.get("subject") == "N/A":
-                v["subject"] = exam.get("subject", "N/A")
-                await violations_collection.update_one(
-                    {"_id": v["_id"]}, {"$set": {"subject": v["subject"]}}
-                )
-        else:
-            v["exam_title"] = "Unknown Exam"
-
-        v["id"] = str(v["_id"])
-        del v["_id"]
-        violations.append(v)
-
-    return violations
+        results.append(
+            ExamViolation(
+                id=v.get("exam_id"),
+                exam_id=v.get("exam_id"),
+                student_id=v.get("student_id") or "",
+                student_name=student.get("name") if student else "Unknown student",
+                student_class=f"{student.get('grade', '')} {student.get('class_name', '')}".strip()
+                or "N/A",
+                exam_title=exam.get("title") if exam else "Unknown Exam",
+                exam_start=exam.get("start_time") if exam else None,
+                exam_end=exam.get("end_time") if exam else None,
+                class_id=v.get("class_id") or "unknown",
+                subject=v.get("subject", "N/A"),
+                violation_type=v.get("type", ""),
+                violation_time=v.get("violation_time") or datetime.now(timezone.utc),
+                created_at=v.get("created_at"),
+                evidence_images=v.get("evidence_images", []) or [],
+                metadata=v.get("metadata", {}) or {},
+            )
+        )
+    return results

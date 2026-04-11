@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from src.memory.redis_client import RedisClient
+from src.database.redis_client import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,10 @@ class ConversationCache:
             if not conversation_id:
                 return False
             data = self._redis._serialize(conversation)
-            self._redis.client.set(
+            self._redis.set_json(
                 self._conversation_key(conversation_id),
-                json.dumps(data, ensure_ascii=False),
-                ex=self._redis._ttl_seconds(),
+                data,
+                expiration=self._redis._ttl_seconds(),
             )
             return True
         except Exception as e:
@@ -42,8 +42,7 @@ class ConversationCache:
         if not self._redis.is_healthy():
             return None
         try:
-            data = self._redis.client.get(self._conversation_key(conversation_id))
-            return json.loads(data) if data else None
+            return self._redis.get_json(self._conversation_key(conversation_id))
         except Exception as e:
             logger.error(f"Get error: {e}")
             return None
@@ -60,4 +59,4 @@ class ConversationCache:
 
     def close(self) -> None:
         """Close Redis connection."""
-        self._redis.close_connection()
+        self._redis.close()

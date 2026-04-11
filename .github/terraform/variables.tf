@@ -192,3 +192,9 @@ variable "frontend_waf_rate_limit" {
   type        = number
   default     = 2000
 }
+
+variable "dynamodb_table_prefix" {
+  description = "Prefix for DynamoDB table names. Must match backend DYNAMODB_TABLE_PREFIX."
+  type        = string
+  default     = "edutrust-backend"
+}

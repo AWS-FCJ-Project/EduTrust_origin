@@ -47,6 +47,8 @@ class CognitoAuthService:
                         "aws_secret_access_key": app_config.AWS_SECRET_ACCESS_KEY,
                     }
                 )
+                if app_config.AWS_SESSION_TOKEN:
+                    client_kwargs["aws_session_token"] = app_config.AWS_SESSION_TOKEN
             self._client = boto3.client("cognito-idp", **client_kwargs)
         return self._client
 
@@ -82,12 +84,17 @@ class CognitoAuthService:
 
     def set_user_password(self, email: str, password: str) -> None:
         self.ensure_configured()
-        self.client.admin_set_user_password(
-            UserPoolId=self.user_pool_id,
-            Username=email,
-            Password=password,
-            Permanent=True,
-        )
+        try:
+            self.client.admin_set_user_password(
+                UserPoolId=self.user_pool_id,
+                Username=email,
+                Password=password,
+                Permanent=True,
+            )
+        except self.client.exceptions.UserNotFoundException:
+            raise CognitoAuthError(
+                f"User '{email}' not found in Cognito. Cannot set password."
+            )
 
     def sync_user_group(
         self, email: str, target_group: str | None, current_group: str | None = None

@@ -50,6 +50,7 @@ const ExamPage = () => {
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [isLockdownActive, setIsLockdownActive] = useState(false);
     const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
+    const [fullscreenBlocked, setFullscreenBlocked] = useState(false);
 
     // --- 1. Fetch User & Exam Status ---
     useEffect(() => {
@@ -98,13 +99,23 @@ const ExamPage = () => {
                     setExam(data);
                 } else {
                     setExam(data);
-                    const end = new Date(data.end_time).getTime();
-                    const now = Date.now();
-                    const secondsUntilDeadline = Math.floor((end - now) / 1000);
-                    const durationSeconds = (data.duration || 60) * 60;
-                    
-                    // Time left is the smaller of (Time until deadline) or (Exam duration)
-                    setTimeLeft(Math.max(0, Math.min(secondsUntilDeadline, durationSeconds)));
+                    // Prefer server-authoritative seconds_left; fall back to end_time computation
+                    let secondsLeft: number;
+                    if (typeof data.seconds_left === 'number' && data.seconds_left > 0) {
+                        // Use server baseline + drift correction
+                        const serverTime = data.server_time ? new Date(data.server_time).getTime() : null;
+                        if (serverTime) {
+                            const driftMs = Date.now() - serverTime;
+                            secondsLeft = Math.max(0, data.seconds_left - Math.floor(driftMs / 1000));
+                        } else {
+                            secondsLeft = data.seconds_left;
+                        }
+                    } else {
+                        // Fallback: compute from end_time (may drift with client clock)
+                        const end = new Date(data.end_time).getTime();
+                        secondsLeft = Math.max(0, Math.floor((end - Date.now()) / 1000));
+                    }
+                    setTimeLeft(secondsLeft);
                 }
             } else {
                 const errData = await res.json().catch(() => ({ detail: "Không thể tải dữ liệu bài thi" }));
@@ -164,9 +175,13 @@ const ExamPage = () => {
     // --- 4. Timer Logic ---
     useEffect(() => {
         if (examStep === 'exam' && timeLeft > 0 && !isSubmitted) {
-            const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+            const timer = setInterval(() => setTimeLeft(prev => {
+                const next = prev - 1;
+                if (next <= 0) return 0;
+                return next;
+            }), 1000);
             return () => clearInterval(timer);
-        } else if (examStep === 'exam' && timeLeft === 0 && !isSubmitted) {
+        } else if (examStep === 'exam' && timeLeft <= 0 && !isSubmitted) {
             submitExam("completed");
         }
     }, [timeLeft, isSubmitted, examStep]);
@@ -235,8 +250,22 @@ const ExamPage = () => {
         }
     };
 
-    const handleViolation = useCallback(() => {
+    // For CameraMonitor - camera already reports to backend, just update UI count
+    const handleCameraViolation = useCallback((violations: string[]) => {
         if (examStep !== 'exam' || isGracePeriod || isSubmitted) return;
+        setViolationCount(prev => {
+            const n = prev + violations.length;
+            if (n >= 4) {
+                setShowCheatModal(true);
+                submitExam("failed");
+            }
+            return n;
+        });
+    }, [examStep, isGracePeriod, isSubmitted, submitExam]);
+
+    // For ProctoringLockdown - TAB_SWITCH, fullscreen exit etc. need to report to backend
+    const handleProctoringViolation = useCallback(async (violationType: string = "FULLSCREEN_EXIT") => {
+        if (examStep !== 'exam' || isGracePeriod || isSubmitted || !user?.id) return;
         setViolationCount(prev => {
             const n = prev + 1;
             if (n >= 4) {
@@ -245,7 +274,27 @@ const ExamPage = () => {
             }
             return n;
         });
-    }, [examStep, isGracePeriod, isSubmitted, submitExam]);
+
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+            await fetch(`${apiUrl}/camera/log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "DETECTION_LOG",
+                    violations: [],
+                    violation_codes: [violationType],
+                    person_count: 0,
+                    timestamp: new Date().toISOString(),
+                    image: null,
+                    exam_id: examId,
+                    student_id: user.id
+                })
+            });
+        } catch (e) {
+            console.warn("Failed to log violation:", e);
+        }
+    }, [examStep, isGracePeriod, isSubmitted, submitExam, examId, user?.id]);
 
     // Deactivate lockdown when exam is submitted
     useEffect(() => {
@@ -320,6 +369,7 @@ const ExamPage = () => {
                             <p className="text-gray-500 font-medium mb-4">Bài thi sẽ bắt đầu vào lúc:</p>
                             <p className="text-2xl font-black text-[#5B0019] mb-12">
                                 {new Date(lockData.info).toLocaleString('vi-VN', { 
+                                    timeZone: 'Asia/Ho_Chi_Minh',
                                     hour: '2-digit', 
                                     minute: '2-digit',
                                     day: '2-digit',
@@ -380,6 +430,32 @@ const ExamPage = () => {
                     <div className="bg-white/95 backdrop-blur-md border border-amber-300 rounded-2xl shadow-2xl px-6 py-3 flex items-center gap-3 max-w-sm">
                         <AlertTriangle size={16} className="text-amber-500 shrink-0" />
                         <p className="text-sm font-bold text-gray-700">Màn hình đã thoát toàn màn hình</p>
+                    </div>
+                </div>
+            )}
+
+            {/* Blocking modal: browser denied auto fullscreen re-entry */}
+            {fullscreenBlocked && (
+                <div className="fixed inset-0 z-[12000] bg-black/80 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-300">
+                    <div className="bg-white rounded-[3rem] shadow-[0_0_100px_rgba(0,0,0,0.3)] max-w-lg w-full mx-4 p-12 text-center border border-gray-100">
+                        <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                            <AlertTriangle size={40} />
+                        </div>
+                        <h2 className="text-3xl font-black text-gray-900 tracking-tight mb-4">Cần Quay lại Toàn Màn Hình</h2>
+                        <p className="text-gray-500 font-bold leading-relaxed mb-10">
+                            Trình duyệt không cho phép tự động quay lại chế độ toàn màn hình.<br />
+                            Vui lòng nhấn nút bên dưới để tiếp tục.
+                        </p>
+                        <button
+                            onClick={() => {
+                                document.documentElement.requestFullscreen?.().then(() => {
+                                    setFullscreenBlocked(false);
+                                }).catch(() => {});
+                            }}
+                            className="w-full py-5 bg-[#5B0019] text-white rounded-2xl font-black text-lg uppercase tracking-widest hover:bg-black transition-all shadow-xl active:scale-95"
+                        >
+                            Quay lại Toàn Màn Hình
+                        </button>
                     </div>
                 </div>
             )}
@@ -749,7 +825,7 @@ const ExamPage = () => {
                 {user?.id && (
                     <div ref={cameraSourceRef} className="w-full h-full">
                         <CameraMonitor
-                            onViolation={handleViolation}
+                            onViolation={handleCameraViolation}
                             onStatusChange={setCameraStatus}
                             isCheck={examStep !== 'exam'}
                             isActive={!isSubmitted && !showCheatModal}
@@ -759,9 +835,12 @@ const ExamPage = () => {
                         <ProctoringLockdown
                             isActive={isLockdownActive && examStep === 'exam'}
                             onFullscreenExit={() => {
+                                handleProctoringViolation("FULLSCREEN_EXIT");
                                 setShowFullscreenWarning(true);
                                 setTimeout(() => setShowFullscreenWarning(false), 3000);
                             }}
+                            onFullscreenReenterFailed={() => setFullscreenBlocked(true)}
+                            onViolation={handleProctoringViolation}
                             contentSelector="main"
                         />
                     </div>
