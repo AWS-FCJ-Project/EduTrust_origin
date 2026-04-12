@@ -412,8 +412,7 @@ jobs:
           # This ensures Redis endpoint is always dynamically sourced from ElastiCache cluster
           FINAL=$(echo "${BACKEND_ENV_FILE}" | sed "s|^REDIS_CLIENT_HOST=.*|REDIS_CLIENT_HOST=${REDIS_ENDPOINT}|")
           if ! echo "${BACKEND_ENV_FILE}" | grep -q "^REDIS_CLIENT_HOST="; then
-            FINAL="${FINAL}
-REDIS_CLIENT_HOST=${REDIS_ENDPOINT}"
+            FINAL=$(printf '%s\nREDIS_CLIENT_HOST=%s' "${FINAL}" "${REDIS_ENDPOINT}")
           fi
 
           echo "Updated env file contents (REDIS_CLIENT_HOST will be: ${REDIS_ENDPOINT})"
