@@ -410,23 +410,19 @@ jobs:
 
           # Inject REDIS_CLIENT_HOST from terraform output into env file
           # This ensures Redis endpoint is always dynamically sourced from ElastiCache cluster
-          ENriched_env_file=$(mktemp)
-          echo "${BACKEND_ENV_FILE}" > "${ENRICHED_ENV_FILE}"
-
-          # Replace or append REDIS_CLIENT_HOST
-          if grep -q "^REDIS_CLIENT_HOST=" "${ENRICHED_ENV_FILE}"; then
-            sed -i "s|^REDIS_CLIENT_HOST=.*|REDIS_CLIENT_HOST=${REDIS_ENDPOINT}|" "${ENRICHED_ENV_FILE}"
-          else
-            echo "REDIS_CLIENT_HOST=${REDIS_ENDPOINT}" >> "${ENRICHED_ENV_FILE}"
+          FINAL=$(echo "${BACKEND_ENV_FILE}" | sed "s|^REDIS_CLIENT_HOST=.*|REDIS_CLIENT_HOST=${REDIS_ENDPOINT}|")
+          if ! echo "${BACKEND_ENV_FILE}" | grep -q "^REDIS_CLIENT_HOST="; then
+            FINAL="${FINAL}
+REDIS_CLIENT_HOST=${REDIS_ENDPOINT}"
           fi
 
           echo "Updated env file contents (REDIS_CLIENT_HOST will be: ${REDIS_ENDPOINT})"
-          cat "${ENRICHED_ENV_FILE}"
+          echo "${FINAL}"
 
           # Write back to SSM
           aws ssm put-parameter \
             --name "/edutrust/backend/env" \
-            --value "$(cat "${ENRICHED_ENV_FILE}")" \
+            --value "${FINAL}" \
             --type "SecureString" \
             --key-id "$SECRETS_KMS_KEY_ARN" \
             --overwrite
