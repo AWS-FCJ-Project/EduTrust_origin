@@ -43,11 +43,6 @@ variable "docdb_egress_cidr_blocks" {
   type        = list(string)
 }
 
-variable "redis_egress_cidr_blocks" {
-  description = "Allowed IPv4 CIDR blocks for outbound ElastiCache Redis traffic (port 6379)"
-  type        = list(string)
-}
-
 # --- VPC & Subnet Network Variables ---
 
 variable "vpc_cidr_block" {
@@ -191,6 +186,18 @@ variable "frontend_waf_rate_limit" {
   description = "Rate limit (requests per 5 minutes per IP) for the frontend WAF."
   type        = number
   default     = 2000
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache Redis node type (e.g., cache.t3.micro for dev, cache.t3.small for prod)"
+  type        = string
+  default     = "cache.t3.micro"
+}
+
+variable "redis_engine_version" {
+  description = "ElastiCache Redis engine version"
+  type        = string
+  default     = "7.0"
 }
 
 variable "dynamodb_table_prefix" {
