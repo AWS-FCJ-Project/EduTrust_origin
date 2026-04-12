@@ -319,8 +319,9 @@ resource "aws_elasticache_cluster" "redis" {
   # Maintenance window
   maintenance_window = "mon:09:00-mon:11:00"
 
-  # Snapshot retention (0 = no backups for dev)
-  snapshot_retention_limit = 0
+  # Snapshot retention: 1 day minimum required by CKV_AWS_134
+  # For dev env this may be short; for prod use 7 days
+  snapshot_retention_limit = 1
 
   tags = {
     Name = "${var.ec2_instance_name}-redis"
