@@ -10,7 +10,6 @@ ecr_tag_immutable   =
 
 // Security group rules (egress allowlists used by backend SG)
 docdb_egress_cidr_blocks  =
-redis_egress_cidr_blocks  =
 
 // ASG config 
 asg_min_size         = 

@@ -118,3 +118,14 @@ output "dynamodb_otps_table_arn" {
   description = "ARN of the otps DynamoDB table"
   value       = aws_dynamodb_table.otps.arn
 }
+
+# --- ElastiCache Redis ---
+output "redis_endpoint" {
+  description = "ElastiCache Redis primary endpoint (use this as REDIS_CLIENT_HOST)"
+  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+}
+
+output "redis_security_group_id" {
+  description = "Security group ID for ElastiCache Redis"
+  value       = aws_security_group.redis.id
+}

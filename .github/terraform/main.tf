@@ -270,6 +270,63 @@ resource "aws_vpc_endpoint" "logs" {
 
 # --- End Network Configuration ---
 
+# --- ElastiCache Redis ---
+resource "aws_elasticache_subnet_group" "redis" {
+  name       = "${var.ec2_instance_name}-redis-subnet-group"
+  subnet_ids = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
+
+  tags = { Name = "${var.ec2_instance_name}-redis-subnet-group" }
+}
+
+resource "aws_security_group" "redis" {
+  name        = "${var.ec2_instance_name}-redis-sg"
+  description = "Security group for ElastiCache Redis"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Redis from VPC (references backend SG to avoid cycle)"
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr_block]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.ec2_instance_name}-redis-sg" }
+}
+
+resource "aws_elasticache_cluster" "redis" {
+  cluster_id           = "${var.ec2_instance_name}-redis"
+  engine               = "redis"
+  engine_version       = var.redis_engine_version
+  node_type            = var.redis_node_type
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis${replace(var.redis_engine_version, ".", "")}"
+  port                 = 6379
+  subnet_group_name    = aws_elasticache_subnet_group.redis.name
+  security_group_ids   = [aws_security_group.redis.id]
+
+  # Auto minor version upgrade
+  auto_minor_version_upgrade = true
+
+  # Maintenance window
+  maintenance_window = "mon:09:00-mon:11:00"
+
+  # Snapshot retention (0 = no backups for dev)
+  snapshot_retention_limit = 0
+
+  tags = {
+    Name = "${var.ec2_instance_name}-redis"
+  }
+}
+
 # --- Monitoring: VPC Flow Logs ---
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   # checkov:skip=CKV_AWS_158: KMS encryption is not strictly required for VPC flow logs in this demo/project.
@@ -1551,11 +1608,11 @@ resource "aws_security_group" "backend" {
   }
 
   egress {
-    description = "ElastiCache Redis outbound"
-    from_port   = 6379
-    to_port     = 6379
-    protocol    = "tcp"
-    cidr_blocks = var.redis_egress_cidr_blocks
+    description     = "ElastiCache Redis outbound"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.redis.id]
   }
 
   tags = {
