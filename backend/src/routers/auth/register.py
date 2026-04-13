@@ -70,6 +70,7 @@ async def register(request: Request, user: UserRegister):
         "grade": user.grade if user.role == UserRole.student else None,
         "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
+        "avatar": user.avatar or None,
     }
     await persistence.users.insert_one(user_doc)
 
