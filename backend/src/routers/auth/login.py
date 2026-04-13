@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from src.auth.auth_utils import hash_password, verify_password
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.auth.dependencies import get_current_user as get_current_user_from_token
@@ -19,6 +20,7 @@ from src.schemas.auth_schemas import (
     UserUpdate,
     user_helper,
 )
+from src.utils.s3_utils import get_s3_handler
 
 router = APIRouter()
 
@@ -280,3 +282,74 @@ async def list_admins(
         )
         for a in admins_docs
     ]
+
+
+class AvatarUploadResponse(BaseModel):
+    """Schema for avatar upload URL response."""
+
+    upload_url: str
+    s3_key: str
+    avatar_url: str
+
+
+@router.get(
+    "/user/avatar-upload-url",
+    responses={
+        401: {"description": "Invalid or expired token"},
+    },
+)
+async def get_avatar_upload_url(
+    user: dict = Depends(get_current_user_from_token),
+) -> AvatarUploadResponse:
+    """Generate a presigned S3 URL for the current user to upload their avatar."""
+    user_id = str(user.get("_id") or user.get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    s3_key = f"avatars/{user_id}.jpg"
+    s3 = get_s3_handler()
+    upload_url = s3.get_presigned_upload_url(
+        s3_key, content_type="image/jpeg", expiration=3600
+    )
+    avatar_url = s3.get_presigned_url(s3_key, expiration=3600)
+
+    if not upload_url or not avatar_url:
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+    return AvatarUploadResponse(
+        upload_url=upload_url, s3_key=s3_key, avatar_url=avatar_url
+    )
+
+
+class AvatarUpdateRequest(BaseModel):
+    s3_key: str
+
+
+@router.post(
+    "/user/avatar",
+    responses={
+        401: {"description": "Invalid or expired token"},
+        404: {"description": "User not found"},
+    },
+)
+async def update_user_avatar(
+    body: AvatarUpdateRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_token),
+):
+    """Save the S3 key as the user's avatar URL in DynamoDB."""
+    persistence = request.app.state.persistence
+    user_id = str(current_user.get("_id") or current_user.get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    s3 = get_s3_handler()
+    avatar_url = s3.get_presigned_url(body.s3_key, expiration=3600)
+    if not avatar_url:
+        raise HTTPException(status_code=500, detail="Failed to generate avatar URL")
+
+    ok = await persistence.users.update(user_id, {"avatar": avatar_url})
+    if not ok:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"avatar_url": avatar_url}
