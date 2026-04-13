@@ -1,5 +1,6 @@
 "use client";
 import { Sidebar } from '@/components/ui/sidebar';
+import { AvatarPicker } from '@/components/ui/avatar-picker';
 import { Bell } from 'lucide-react';
 import Image from 'next/image';
 import study from '../../../public/study.png';
@@ -119,8 +120,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <button className="relative p-1"><Bell size={20} /></button>
                         <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
                             <p className="text-sm font-medium tracking-[-0.02em] text-slate-700">{user.name || 'Người dùng'}</p>
-                            <div className="w-10 h-10 rounded-full relative overflow-hidden">
-                                <Image src={study} alt="Avatar" fill className="object-cover" />
+                            <div className="relative">
+                                <AvatarPicker
+                                    currentAvatar={user.avatar}
+                                    userName={user.name}
+                                    size="md"
+                                    onAvatarUpdate={(newAvatarUrl) => {
+                                        const updatedUser = { ...user, avatar: newAvatarUrl };
+                                        setUser(updatedUser);
+                                        Cookies.set('user_info', JSON.stringify(updatedUser), {
+                                            expires: 7,
+                                            path: '/',
+                                            sameSite: 'strict',
+                                            secure: process.env.NODE_ENV === 'production',
+                                        });
+                                    }}
+                                />
                             </div>
                             <button
                                 onClick={handleLogout}

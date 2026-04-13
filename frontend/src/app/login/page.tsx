@@ -21,6 +21,7 @@ interface UserInfo {
     role?: string;
     class_name?: string;
     grade?: string;
+    avatar?: string;
     [key: string]: any;
 }
 
