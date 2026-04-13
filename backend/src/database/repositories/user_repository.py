@@ -47,6 +47,7 @@ class UserRepository:
             "class_name": doc.get("class_name") or "",
             "grade": str(doc.get("grade")) if doc.get("grade") is not None else "",
             "subjects": doc.get("subjects", []),
+            "avatar": doc.get("avatar") or "",
             "created_at": doc.get("created_at", datetime.now(timezone.utc).isoformat()),
             "last_login": doc.get("last_login") or "",
         }
@@ -275,6 +276,7 @@ class UserRepository:
                         str(doc.get("grade")) if doc.get("grade") is not None else ""
                     ),
                     "subjects": doc.get("subjects", []),
+                    "avatar": doc.get("avatar") or "",
                     "created_at": doc.get(
                         "created_at", datetime.now(timezone.utc).isoformat()
                     ),

@@ -30,6 +30,9 @@ class UserRegister(BaseModel):
     role: UserRole = UserRole.student
     class_name: Optional[str] = None
     grade: Optional[int] = None
+    avatar: Optional[str] = Field(
+        None, description="Avatar as base64 data URL or image URL"
+    )
 
     @field_validator("password")
     def validate_password_complexity(cls, v: str) -> str:
@@ -98,6 +101,7 @@ class UserInDB(BaseModel):
     class_name: Optional[str] = None
     grade: Optional[int] = None
     subjects: List[str] = []
+    avatar: Optional[str] = None
     password_plain: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
@@ -118,6 +122,7 @@ class UserInfoResponse(BaseModel):
     class_name: Optional[str] = None
     grade: Optional[int] = None
     subjects: List[str] = []
+    avatar: Optional[str] = None
     is_verified: bool = False
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
@@ -131,6 +136,7 @@ class UserUpdate(BaseModel):
     class_name: Optional[str] = None
     grade: Optional[int] = None
     subjects: Optional[List[str]] = None
+    avatar: Optional[str] = None
     password: Optional[str] = None
 
 
@@ -202,6 +208,7 @@ def user_helper(user) -> dict:
         "class_name": user.get("class_name"),
         "grade": user.get("grade"),
         "subjects": user.get("subjects", []),
+        "avatar": user.get("avatar"),
         "is_verified": bool(user.get("is_verified", False)),
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),
