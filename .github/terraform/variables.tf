@@ -187,6 +187,16 @@ variable "frontend_waf_rate_limit" {
   type        = number
   default     = 2000
 }
+variable "frontend_waf_allowlist_ips" {
+  description = "Optional IPv4 allowlist (CIDR) for frontend WAF. Only used when enable_frontend_waf=true."
+  type        = list(string)
+  default     = []
+}
+variable "frontend_waf_denylist_ips" {
+  description = "Optional IPv4 denylist (CIDR) for frontend WAF. Only used when enable_frontend_waf=true."
+  type        = list(string)
+  default     = []
+}
 
 variable "redis_node_type" {
   description = "ElastiCache Redis node type (e.g., cache.t3.micro for dev, cache.t3.small for prod)"
