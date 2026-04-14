@@ -183,11 +183,11 @@ resource "aws_security_group" "backend" {
   }
 
   egress {
-    description     = "ElastiCache Redis outbound"
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.redis.id]
+    description = "ElastiCache Redis outbound"
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = [aws_subnet.private_1a.cidr_block, aws_subnet.private_1c.cidr_block]
   }
 
   tags = {
