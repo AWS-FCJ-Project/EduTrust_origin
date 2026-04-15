@@ -43,6 +43,8 @@ camera_detect_bucket_name = "log-camera-detect-cheating-0293839182"
 enable_frontend_waf                 = false
 frontend_cloudfront_distribution_id = ""
 frontend_waf_rate_limit             = 2000
+frontend_waf_allowlist_ips          = []
+frontend_waf_denylist_ips           = []
 
 // SSL Certificate
 certificate_arn           = 
