@@ -1,9 +1,6 @@
 "use client";
 import { Sidebar } from '@/components/ui/sidebar';
-import { AvatarPicker } from '@/components/ui/avatar-picker';
 import { Bell } from 'lucide-react';
-import Image from 'next/image';
-import study from '../../../public/study.png';
 import { LogOut } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
@@ -120,22 +117,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <button className="relative p-1"><Bell size={20} /></button>
                         <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
                             <p className="text-sm font-medium tracking-[-0.02em] text-slate-700">{user.name || 'Người dùng'}</p>
-                            <div className="relative">
-                                <AvatarPicker
-                                    currentAvatar={user.avatar}
-                                    userName={user.name}
-                                    size="md"
-                                    onAvatarUpdate={(newAvatarUrl) => {
-                                        const updatedUser = { ...user, avatar: newAvatarUrl };
-                                        setUser(updatedUser);
-                                        Cookies.set('user_info', JSON.stringify(updatedUser), {
-                                            expires: 7,
-                                            path: '/',
-                                            sameSite: 'strict',
-                                            secure: process.env.NODE_ENV === 'production',
-                                        });
-                                    }}
-                                />
+                            {/* Avatar - simple display with fallback */}
+                            <div className="w-10 h-10 rounded-full overflow-hidden bg-[#5B0019] flex items-center justify-center shrink-0">
+                                {user.avatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={user.avatar} alt="Avatar" className="object-cover w-full h-full" />
+                                ) : (
+                                    <span className="text-white font-bold text-sm">
+                                        {(user.name || user.email || '?').charAt(0).toUpperCase()}
+                                    </span>
+                                )}
                             </div>
                             <button
                                 onClick={handleLogout}

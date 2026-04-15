@@ -1,4 +1,4 @@
-import * as Cookies from 'js-cookie';
+import Cookies from 'js-cookie';
 
 export interface AvatarUploadUrlResponse {
     upload_url: string;

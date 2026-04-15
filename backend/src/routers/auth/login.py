@@ -337,19 +337,15 @@ async def update_user_avatar(
     request: Request,
     current_user: dict = Depends(get_current_user_from_token),
 ):
-    """Save the S3 key as the user's avatar URL in DynamoDB."""
+    """Save the S3 key as the user's avatar in DynamoDB."""
     persistence = request.app.state.persistence
     user_id = str(current_user.get("_id") or current_user.get("user_id") or "")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    s3 = get_s3_handler()
-    avatar_url = s3.get_presigned_url(body.s3_key, expiration=3600)
-    if not avatar_url:
-        raise HTTPException(status_code=500, detail="Failed to generate avatar URL")
-
-    ok = await persistence.users.update(user_id, {"avatar": avatar_url})
+    # Store S3 key (not presigned URL)
+    ok = await persistence.users.update(user_id, {"avatar": body.s3_key})
     if not ok:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"avatar_url": avatar_url}
+    return {"s3_key": body.s3_key}

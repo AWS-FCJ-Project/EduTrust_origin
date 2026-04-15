@@ -11,6 +11,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from src.utils.s3_utils import get_s3_handler
 
 
 class UserRole(str, Enum):
@@ -200,6 +201,14 @@ class UpdateUserResponse(BaseModel):
 
 def user_helper(user) -> dict:
     """Convert user document to user info dict."""
+    avatar_value = user.get("avatar")
+    # If avatar is S3 key (starts with "avatars/"), generate fresh presigned URL
+    if avatar_value and str(avatar_value).startswith("avatars/"):
+        s3 = get_s3_handler()
+        avatar_value = (
+            s3.get_presigned_url(avatar_value, expiration=604800) or avatar_value
+        )
+
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -208,7 +217,7 @@ def user_helper(user) -> dict:
         "class_name": user.get("class_name"),
         "grade": user.get("grade"),
         "subjects": user.get("subjects", []),
-        "avatar": user.get("avatar"),
+        "avatar": avatar_value,
         "is_verified": bool(user.get("is_verified", False)),
         "created_at": user.get("created_at"),
         "last_login": user.get("last_login"),

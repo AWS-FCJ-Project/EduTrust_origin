@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { UserPlus, Users, FileSpreadsheet, Download, Upload, Save, CheckCircle2, AlertCircle, Loader2, FileCode, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { UserPlus, Users, FileSpreadsheet, Download, Upload, Save, CheckCircle2, AlertCircle, Loader2, FileCode, Eye, EyeOff, Camera } from 'lucide-react';
 import Cookies from 'js-cookie';
 import * as XLSX from 'xlsx';
 import { useSearchParams } from 'next/navigation';
@@ -24,6 +24,9 @@ const ManagementPage = () => {
         class_name: '',
         grade: ''
     });
+    const [avatar, setAvatar] = useState<string | null>(null);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const avatarInputRef = useRef<HTMLInputElement>(null);
 
     const handleSingleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,13 +42,16 @@ const ManagementPage = () => {
                 },
                 body: JSON.stringify({
                     ...formData,
-                    grade: formData.role === 'student' ? parseInt(formData.grade) : undefined
+                    grade: formData.role === 'student' ? parseInt(formData.grade) : undefined,
+                    avatar: avatar || undefined
                 })
             });
 
             if (res.ok) {
                 setMessage({ type: 'success', text: 'Tạo tài khoản thành công!' });
                 setFormData({ email: '', password: '', name: '', role: 'student', class_name: '', grade: '' });
+                setAvatar(null);
+                setAvatarPreview(null);
             } else {
                 const err = await res.json();
                 setMessage({ type: 'error', text: err.detail || 'Lỗi khi tạo tài khoản' });
@@ -55,6 +61,29 @@ const ManagementPage = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            setMessage({ type: 'error', text: 'Vui lòng chọn file hình ảnh.' });
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            setMessage({ type: 'error', text: 'Kích thước file không được vượt quá 5MB.' });
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            setAvatar(base64);
+            setAvatarPreview(base64);
+        };
+        reader.readAsDataURL(file);
     };
 
     const downloadTemplate = (role: string, format: 'xlsx' | 'csv') => {
@@ -161,6 +190,50 @@ const ManagementPage = () => {
                         </div>
 
                         <form onSubmit={handleSingleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Avatar upload */}
+                            <div className="space-y-2 md:col-span-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] pl-2">Ảnh đại diện</label>
+                                <div className="flex items-center gap-4">
+                                    <div
+                                        className="w-20 h-20 rounded-full overflow-hidden bg-gray-100 cursor-pointer flex items-center justify-center group hover:bg-gray-200 transition-all"
+                                        onClick={() => avatarInputRef.current?.click()}
+                                    >
+                                        {avatarPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={avatarPreview} alt="Avatar preview" className="object-cover w-full h-full" />
+                                        ) : (
+                                            <Camera size={24} className="text-gray-400 group-hover:text-gray-600" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => avatarInputRef.current?.click()}
+                                            className="px-4 py-2 bg-[#5B0019] text-white text-sm font-bold rounded-xl hover:bg-[#4a0014] transition-all"
+                                        >
+                                            Chọn ảnh
+                                        </button>
+                                        <p className="text-xs text-gray-400">PNG, JPG tối đa 5MB</p>
+                                    </div>
+                                    {avatarPreview && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setAvatar(null); setAvatarPreview(null); }}
+                                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                                        >
+                                            Xóa ảnh
+                                        </button>
+                                    )}
+                                </div>
+                                <input
+                                    ref={avatarInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleAvatarChange}
+                                    className="hidden"
+                                />
+                            </div>
+
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] pl-2">Họ và tên</label>
                                 <input 
