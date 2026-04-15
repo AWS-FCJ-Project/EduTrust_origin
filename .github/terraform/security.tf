@@ -1,21 +1,5 @@
 # --- VPC Endpoints ---
 
-# Security Group for VPC Endpoints
-resource "aws_security_group" "vpc_endpoints" {
-  name        = "${var.ec2_instance_name}-vpce-sg"
-  description = "Security group for VPC Endpoints"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "HTTPS from Backend EC2"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.backend.id] # Allow from Backend EC2
-  }
-
-  tags = { Name = "vpc-endpoint-sg" }
-}
 # S3 Gateway Endpoint (Free and critical for ECR)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
@@ -33,27 +17,6 @@ resource "aws_vpc_endpoint" "dynamodb" {
   route_table_ids   = [aws_route_table.private_1a.id, aws_route_table.private_1c.id]
 
   tags = { Name = "dynamodb-endpoint" }
-}
-# ECR Endpoints (Requires both 'dkr' and 'api' for a complete image pull)
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "ecr-dkr-endpoint" }
-}
-resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.private_1a.id, aws_subnet.private_1c.id]
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "ecr-api-endpoint" }
 }
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
