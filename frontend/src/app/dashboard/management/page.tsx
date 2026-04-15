@@ -52,6 +52,7 @@ const ManagementPage = () => {
                 setFormData({ email: '', password: '', name: '', role: 'student', class_name: '', grade: '' });
                 setAvatar(null);
                 setAvatarPreview(null);
+                if (avatarInputRef.current) avatarInputRef.current.value = '';
             } else {
                 const err = await res.json();
                 setMessage({ type: 'error', text: err.detail || 'Lỗi khi tạo tài khoản' });
@@ -218,7 +219,11 @@ const ManagementPage = () => {
                                     {avatarPreview && (
                                         <button
                                             type="button"
-                                            onClick={() => { setAvatar(null); setAvatarPreview(null); }}
+                                            onClick={() => {
+                                                setAvatar(null);
+                                                setAvatarPreview(null);
+                                                if (avatarInputRef.current) avatarInputRef.current.value = '';
+                                            }}
                                             className="text-xs text-red-500 hover:text-red-700 font-medium"
                                         >
                                             Xóa ảnh

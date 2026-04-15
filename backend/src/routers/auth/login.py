@@ -343,6 +343,10 @@ async def update_user_avatar(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user")
 
+    # Validate s3_key belongs to current user (prevent IDOR)
+    if not body.s3_key.startswith(f"avatars/{user_id}"):
+        raise HTTPException(status_code=400, detail="Invalid avatar key")
+
     # Store S3 key (not presigned URL)
     ok = await persistence.users.update(user_id, {"avatar": body.s3_key})
     if not ok:

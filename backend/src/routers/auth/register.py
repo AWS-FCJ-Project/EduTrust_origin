@@ -87,8 +87,9 @@ async def register(request: Request, user: UserRegister):
                 )  # e.g. "image/png"
                 image_bytes = base64.b64decode(data)
 
-                # Generate unique S3 key
-                s3_key = f"avatars/{cognito_user.get('sub', user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
+                # Generate unique S3 key with correct extension
+                ext = content_type.split("/")[-1]  # png, jpeg, webp, etc.
+                s3_key = f"avatars/{cognito_user.get('sub', user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.{ext}"
 
                 # Upload to S3
                 s3 = get_s3_handler()
@@ -290,7 +291,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                     header, data = valid_user.avatar.split(",", 1)
                     content_type = header.split(";")[0].replace("data:", "")
                     image_bytes = base64.b64decode(data)
-                    s3_key = f"avatars/{cognito_user.get('sub', valid_user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
+                    s3_key = f"avatars/{cognito_user.get('sub', valid_user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.{content_type.split('/')[-1]}"
                     s3 = get_s3_handler()
                     uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
                     if uploaded:
