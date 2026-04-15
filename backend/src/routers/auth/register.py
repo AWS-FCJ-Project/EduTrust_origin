@@ -74,28 +74,34 @@ async def register(request: Request, user: UserRegister):
         "avatar": None,
     }
 
-    # Handle base64 avatar upload to S3
-    if user.avatar and user.avatar.startswith("data:image"):
-        try:
-            import base64
+    # Handle avatar: base64 → S3, otherwise store directly
+    if user.avatar:
+        if user.avatar.startswith("data:image"):
+            try:
+                import base64
 
-            # Parse data URL: data:image/png;base64,<base64>
-            header, data = user.avatar.split(",", 1)
-            content_type = header.split(";")[0].replace("data:", "")  # e.g. "image/png"
-            image_bytes = base64.b64decode(data)
+                # Parse data URL: data:image/png;base64,<base64>
+                header, data = user.avatar.split(",", 1)
+                content_type = header.split(";")[0].replace(
+                    "data:", ""
+                )  # e.g. "image/png"
+                image_bytes = base64.b64decode(data)
 
-            # Generate unique S3 key
-            s3_key = f"avatars/{cognito_user.get('sub', user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
+                # Generate unique S3 key
+                s3_key = f"avatars/{cognito_user.get('sub', user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
 
-            # Upload to S3
-            s3 = get_s3_handler()
-            uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
-            if uploaded:
-                # Store S3 key (not presigned URL) - URL will be generated at read time
-                user_doc["avatar"] = s3_key
-        except Exception as e:
-            print(f"[AVATAR ERROR] Failed to upload avatar: {e}")
-            # Continue without avatar if upload fails
+                # Upload to S3
+                s3 = get_s3_handler()
+                uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
+                if uploaded:
+                    # Store S3 key (not presigned URL) - URL will be generated at read time
+                    user_doc["avatar"] = s3_key
+            except Exception as e:
+                print(f"[AVATAR ERROR] Failed to upload avatar: {e}")
+                # Continue without avatar if upload fails
+        else:
+            # Store direct URL (forward compatibility)
+            user_doc["avatar"] = user.avatar
 
     await persistence.users.insert_one(user_doc)
 
@@ -275,22 +281,26 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             "avatar": None,
         }
 
-        # Handle base64 avatar upload to S3
-        if valid_user.avatar and valid_user.avatar.startswith("data:image"):
-            try:
-                import base64
+        # Handle avatar: base64 → S3, otherwise store directly
+        if valid_user.avatar:
+            if valid_user.avatar.startswith("data:image"):
+                try:
+                    import base64
 
-                header, data = valid_user.avatar.split(",", 1)
-                content_type = header.split(";")[0].replace("data:", "")
-                image_bytes = base64.b64decode(data)
-                s3_key = f"avatars/{cognito_user.get('sub', valid_user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
-                s3 = get_s3_handler()
-                uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
-                if uploaded:
-                    # Store S3 key (not presigned URL) - URL will be generated at read time
-                    user_doc["avatar"] = s3_key
-            except Exception as e:
-                print(f"[AVATAR ERROR] Row {row_number}: {e}")
+                    header, data = valid_user.avatar.split(",", 1)
+                    content_type = header.split(";")[0].replace("data:", "")
+                    image_bytes = base64.b64decode(data)
+                    s3_key = f"avatars/{cognito_user.get('sub', valid_user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
+                    s3 = get_s3_handler()
+                    uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
+                    if uploaded:
+                        # Store S3 key (not presigned URL) - URL will be generated at read time
+                        user_doc["avatar"] = s3_key
+                except Exception as e:
+                    print(f"[AVATAR ERROR] Row {row_number}: {e}")
+            else:
+                # Store direct URL (forward compatibility)
+                user_doc["avatar"] = valid_user.avatar
 
         docs_to_insert.append(user_doc)
 
