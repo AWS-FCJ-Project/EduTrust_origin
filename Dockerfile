@@ -1,73 +1,42 @@
 # ============================================
 # Stage 1: BUILD
 # ============================================
-FROM ubuntu:24.04 AS builder
+FROM python:3.11-slim-bookworm AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/root/.cargo/bin:${PATH}"
+    VIRTUAL_ENV="/opt/venv" \
+    PATH="/opt/venv/bin:${PATH}" \
+    UV_LINK_MODE=copy
 
-# Install Python 3.11 + build tools + Rust (kreuzberg 4.5.3 ALWAYS builds from source)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      software-properties-common \
-      gpg-agent && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-      python3.11 \
-      python3.11-venv \
-      python3.11-dev \
-      curl \
-      ca-certificates \
       build-essential \
       pkg-config \
       libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Rust (required to build kreuzberg)
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --profile minimal
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy pyproject.toml first (better layer caching)
-COPY backend/pyproject.toml backend/uv.lock* /app/
+# Keep dependency resolution cacheable by copying lockfiles before source.
+COPY backend/pyproject.toml backend/uv.lock /app/
 
-# Create venv and install dependencies (heavy step, cached if pyproject remains unchanged)
-RUN uv venv --python python3.11 /opt/venv && \
-    uv pip install --python /opt/venv/bin/python --no-cache .
+RUN python -m venv /opt/venv && \
+    uv sync --locked --no-dev --no-install-project --active
 
-# Copy source last (code changes won't invalidate the install cache step)
 COPY backend /app
 
 # ============================================
 # Stage 2: RUNTIME
 # ============================================
-FROM ubuntu:24.04
+FROM python:3.11-slim-bookworm
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:${PATH}" \
-    VIRTUAL_ENV="/opt/venv"
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      software-properties-common \
-      gpg-agent && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-      python3.11 \
-      ca-certificates && \
-    apt-get purge -y software-properties-common gpg-agent && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
+    VIRTUAL_ENV="/opt/venv" \
+    PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /app
 
