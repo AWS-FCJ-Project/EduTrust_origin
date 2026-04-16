@@ -5,6 +5,7 @@
 ![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)
 ![Pydantic AI](https://img.shields.io/badge/Pydantic%20AI-E92063?style=flat&logo=pydantic&logoColor=white)
 ![DynamoDB](https://img.shields.io/badge/AWS%20DynamoDB-4053D6?style=flat&logo=amazon-dynamodb&logoColor=white)
+![ElastiCache](https://img.shields.io/badge/AWS%20ElastiCache-C925D1?style=flat&logo=amazonaws&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)
 
 > **EduTrust** is an AI-powered educational assistant platform built for schools. It combines a smart routing AI agent (Pydantic AI + LiteLLM) with a full exam management system including proctoring, real-time monitoring, and multi-role authentication.
@@ -16,7 +17,6 @@
 - [Overview](#overview)
 - [Tech Stack](#tech-stack)
 - [System State Machine](#system-state-machine)
-- [DynamoDB Schema](#dynamodb-schema)
 - [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
 - [Deployment](#deployment)
@@ -29,7 +29,7 @@ EduTrust consists of two parts:
 
 | Component | Description |
 |-----------|-------------|
-| **AI Agent** | ReAct-style reasoning agent that routes queries to specialist sub-agents (Math, Science, Literature, Web Search) via Pydantic AI + LiteLLM |
+| **AI Agent** | ReAct-style reasoning agent that routes queries to specialist sub-agents (Math, Science, Literature, Web Search) via Pydantic AI |
 | **Exam System** | Full exam lifecycle management with secret keys, time-windowed access, auto-scoring, and proctoring via violation logging |
 
 ---
@@ -41,7 +41,7 @@ EduTrust consists of two parts:
 | Category | Technology |
 |----------|------------|
 | Framework | [FastAPI](https://fastapi.tiangolo.com/) 0.128+ |
-| AI Agent | [Pydantic AI](https://ai.pydantic.dev/) 1.51 + [LiteLLM](https://docs.litellm.ai/) 1.77 |
+| AI Agent | [Pydantic AI](https://ai.pydantic.dev/) 1.51|
 | Database | AWS [DynamoDB](https://aws.amazon.com/dynamodb/) (boto3) |
 | Cache | Redis (ElastiCache) |
 | Auth | AWS [Cognito](https://aws.amazon.com/cognito/) (JWT, 3 user groups) |
@@ -68,7 +68,7 @@ EduTrust consists of two parts:
 | Compute | AWS EC2 + Auto Scaling Group + Launch Template |
 | Load Balancer | AWS Application Load Balancer (ALB) |
 | Cache | AWS [ElastiCache](https://aws.amazon.com/elasticache/) Redis (cluster mode) |
-| CDN + WAF | CloudFront + WAFv2 (optional) |
+| Frontend Protection | WAFv2 for an existing CloudFront distribution (optional) |
 
 ---
 
@@ -127,16 +127,16 @@ EduTrust consists of two parts:
 
 ### System Modules
 
-| Module | Description | Docs | State Machine |
-|--------|-------------|------|---------------|
-| [Auth](docs/04-auth.md) | Cognito authentication, OTP, session | [Link](docs/04-auth.md) | [SM](docs/04-auth.md#state-machine) |
-| [Agent](docs/07-agent.md) | Pydantic AI orchestrator + sub-agents | [Link](docs/07-agent.md) | [SM](docs/07-agent.md#state-machine) |
-| [Conversation](docs/08-conversation.md) | Redis cache + DynamoDB persistence | [Link](docs/08-conversation.md) | [SM](docs/08-conversation.md#state-machine) |
-| [Exam](docs/05-routers.md) | Exam CRUD + submission flow | [Link](docs/05-routers.md) | [SM](docs/05-routers.md#state-machine) |
-| [Detection](docs/09-detection.md) | Camera proctoring + violation logging | [Link](docs/09-detection.md) | [SM](docs/09-detection.md#state-machine) |
-| [Translate](docs/10-translate.md) | LLM-powered document translation | [Link](docs/10-translate.md) | [SM](docs/10-translate.md#state-machine) |
-| [Search](docs/11-search.md) | Tavily + unified web search | [Link](docs/11-search.md) | [SM](docs/11-search.md#state-machine) |
-| [Database](docs/03-database.md) | DynamoDB + Redis facade | [Link](docs/03-database.md) | [Schema](docs/03-database.md#schema) |
+| Module | Description |
+|--------|-------------|
+| Auth | Cognito authentication, OTP, session |
+| Agent | Pydantic AI orchestrator + sub-agents |
+| Conversation | Redis cache + DynamoDB persistence |
+| Exam | Exam CRUD + submission flow |
+| Detection | Camera proctoring + violation logging |
+| Translate | LLM-powered document translation |
+| Search | Tavily + unified web search |
+| Database | DynamoDB + Redis |
 
 ### User Roles & Permissions
 
@@ -147,22 +147,6 @@ EduTrust consists of two parts:
 | `student` | Take exams (with secret key + time window), view own results |
 
 ---
-
-## DynamoDB Schema
-
-All tables use `PAY_PER_REQUEST` billing, KMS encryption at rest, and point-in-time recovery.
-
-| Table | Partition Key | Sort Key | Global Secondary Indexes |
-|-------|-------------|----------|--------------------------|
-| `users` | `user_id` | — | `email-index` (email → user_id), `role-index` (role → user_id), `class-id-index` (class_id → user_id) |
-| `classes` | `class_id` | — | `class-lookup-index` (lookup_key = `{grade}#{name}` → class_id), `homeroom-teacher-index` (homeroom_teacher_id → class_id) |
-| `class_teacher_assignments` | `teacher_id` | `assignment_key` | — |
-| `exams` | `exam_id` | — | `teacher-index` (teacher_id + start_time → exam_id), `class-index` (class_id + start_time → exam_id) |
-| `submissions` | `exam_id` | `student_id` | `student-index` (student_id + submitted_at → exam_id) |
-| `violations` | `exam_id` | `student_id` | `class-time-index` (class_id + violation_time → exam_id) |
-| `conversations` | `conversation_id` | — | `user-updated-index` (user_id + updated_at → conversation_id) |
-| `otps` | `otp_key` | — | TTL: `expire_at_epoch` |
-
 ### ElastiCache Redis
 
 | Setting | Value |
@@ -205,11 +189,17 @@ Frontend: `http://localhost:3000`.
 aws-fcj-project/
 ├── .github/
 │   ├── workflows/
-│   │   └── ci.yml                 # CI/CD pipeline
-│   └── terraform/                 # Infrastructure as Code
-│       ├── main.tf                # VPC, EC2, ALB, DynamoDB, Cognito, S3...
-│       ├── variables.tf
-│       └── outputs.tf
+│   │   ├── ci.yml                 # CI pipeline
+│   │   └── deploy-ec2.yml         # Terraform apply + ECR build + ASG deploy
+│   └── terraform/                 # Infrastructure as Code (split across multiple files)
+│       ├── providers.tf           # Provider + backend
+│       ├── network.tf             # VPC, subnets, routes, NAT
+│       ├── data_services.tf       # DynamoDB + ElastiCache
+│       ├── app_services.tf        # Cognito, S3, ECR
+│       ├── compute.tf             # ALB, launch template, ASG
+│       ├── observability.tf       # Flow logs, ALB logs, WAF, alarms
+│       ├── security.tf            # KMS, SSM, endpoints, IAM
+│       └── outputs.tf             # Terraform outputs
 ├── Dockerfile                     # Multi-stage container build
 ├── backend/
 │   ├── pyproject.toml            # Python deps (UV)
@@ -305,24 +295,27 @@ terraform apply -var-file="terraform.tfvars"
 | `test` | PR open | `pytest` with coverage (`>80%` target) |
 | `terraform-check` | PR open | `terraform fmt` + `validate` + Checkov scan |
 
-> **Note:** Deploy job is triggered manually via `workflow_dispatch` or via external pipeline. Docker images are built and pushed to ECR, then EC2 Launch Template pulls via SSM Parameter Store.
+> **Note:** Deploy workflow runs on `workflow_run` from CI on `main` or via `workflow_dispatch`. It applies Terraform, builds and pushes the backend image to ECR, updates `/edutrust/backend/env` in SSM with the latest Redis endpoint, and triggers an ASG instance refresh when the launch template changes.
 
 ### Container Deployment Flow
 
 ```
-workflow_dispatch / external trigger
+workflow_run / workflow_dispatch
        │
        ▼
-Docker image built (multi-stage)
+Terraform apply
        │
        ▼
-Image pushed to ECR (KMS encrypted)
+Backend image built and pushed to ECR
        │
        ▼
 SSM Parameter Store updated (/edutrust/backend/env)
        │
        ▼
-ASG Instance Refresh triggered
+Terraform plan/apply with backend_image_tag
+       │
+       ▼
+ASG Instance Refresh triggered when launch template changes
        │
        ▼
 EC2 Launch Template user-data (per instance):
@@ -338,41 +331,4 @@ ASG health check (ALB /health endpoint)
 CloudWatch Agent → container logs
 ```
 
-### Required GitHub Secrets
 
-| Secret | Description |
-|--------|-------------|
-| `BACKEND_ENV_FILE` | Full `.env` file content (written to SSM Parameter Store) |
-| AWS credentials | For ECR push (if not using OIDC) |
-
----
-
-## API Endpoints Summary
-
-### Public (No Auth)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/login` | Authenticate with email + password |
-| POST | `/register` | Register new user |
-| POST | `/multi-register` | Bulk register from CSV/Excel |
-| POST | `/forgot-password` | Initiate password reset |
-| GET | `/` | Health check |
-| GET | `/health` | Detailed health status |
-
-### Protected (Bearer JWT required)
-
-All other endpoints require `Authorization: Bearer <id_token>` from Cognito.
-
-### Key Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/exams` | List exams (filtered by role) |
-| POST | `/exams` | Create exam |
-| POST | `/exams/{id}/verify-key` | Verify secret key |
-| POST | `/exams/{id}/submit` | Submit exam answers |
-| GET | `/exams/results/my` | Student's own results |
-| GET | `/classes` | List classes |
-| POST | `/unified-agent/ask` | Ask AI agent |
-| POST | `/unified-agent/conversations` | Create chat conversation |
