@@ -55,6 +55,25 @@ class S3Handler:
             print(f"[S3 ERROR] Failed to generate presigned URL: {e}")
             return None
 
+    def get_presigned_upload_url(
+        self, s3_key, content_type="image/jpeg", expiration=3600
+    ):
+        """Generates a presigned PUT URL for uploading a file directly from client"""
+        try:
+            url = self.s3_client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": self.bucket_name,
+                    "Key": s3_key,
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expiration,
+            )
+            return url
+        except ClientError as e:
+            print(f"[S3 ERROR] Failed to generate presigned upload URL: {e}")
+            return None
+
     def delete_folder(self, prefix):
         """Deletes all objects under a specific prefix (folder)"""
         try:

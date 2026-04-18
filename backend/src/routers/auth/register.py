@@ -9,6 +9,7 @@ from src.auth.auth_utils import hash_password
 from src.auth.cognito_auth import CognitoAuthError, cognito_auth_service
 from src.extensions import limiter
 from src.schemas.auth_schemas import UserRegister, UserRole
+from src.utils.s3_utils import get_s3_handler
 
 router = APIRouter()
 
@@ -70,7 +71,39 @@ async def register(request: Request, user: UserRegister):
         "grade": user.grade if user.role == UserRole.student else None,
         "cognito_sub": cognito_user.get("sub"),
         "created_at": datetime.now(timezone.utc),
+        "avatar": None,
     }
+
+    # Handle avatar: base64 → S3, otherwise store directly
+    if user.avatar:
+        if user.avatar.startswith("data:image"):
+            try:
+                import base64
+
+                # Parse data URL: data:image/png;base64,<base64>
+                header, data = user.avatar.split(",", 1)
+                content_type = header.split(";")[0].replace(
+                    "data:", ""
+                )  # e.g. "image/png"
+                image_bytes = base64.b64decode(data)
+
+                # Generate unique S3 key with correct extension
+                ext = content_type.split("/")[-1]  # png, jpeg, webp, etc.
+                s3_key = f"avatars/{cognito_user.get('sub', user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.{ext}"
+
+                # Upload to S3
+                s3 = get_s3_handler()
+                uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
+                if uploaded:
+                    # Store S3 key (not presigned URL) - URL will be generated at read time
+                    user_doc["avatar"] = s3_key
+            except Exception as e:
+                print(f"[AVATAR ERROR] Failed to upload avatar: {e}")
+                # Continue without avatar if upload fails
+        else:
+            # Store direct URL (forward compatibility)
+            user_doc["avatar"] = user.avatar
+
     await persistence.users.insert_one(user_doc)
 
     return {"message": "User registered successfully, you can now login."}
@@ -146,6 +179,16 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             else None
         )
 
+        # Avatar: base64 data URL or image URL (optional)
+        avatar_raw = row.get("avatar")
+        avatar_value = None
+        if (
+            pd.notna(avatar_raw)
+            and str(avatar_raw).lower() != "nan"
+            and str(avatar_raw).strip()
+        ):
+            avatar_value = str(avatar_raw).strip()
+
         try:
             valid_user = UserRegister(
                 email=row_email,
@@ -154,6 +197,7 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
                 role=role,
                 class_name=class_name if role == UserRole.student else None,
                 grade=grade if role == UserRole.student else None,
+                avatar=avatar_value,
             )
         except Exception as e:
             err_msg = str(e).split("\n")[0]
@@ -224,19 +268,42 @@ async def register_bulk(request: Request, file: Annotated[UploadFile, File(...)]
             errors.append(f"Row {row_number}: {error.message}")
             continue
 
-        docs_to_insert.append(
-            {
-                "email": valid_user.email,
-                "hashed_password": hashed,
-                "is_verified": True,
-                "name": valid_user.name,
-                "role": valid_user.role.value,
-                "class_name": valid_user.class_name,
-                "grade": valid_user.grade,
-                "cognito_sub": cognito_user.get("sub"),
-                "created_at": datetime.now(timezone.utc),
-            }
-        )
+        # Build user doc, handle avatar if base64
+        user_doc = {
+            "email": valid_user.email,
+            "hashed_password": hashed,
+            "is_verified": True,
+            "name": valid_user.name,
+            "role": valid_user.role.value,
+            "class_name": valid_user.class_name,
+            "grade": valid_user.grade,
+            "cognito_sub": cognito_user.get("sub"),
+            "created_at": datetime.now(timezone.utc),
+            "avatar": None,
+        }
+
+        # Handle avatar: base64 → S3, otherwise store directly
+        if valid_user.avatar:
+            if valid_user.avatar.startswith("data:image"):
+                try:
+                    import base64
+
+                    header, data = valid_user.avatar.split(",", 1)
+                    content_type = header.split(";")[0].replace("data:", "")
+                    image_bytes = base64.b64decode(data)
+                    s3_key = f"avatars/{cognito_user.get('sub', valid_user.email.split('@')[0])}/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.{content_type.split('/')[-1]}"
+                    s3 = get_s3_handler()
+                    uploaded = s3.upload_file_bytes(image_bytes, s3_key, content_type)
+                    if uploaded:
+                        # Store S3 key (not presigned URL) - URL will be generated at read time
+                        user_doc["avatar"] = s3_key
+                except Exception as e:
+                    print(f"[AVATAR ERROR] Row {row_number}: {e}")
+            else:
+                # Store direct URL (forward compatibility)
+                user_doc["avatar"] = valid_user.avatar
+
+        docs_to_insert.append(user_doc)
 
     if docs_to_insert:
         # Batch write users
